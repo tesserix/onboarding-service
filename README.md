@@ -17,8 +17,13 @@ apps/api/          Go 1.26 + Gin + pgx API
   internal/authz   default-deny policy
   internal/onboarding orchestration
   internal/api     HTTP surface, session/CSRF, idempotency, rate limiting
-deploy/            container build
+apps/web/          Next.js 16 console, served same-origin with the API
+deploy/            container builds
 ```
+
+The console holds no credential: it is served from the same origin as the API,
+so the session is a first-party HttpOnly cookie and the only thing the browser
+code touches is the companion CSRF value.
 
 The database schema is **not** in this repo — it lives in
 `tesserix-k8s/charts/apps/db-schema-bootstrap/schemas/global/global/onboarding_db.sql`
@@ -32,6 +37,12 @@ Tests use a real Postgres, not a mocked repository:
 export ONBOARDING_TEST_DSN='postgres://onboarding@127.0.0.1:5432/onboarding_db'
 psql "$ONBOARDING_TEST_DSN" -f ../tesserix-k8s/charts/apps/db-schema-bootstrap/schemas/global/global/onboarding_db.sql
 cd apps/api && go test -race ./...
+```
+
+The console:
+
+```bash
+cd apps/web && pnpm install && pnpm typecheck && pnpm test && pnpm build
 ```
 
 ## Configuration

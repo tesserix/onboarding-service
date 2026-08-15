@@ -16,6 +16,7 @@ func (d Deps) registerRoutes(g *gin.RouterGroup) {
 	g.GET("/products", d.listProducts)
 	g.POST("/products", d.registerProduct)
 	g.GET("/products/:key", d.getProduct)
+	g.POST("/products/:key/manifests-acknowledged", d.acknowledgeManifests)
 
 	g.GET("/orgs", d.listOrgs)
 	g.POST("/orgs", d.createOrg)
@@ -121,6 +122,14 @@ func (d Deps) registerProduct(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, product)
+}
+
+func (d Deps) acknowledgeManifests(c *gin.Context) {
+	if err := d.Service.AcknowledgeProductManifests(c.Request.Context(), principalOf(c), c.Param("key")); err != nil {
+		respondErr(c, d.logger(), err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 // --- organizations -------------------------------------------------------

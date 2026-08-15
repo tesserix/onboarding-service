@@ -90,7 +90,12 @@ func (s *Service) guard(ctx context.Context, p authz.Principal, action authz.Act
 }
 
 func (s *Service) audit(ctx context.Context, p authz.Principal, action, orgID string, outcome audit.Outcome, detail any) {
+	s.auditTarget(ctx, p, action, orgID, "", outcome, detail)
+}
+
+func (s *Service) auditTarget(ctx context.Context, p authz.Principal, action, orgID, target string, outcome audit.Outcome, detail any) {
 	event := audit.Event{
+		Target:     target,
 		ActorType:  actorType(p),
 		ActorID:    p.Subject,
 		ProductKey: p.ProductKey,
@@ -702,6 +707,23 @@ func (s *Service) RegisterProduct(ctx context.Context, p authz.Principal, prod s
 		"key": prod.Key, "identity": prod.Identity, "tenantSecrets": prod.TenantSecrets,
 	})
 	return prod, nil
+}
+
+// AcknowledgeProductManifests records that the git counterpart of a product's
+// live Zitadel and secret objects has been raised. It changes nothing; the
+// ledger entry is the whole point, so a product cannot claim it for itself.
+func (s *Service) AcknowledgeProductManifests(ctx context.Context, p authz.Principal, key string) error {
+	if err := s.guard(ctx, p, authz.ActionProductWrite, "", map[string]string{"key": key}); err != nil {
+		return err
+	}
+	if _, err := s.store.Product(ctx, key); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return ErrNotFound
+		}
+		return err
+	}
+	s.auditTarget(ctx, p, "product.manifests.acknowledged", "", key, audit.OutcomeSuccess, nil)
+	return nil
 }
 
 // --- audit ---------------------------------------------------------------

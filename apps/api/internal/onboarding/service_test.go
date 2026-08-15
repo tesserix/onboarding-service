@@ -518,3 +518,29 @@ func contains(haystack []string, needle string) bool {
 	}
 	return false
 }
+
+// The wizard's "I've raised the PR" checkbox is only worth anything if it is
+// recorded: it is the claim that the live objects have a git counterpart.
+func TestAcknowledgingProductManifestsIsPlatformOnlyAndLandsInTheLedger(t *testing.T) {
+	svc, _, st := newService(t)
+	ctx := context.Background()
+	seedProduct(t, st, "planning-poker")
+
+	if err := svc.AcknowledgeProductManifests(ctx, product("planning-poker"), "planning-poker"); !errors.Is(err, authz.ErrDenied) {
+		t.Fatalf("a product acknowledged its own manifests: %v", err)
+	}
+	if err := svc.AcknowledgeProductManifests(ctx, platform(), "planning-poker"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.AcknowledgeProductManifests(ctx, platform(), "no-such-product"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("an unknown product was acknowledged: %v", err)
+	}
+
+	events, err := svc.Audit(ctx, platform(), store.AuditFilter{Action: "product.manifests.acknowledged"}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) == 0 || events[0].Target != "planning-poker" {
+		t.Fatalf("acknowledgement not in the ledger: %+v", events)
+	}
+}

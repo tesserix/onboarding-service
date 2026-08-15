@@ -1,0 +1,76 @@
+"use client";
+
+import Link from "next/link";
+import { useState } from "react";
+
+import { Badge, Card, Empty, ErrorNote, inputClass } from "@/components/ui";
+import { useApi } from "@/lib/useApi";
+import type { Organization } from "@/lib/types";
+
+export default function OrgsPage() {
+  const [search, setSearch] = useState("");
+  const { data, error } = useApi<{ organizations: Organization[] }>("/v1/orgs");
+
+  const needle = search.trim().toLowerCase();
+  const orgs = (data?.organizations ?? []).filter(
+    (o) =>
+      needle === "" ||
+      o.name.toLowerCase().includes(needle) ||
+      (o.primaryDomain ?? "").toLowerCase().includes(needle) ||
+      (o.externalRef ?? "").toLowerCase().includes(needle),
+  );
+
+  return (
+    <div className="space-y-6">
+      <ErrorNote error={error} />
+      <Card
+        title="Organizations"
+        action={
+          <Link href="/orgs/new" className="text-sm text-slate-600 hover:text-slate-900">
+            New organization
+          </Link>
+        }
+      >
+        <input
+          className={`${inputClass} mb-4`}
+          placeholder="Search by name, domain or external reference"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        {orgs.length === 0 ? (
+          <Empty>No organizations.</Empty>
+        ) : (
+          <table className="w-full text-left text-sm">
+            <thead className="text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="py-2 pr-4">Name</th>
+                <th className="py-2 pr-4">Domain</th>
+                <th className="py-2 pr-4">Onboarded by</th>
+                <th className="py-2 pr-4">Plan</th>
+                <th className="py-2">State</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {orgs.map((org) => (
+                <tr key={org.id}>
+                  <td className="py-2 pr-4">
+                    <Link href={`/orgs/${org.id}`} className="font-medium hover:underline">
+                      {org.name}
+                    </Link>
+                    <span className="block font-mono text-xs text-slate-500">{org.id}</span>
+                  </td>
+                  <td className="py-2 pr-4 text-slate-600">{org.primaryDomain ?? "—"}</td>
+                  <td className="py-2 pr-4 text-slate-600">{org.createdByProduct || "platform"}</td>
+                  <td className="py-2 pr-4 text-slate-600">{org.plan ?? "—"}</td>
+                  <td className="py-2">
+                    <Badge tone={org.state === "active" ? "ok" : "muted"}>{org.state}</Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+    </div>
+  );
+}
