@@ -383,7 +383,7 @@ func (s *Store) AuditChain(ctx context.Context) ([]audit.Record, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT seq, occurred_at, actor_type, actor_id, coalesce(product_key,''),
 		       coalesce(org_id::text,''), action, coalesce(target,''), outcome,
-		       request_id, detail::text, prev_hash, hash
+		       request_id, detail, prev_hash, hash
 		FROM audit_events ORDER BY seq`)
 	if err != nil {
 		return nil, fmt.Errorf("read ledger: %w", err)
@@ -402,7 +402,7 @@ func (s *Store) AuditForOrg(ctx context.Context, orgID uuid.UUID, limit int) ([]
 	rows, err := s.pool.Query(ctx, `
 		SELECT seq, occurred_at, actor_type, actor_id, coalesce(product_key,''),
 		       coalesce(org_id::text,''), action, coalesce(target,''), outcome,
-		       request_id, detail::text, prev_hash, hash
+		       request_id, detail, prev_hash, hash
 		FROM audit_events WHERE org_id = $1 ORDER BY seq DESC LIMIT $2`, orgID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("read org ledger: %w", err)

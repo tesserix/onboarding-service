@@ -1,0 +1,58 @@
+// Package api is the HTTP boundary: authentication, authorization hand-off,
+// validation and error shaping. It holds no business rules.
+package api
+
+import (
+	"log/slog"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/tesserix/onboarding-service/api/internal/auth"
+	"github.com/tesserix/onboarding-service/api/internal/onboarding"
+	"github.com/tesserix/onboarding-service/api/internal/store"
+)
+
+type Deps struct {
+	Service *onboarding.Service
+	Store   *store.Store
+	Tokens  TokenVerifier
+	// Sessions seals the console's cookie; OIDC logs the human in.
+	Sessions *auth.SessionCodec
+	OIDC     *auth.OIDCClient
+	// PlatformOrgID is the Zitadel org whose members are platform staff.
+	PlatformOrgID string
+	ConsoleURL    string
+	SecureCookies bool
+	Log           *slog.Logger
+}
+
+func (d Deps) logger() *slog.Logger {
+	if d.Log == nil {
+		return slog.Default()
+	}
+	return d.Log
+}
+
+func NewRouter(d Deps) *gin.Engine {
+	log := d.logger()
+	r := gin.New()
+	r.Use(gin.Recovery(), requestID(), securityHeaders(), requestLogger(log))
+
+	r.GET("/healthz", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) })
+	r.GET("/readyz", func(c *gin.Context) {
+		if err := d.Service.Ready(c.Request.Context()); err != nil {
+			abort(c, http.StatusServiceUnavailable, "not ready")
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ready"})
+	})
+
+	if d.OIDC != nil {
+		d.registerAuthRoutes(r)
+	}
+
+	v1 := r.Group("/v1", readBody(), d.authenticate(), newRateLimiter(20, 40).middleware(), d.idempotency())
+	d.registerRoutes(v1)
+	return r
+}

@@ -1,0 +1,26 @@
+# syntax=docker/dockerfile:1
+
+# Base images are pinned by digest: the :latest tags are mutable, so an
+# unpinned build is not reproducible.
+FROM ghcr.io/tesserix/base-go-builder:latest@sha256:4b1468310228fe02abff2f7864002e9341a7f632b42f2150c66b0272c051b954 AS build
+USER 0:0
+WORKDIR /src
+COPY apps/api/go.mod apps/api/go.sum ./
+RUN go mod download
+COPY apps/api/ ./
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-s -w" -trimpath -o /out/onboarding-api ./cmd/server
+
+# distroless has no shell to adduser, so the passwd/group entries are made here.
+RUN addgroup -g 1000 onboarding \
+    && adduser -u 1000 -G onboarding -D -H onboarding
+
+FROM ghcr.io/tesserix/base-distroless-static:latest@sha256:f1e15d54e77ca5135969d7374d525b6f696f0c0c0acb36aae13887e58bab1dc3
+WORKDIR /app
+COPY --from=build /etc/passwd /etc/group /etc/
+COPY --from=build --chown=onboarding:onboarding /out/onboarding-api /app/onboarding-api
+ENV PORT=8080
+EXPOSE 8080
+# Numeric so Kubernetes' runAsNonRoot check can verify uid>0 at admission.
+USER 1000:1000
+ENTRYPOINT ["/app/onboarding-api"]
