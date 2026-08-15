@@ -322,3 +322,80 @@ func TestIdempotencyKeysAreScopedToTheActor(t *testing.T) {
 		t.Fatalf("one caller replayed another caller's response: %v", err)
 	}
 }
+
+func TestAuditSearchFiltersAndOrdersNewestFirst(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	run := uuid.NewString()
+	org := uuid.New()
+
+	events := []audit.Event{
+		{ActorID: "sam", Action: "org.create", OrgID: org.String(), ProductKey: "planning-poker"},
+		{ActorID: "sam", Action: "grant.create", OrgID: org.String(), ProductKey: "planning-poker"},
+		{ActorID: "mahesh", Action: "org.create", ProductKey: "hms"},
+	}
+	for _, e := range events {
+		e.ActorType = audit.ActorPlatform
+		e.Outcome = audit.OutcomeSuccess
+		e.RequestID = run
+		if err := s.AppendAudit(ctx, e); err != nil {
+			t.Fatalf("append %s: %v", e.Action, err)
+		}
+	}
+
+	tests := []struct {
+		name   string
+		filter AuditFilter
+		want   []string
+	}{
+		{"by actor", AuditFilter{RequestID: run, Actor: "mahesh"}, []string{"org.create"}},
+		{"by action", AuditFilter{RequestID: run, Action: "grant.create"}, []string{"grant.create"}},
+		{"by product", AuditFilter{RequestID: run, ProductKey: "hms"}, []string{"org.create"}},
+		{"by org", AuditFilter{RequestID: run, OrgID: &org}, []string{"grant.create", "org.create"}},
+		{"unfiltered is newest first", AuditFilter{RequestID: run},
+			[]string{"org.create", "grant.create", "org.create"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := s.AuditSearch(ctx, tc.filter, 100)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var actions []string
+			for _, r := range got {
+				actions = append(actions, r.Action)
+			}
+			if len(actions) != len(tc.want) {
+				t.Fatalf("got %v, want %v", actions, tc.want)
+			}
+			for i := range actions {
+				if actions[i] != tc.want[i] {
+					t.Fatalf("got %v, want %v", actions, tc.want)
+				}
+			}
+		})
+	}
+}
+
+func TestAuditSearchHonoursTheLimit(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	run := uuid.NewString()
+
+	for i := 0; i < 5; i++ {
+		if err := s.AppendAudit(ctx, audit.Event{
+			ActorType: audit.ActorPlatform, ActorID: "sam", Action: "org.create",
+			Outcome: audit.OutcomeSuccess, RequestID: run,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := s.AuditSearch(ctx, AuditFilter{RequestID: run}, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d events, want 2", len(got))
+	}
+}

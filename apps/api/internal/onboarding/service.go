@@ -706,16 +706,30 @@ func (s *Service) RegisterProduct(ctx context.Context, p authz.Principal, prod s
 
 // --- audit ---------------------------------------------------------------
 
-func (s *Service) Audit(ctx context.Context, p authz.Principal, orgID *uuid.UUID, limit int) ([]audit.Record, error) {
+// Audit answers from the ledger. The filter narrows what is returned; it never
+// widens what the principal may see — an unscoped read stays platform-only.
+func (s *Service) Audit(ctx context.Context, p authz.Principal, f store.AuditFilter, limit int) ([]audit.Record, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	if orgID != nil {
-		if err := s.guard(ctx, p, authz.ActionAuditRead, orgID.String(), nil); err != nil {
+	if f.OrgID != nil {
+		if err := s.guard(ctx, p, authz.ActionAuditRead, f.OrgID.String(), nil); err != nil {
 			return nil, err
 		}
-		return s.store.AuditForOrg(ctx, *orgID, limit)
+		return s.store.AuditSearch(ctx, f, limit)
 	}
+	if p.Kind != authz.KindPlatform {
+		return nil, ErrNotFound
+	}
+	if err := s.guard(ctx, p, authz.ActionProductRead, "", nil); err != nil {
+		return nil, err
+	}
+	return s.store.AuditSearch(ctx, f, limit)
+}
+
+// AuditChain is the whole ledger in order, for chain verification rather than
+// for reading.
+func (s *Service) AuditChain(ctx context.Context, p authz.Principal) ([]audit.Record, error) {
 	if p.Kind != authz.KindPlatform {
 		return nil, ErrNotFound
 	}

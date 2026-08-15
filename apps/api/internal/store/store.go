@@ -398,14 +398,48 @@ func (s *Store) AuditChain(ctx context.Context) ([]audit.Record, error) {
 	})
 }
 
-func (s *Store) AuditForOrg(ctx context.Context, orgID uuid.UUID, limit int) ([]audit.Record, error) {
-	rows, err := s.pool.Query(ctx, `
+// AuditFilter narrows a ledger read. A zero filter reads everything, so the
+// caller — never this method — decides what a principal may see.
+type AuditFilter struct {
+	OrgID      *uuid.UUID
+	ProductKey string
+	Actor      string
+	Action     string
+	RequestID  string
+}
+
+func (s *Store) AuditSearch(ctx context.Context, f AuditFilter, limit int) ([]audit.Record, error) {
+	where := []string{"TRUE"}
+	args := []any{}
+	add := func(clause string, value any) {
+		args = append(args, value)
+		where = append(where, fmt.Sprintf(clause, len(args)))
+	}
+	if f.OrgID != nil {
+		add("org_id = $%d", *f.OrgID)
+	}
+	if f.ProductKey != "" {
+		add("product_key = $%d", f.ProductKey)
+	}
+	if f.Actor != "" {
+		add("actor_id = $%d", f.Actor)
+	}
+	if f.Action != "" {
+		add("action = $%d", f.Action)
+	}
+	if f.RequestID != "" {
+		add("request_id = $%d", f.RequestID)
+	}
+	args = append(args, limit)
+
+	rows, err := s.pool.Query(ctx, fmt.Sprintf(`
 		SELECT seq, occurred_at, actor_type, actor_id, coalesce(product_key,''),
 		       coalesce(org_id::text,''), action, coalesce(target,''), outcome,
 		       request_id, detail, prev_hash, hash
-		FROM audit_events WHERE org_id = $1 ORDER BY seq DESC LIMIT $2`, orgID, limit)
+		FROM audit_events WHERE %s ORDER BY seq DESC LIMIT $%d`,
+		strings.Join(where, " AND "), len(args)), args...)
 	if err != nil {
-		return nil, fmt.Errorf("read org ledger: %w", err)
+		return nil, fmt.Errorf("read ledger: %w", err)
 	}
 	defer rows.Close()
 	return collect(rows, func(row pgx.Row) (audit.Record, error) {

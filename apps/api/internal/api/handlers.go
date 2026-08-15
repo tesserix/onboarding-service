@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -414,7 +415,22 @@ func (d Deps) resolve(c *gin.Context) {
 // --- audit ---------------------------------------------------------------
 
 func (d Deps) listAudit(c *gin.Context) {
-	records, err := d.Service.Audit(c.Request.Context(), principalOf(c), nil, 0)
+	filter := store.AuditFilter{
+		ProductKey: c.Query("productKey"),
+		Actor:      c.Query("actor"),
+		Action:     c.Query("action"),
+	}
+	// An orgId in the query narrows the read and moves it under the org guard,
+	// so a caller cannot use it to reach an org they are not entitled to.
+	if raw := c.Query("orgId"); raw != "" {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			abort(c, http.StatusBadRequest, "orgId must be a UUID")
+			return
+		}
+		filter.OrgID = &id
+	}
+	records, err := d.Service.Audit(c.Request.Context(), principalOf(c), filter, auditLimit(c))
 	if err != nil {
 		respondErr(c, d.logger(), err)
 		return
@@ -422,12 +438,21 @@ func (d Deps) listAudit(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"events": records})
 }
 
+func auditLimit(c *gin.Context) int {
+	limit, err := strconv.Atoi(c.Query("limit"))
+	if err != nil {
+		return 0
+	}
+	return limit
+}
+
 func (d Deps) listOrgAudit(c *gin.Context) {
 	id, ok := orgID(c)
 	if !ok {
 		return
 	}
-	records, err := d.Service.Audit(c.Request.Context(), principalOf(c), &id, 0)
+	records, err := d.Service.Audit(c.Request.Context(), principalOf(c),
+		store.AuditFilter{OrgID: &id}, auditLimit(c))
 	if err != nil {
 		respondErr(c, d.logger(), err)
 		return

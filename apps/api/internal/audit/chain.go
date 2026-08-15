@@ -33,25 +33,27 @@ const (
 )
 
 type Event struct {
-	OccurredAt time.Time
-	ActorType  ActorType
-	ActorID    string
-	ProductKey string
-	OrgID      string
-	Action     string
-	Target     string
-	Outcome    Outcome
-	RequestID  string
-	Detail     string
-	PrevHash   string
+	OccurredAt time.Time `json:"occurredAt"`
+	ActorType  ActorType `json:"actorType"`
+	ActorID    string    `json:"actorId"`
+	ProductKey string    `json:"productKey,omitempty"`
+	OrgID      string    `json:"orgId,omitempty"`
+	Action     string    `json:"action"`
+	Target     string    `json:"target,omitempty"`
+	Outcome    Outcome   `json:"outcome"`
+	RequestID  string    `json:"requestId"`
+	Detail     string    `json:"detail,omitempty"`
+	PrevHash   string    `json:"-"`
 }
 
 // Record is an Event as read back from the ledger, carrying the hash that was
 // stored with it rather than the one it hashes to now. Verify compares them.
 type Record struct {
 	Event
-	Seq        int64
-	StoredHash string
+	Seq int64 `json:"seq"`
+	// The stored hash stays internal: it is the ledger's own integrity record,
+	// and Verify is what a reader should trust, not a hash on screen.
+	StoredHash string `json:"-"`
 }
 
 // Hash is a SHA-256 over every field. Fields are length-prefixed rather than
