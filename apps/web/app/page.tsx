@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { Stat, StatLabel, StatMeta, StatValue } from "@tesserix/web";
 
 import { AuditTable } from "@/components/AuditTable";
-import { Badge, Card, Empty, ErrorNote } from "@/components/ui";
+import { Badge, Card, Empty, ErrorNote, PageTitle } from "@/components/ui";
 import { useApi } from "@/lib/useApi";
 import type { AuditEvent, Organization, Product } from "@/lib/types";
 
@@ -16,43 +17,51 @@ export default function Dashboard() {
   const active = all.filter((o) => o.state === "active").length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
+      <PageTitle
+        title="Dashboard"
+        description="Organizations, the products they are entitled to, and every change made to either."
+      />
+
       <ErrorNote error={orgs.error ?? products.error ?? audit.error} />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Card title="Organizations">
-          <p className="text-3xl font-semibold">{all.length}</p>
-          <p className="text-sm text-slate-500">
+        <Stat>
+          <StatLabel>Organizations</StatLabel>
+          <StatValue>{all.length}</StatValue>
+          <StatMeta>
             {active} active · {all.length - active} inactive
-          </p>
-        </Card>
-        <Card title="Products">
-          <p className="text-3xl font-semibold">{products.data?.products.length ?? 0}</p>
-          <p className="text-sm text-slate-500">onboarded projects</p>
-        </Card>
-        <Card title="Recent activity">
-          <p className="text-3xl font-semibold">{audit.data?.events.length ?? 0}</p>
-          <p className="text-sm text-slate-500">events in the last page of the ledger</p>
-        </Card>
+          </StatMeta>
+        </Stat>
+        <Stat>
+          <StatLabel>Products</StatLabel>
+          <StatValue>{products.data?.products.length ?? 0}</StatValue>
+          <StatMeta>onboarded projects</StatMeta>
+        </Stat>
+        <Stat>
+          <StatLabel>Recent activity</StatLabel>
+          <StatValue>{audit.data?.events.length ?? 0}</StatValue>
+          <StatMeta>events in the last page of the ledger</StatMeta>
+        </Stat>
       </div>
 
       <Card
         title="Products"
         action={
-          <Link href="/products/new" className="text-sm text-slate-600 hover:text-slate-900">
+          <Link href="/products/new" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
             New product
           </Link>
         }
       >
         {products.data?.products.length ? (
-          <ul className="divide-y divide-slate-100">
+          <ul className="divide-y divide-border">
             {products.data.products.map((p) => (
               <li key={p.key} className="flex items-center justify-between py-2">
                 <div>
                   <Link href={`/products`} className="text-sm font-medium">
                     {p.displayName}
                   </Link>
-                  <p className="text-xs text-slate-500">{p.key}</p>
+                  <p className="text-xs text-muted-foreground">{p.key}</p>
                 </div>
                 <div className="flex gap-2">
                   <Badge tone="muted">{p.identity}</Badge>
@@ -73,7 +82,7 @@ export default function Dashboard() {
       <Card
         title="Last 20 audit events"
         action={
-          <Link href="/audit" className="text-sm text-slate-600 hover:text-slate-900">
+          <Link href="/audit" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
             All events
           </Link>
         }

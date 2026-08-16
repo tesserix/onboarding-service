@@ -135,7 +135,7 @@ export default function NewOrgPage() {
                 }
               />
               <span>{product.displayName}</span>
-              <span className="font-mono text-xs text-slate-500">{product.key}</span>
+              <span className="font-mono text-xs text-muted-foreground">{product.key}</span>
             </label>
           ))}
         </div>

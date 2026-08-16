@@ -45,18 +45,18 @@ export default function OrgPage({ params }: { params: Promise<{ id: string }> })
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold">{org.data?.name ?? "…"}</h1>
-          <p className="font-mono text-xs text-slate-500">tenant {id}</p>
+          <p className="font-mono text-xs text-muted-foreground">tenant {id}</p>
         </div>
         {org.data && <Badge tone={org.data.state === "active" ? "ok" : "muted"}>{org.data.state}</Badge>}
       </div>
 
-      <nav className="flex gap-2 border-b border-slate-200 pb-2">
+      <nav className="flex gap-2 border-b border-border pb-2">
         {tabs.map((name) => (
           <button
             key={name}
             onClick={() => setTab(name)}
             className={`rounded-md px-3 py-1 text-sm ${
-              tab === name ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
+              tab === name ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
             }`}
           >
             {name}
@@ -98,8 +98,8 @@ function Overview({ org, onAct }: { org: Organization; onAct: (run: () => Promis
       <Card title="Details">
         <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
           {fields.map(([label, value]) => (
-            <div key={label} className="flex justify-between border-b border-slate-100 py-1">
-              <dt className="text-slate-500">{label}</dt>
+            <div key={label} className="flex justify-between border-b border-border py-1">
+              <dt className="text-muted-foreground">{label}</dt>
               <dd className="font-mono text-xs">{value === undefined || value === "" ? "—" : value}</dd>
             </div>
           ))}
@@ -146,12 +146,12 @@ function Products({ orgId, onAct }: { orgId: string; onAct: Act }) {
     <div className="space-y-4">
       <Card title="Grants">
         {grants.data?.grants.length ? (
-          <ul className="divide-y divide-slate-100">
+          <ul className="divide-y divide-border">
             {grants.data.grants.map((grant) => (
               <li key={grant.productKey} className="flex items-center justify-between py-2 text-sm">
                 <div>
                   <span className="font-medium">{grant.productKey}</span>
-                  <span className="ml-2 font-mono text-xs text-slate-500">{grant.roles.join(", ")}</span>
+                  <span className="ml-2 font-mono text-xs text-muted-foreground">{grant.roles.join(", ")}</span>
                 </div>
                 {grant.revokedAt ? (
                   <Badge tone="muted">revoked</Badge>
@@ -214,7 +214,7 @@ function Domains({ orgId, onAct }: { orgId: string; onAct: Act }) {
     <div className="space-y-4">
       <Card title="Domains">
         {domains.data?.domains.length ? (
-          <ul className="divide-y divide-slate-100">
+          <ul className="divide-y divide-border">
             {domains.data.domains.map((d) => (
               <li key={d.domain} className="space-y-2 py-3 text-sm">
                 <div className="flex items-center justify-between">
@@ -226,7 +226,7 @@ function Domains({ orgId, onAct }: { orgId: string; onAct: Act }) {
                   />
                 </div>
                 {d.challengeValue && d.state !== "verified" && (
-                  <pre className="overflow-x-auto rounded-md bg-slate-900 p-2 text-xs text-slate-100">
+                  <pre className="overflow-x-auto rounded-md bg-foreground p-2 text-xs text-background">
                     {d.challengeType} {d.domain} {d.challengeValue}
                   </pre>
                 )}
@@ -314,14 +314,14 @@ function IDPs({ orgId, onAct }: { orgId: string; onAct: Act }) {
     <div className="space-y-4">
       <Card title="Identity providers">
         {idps.data?.idps.length ? (
-          <ul className="divide-y divide-slate-100">
+          <ul className="divide-y divide-border">
             {idps.data.idps.map((idp) => (
               <li key={idp.id} className="flex items-center justify-between py-2 text-sm">
                 <div>
                   <span className="font-medium">{idp.displayName}</span>
-                  <span className="ml-2 font-mono text-xs text-slate-500">{idp.type}</span>
+                  <span className="ml-2 font-mono text-xs text-muted-foreground">{idp.type}</span>
                   {idp.autoRegister && (
-                    <span className="ml-2 text-xs text-slate-500">auto-registers new users</span>
+                    <span className="ml-2 text-xs text-muted-foreground">auto-registers new users</span>
                   )}
                 </div>
                 <ConfirmDestructive
@@ -455,12 +455,12 @@ function Members({ orgId, onAct }: { orgId: string; onAct: Act }) {
     <div className="space-y-4">
       <Card title="Members">
         {members.data?.members.length ? (
-          <ul className="divide-y divide-slate-100">
+          <ul className="divide-y divide-border">
             {members.data.members.map((member) => (
               <li key={member.userId} className="flex items-center justify-between py-2 text-sm">
                 <div>
                   <span className="font-medium">{member.displayName || member.email || member.userId}</span>
-                  <span className="ml-2 font-mono text-xs text-slate-500">{member.roles.join(", ")}</span>
+                  <span className="ml-2 font-mono text-xs text-muted-foreground">{member.roles.join(", ")}</span>
                 </div>
                 <ConfirmDestructive
                   what={`Removing ${member.email || member.userId} ends their access to this organization.`}

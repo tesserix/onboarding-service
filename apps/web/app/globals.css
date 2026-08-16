@@ -1,9 +1,10 @@
-@import "tailwindcss";
+@import "@tesserix/web/styles";
+@import "@tesserix/web/tailwind-source";
 
 :root {
   color-scheme: light;
 }
 
 body {
-  @apply bg-slate-50 text-slate-900 antialiased;
+  @apply bg-background text-foreground antialiased;
 }

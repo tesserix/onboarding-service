@@ -107,7 +107,7 @@ export default function NewProductPage() {
           <li
             key={label}
             className={`rounded-full px-3 py-1 ${
-              index === step ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"
+              index === step ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
             }`}
           >
             {index + 1}. {label}
@@ -225,8 +225,8 @@ export default function NewProductPage() {
         <Card title="Review">
           <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
             {Object.entries({ ...form, hosts: hosts.join(", "), roles: roles.join(", ") }).map(([key, value]) => (
-              <div key={key} className="flex justify-between border-b border-slate-100 py-1">
-                <dt className="text-slate-500">{key}</dt>
+              <div key={key} className="flex justify-between border-b border-border py-1">
+                <dt className="text-muted-foreground">{key}</dt>
                 <dd className="font-mono text-xs">{value || "—"}</dd>
               </div>
             ))}
@@ -243,7 +243,7 @@ export default function NewProductPage() {
       {step === 3 && created && (
         <div className="space-y-4">
           <Card title={`${created.displayName} is live`}>
-            <p className="text-sm text-slate-600">
+            <p className="text-sm text-muted-foreground">
               The objects exist. Raise a PR with the snippets below so a rebuilt cluster reproduces them.
             </p>
           </Card>
@@ -254,8 +254,8 @@ export default function NewProductPage() {
               title={snippet.title}
               action={<CopyButton value={snippet.body} label="Copy" />}
             >
-              <p className="mb-2 font-mono text-xs text-slate-500">{snippet.path}</p>
-              <pre className="overflow-x-auto rounded-md bg-slate-900 p-3 text-xs text-slate-100">
+              <p className="mb-2 font-mono text-xs text-muted-foreground">{snippet.path}</p>
+              <pre className="overflow-x-auto rounded-md bg-foreground p-3 text-xs text-background">
                 {snippet.body}
               </pre>
             </Card>
@@ -263,7 +263,7 @@ export default function NewProductPage() {
 
           <Card title="Git">
             {acked ? (
-              <p className="text-sm text-emerald-700">
+              <p className="text-sm text-emerald-600">
                 Recorded in the audit ledger. <Link href="/products">Back to products</Link>
               </p>
             ) : (

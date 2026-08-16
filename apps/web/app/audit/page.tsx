@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 import { AuditTable } from "@/components/AuditTable";
-import { Card, ErrorNote, inputClass } from "@/components/ui";
+import { Card, ErrorNote, inputClass, PageTitle } from "@/components/ui";
 import { useApi } from "@/lib/useApi";
 import type { AuditEvent } from "@/lib/types";
 
@@ -16,7 +16,8 @@ export default function AuditPage() {
   const { data, error } = useApi<{ events: AuditEvent[] }>(`/v1/audit${query ? `?${query}` : ""}`);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
+      <PageTitle title="Audit" description="The append-only ledger: who changed what, when, and from which request." />
       <ErrorNote error={error} />
       <Card title="Filter">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
