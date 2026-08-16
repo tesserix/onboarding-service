@@ -6,6 +6,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -235,6 +236,31 @@ func TestAuditAppendChainsToThePreviousEvent(t *testing.T) {
 		}); err != nil {
 			t.Fatalf("append %s: %v", action, err)
 		}
+	}
+
+	chain, err := s.AuditChain(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := audit.Verify(chain); err != nil {
+		t.Fatalf("ledger does not verify: %v", err)
+	}
+}
+
+// timestamptz keeps microseconds, so an event hashed at nanosecond precision
+// reads back as a different event and the ledger stops verifying. Linux clocks
+// hand out nanoseconds; macOS ones do not, which is why this needs a test
+// rather than a run.
+func TestLedgerVerifiesWhenTheClockHasNanosecondPrecision(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+
+	occurred := time.Date(2026, 8, 16, 1, 2, 3, 123456789, time.UTC)
+	if err := s.AppendAudit(ctx, audit.Event{
+		OccurredAt: occurred, ActorType: audit.ActorPlatform, ActorID: "sam",
+		Action: "org.create", Outcome: audit.OutcomeSuccess, RequestID: uuid.NewString(),
+	}); err != nil {
+		t.Fatal(err)
 	}
 
 	chain, err := s.AuditChain(ctx)

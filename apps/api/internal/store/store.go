@@ -361,8 +361,11 @@ func (s *Store) AppendAudit(ctx context.Context, e audit.Event) error {
 
 		e.PrevHash = prev
 		if e.OccurredAt.IsZero() {
-			e.OccurredAt = time.Now().UTC()
+			e.OccurredAt = time.Now()
 		}
+		// timestamptz keeps microseconds, so an event hashed with nanoseconds
+		// reads back as a different event and the chain stops verifying.
+		e.OccurredAt = e.OccurredAt.UTC().Truncate(time.Microsecond)
 		if e.Detail == "" {
 			e.Detail = "{}"
 		}
