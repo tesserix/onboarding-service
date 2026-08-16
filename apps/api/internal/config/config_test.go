@@ -53,7 +53,9 @@ func TestLoadDerivedURLsDoNotDoubleSlash(t *testing.T) {
 }
 
 func TestLoadRejectsMissingSecrets(t *testing.T) {
-	for _, name := range []string{"DATABASE_URL", "ZITADEL_PAT", "PLATFORM_ORG_ID", "SESSION_KEY"} {
+	// PLATFORM_ORG_ID is deliberately absent: it is resolved from the org name
+	// at boot, so requiring it here would re-introduce the hand-copied value.
+	for _, name := range []string{"DATABASE_URL", "ZITADEL_PAT", "SESSION_KEY"} {
 		t.Run(name, func(t *testing.T) {
 			setRequired(t)
 			t.Setenv(name, "")
@@ -113,5 +115,57 @@ func TestPoolSize(t *testing.T) {
 	t.Setenv("DB_MAX_CONNS", "25")
 	if got := cfg.PoolSize(); got != 25 {
 		t.Errorf("PoolSize() = %d, want 25", got)
+	}
+}
+
+// The machine key is the credential this service is meant to use: it is
+// short-lived, scoped, and revocable by deleting the key in Zitadel. The PAT is
+// instance-wide and cannot be any of those, so it is only accepted alone.
+func TestLoadRequiresExactlyOneZitadelCredential(t *testing.T) {
+	for name, setup := range map[string]func(*testing.T){
+		"neither": func(t *testing.T) {
+			t.Setenv("ZITADEL_PAT", "")
+			t.Setenv("ZITADEL_MACHINE_KEY", "")
+		},
+		"both": func(t *testing.T) {
+			t.Setenv("ZITADEL_PAT", "pat-token")
+			t.Setenv("ZITADEL_MACHINE_KEY", `{"keyId":"k"}`)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			setRequired(t)
+			setup(t)
+			if _, err := Load(); err == nil {
+				t.Fatal("a service with no single Zitadel credential started")
+			}
+		})
+	}
+
+	t.Run("machine key alone", func(t *testing.T) {
+		setRequired(t)
+		t.Setenv("ZITADEL_PAT", "")
+		t.Setenv("ZITADEL_MACHINE_KEY", `{"keyId":"k"}`)
+		cfg, err := Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.ZitadelMachineKey != `{"keyId":"k"}` {
+			t.Fatalf("machine key not read: %q", cfg.ZitadelMachineKey)
+		}
+	})
+}
+
+// A hand-copied org id is stale the moment the org is recreated, so the name is
+// what is configured and the id is resolved from it at boot.
+func TestPlatformOrgIsNamedNotNumbered(t *testing.T) {
+	setRequired(t)
+	t.Setenv("PLATFORM_ORG_ID", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("an empty PLATFORM_ORG_ID must be resolvable from the name: %v", err)
+	}
+	if cfg.PlatformOrgName != "TESSERIX" {
+		t.Fatalf("platform org name = %q, want TESSERIX", cfg.PlatformOrgName)
 	}
 }

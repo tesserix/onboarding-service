@@ -12,12 +12,16 @@ import (
 )
 
 type Config struct {
-	Port            string
-	DatabaseURL     string
-	ZitadelIssuer   string
-	ZitadelJWKSURL  string
-	ZitadelPAT      string
+	Port              string
+	DatabaseURL       string
+	ZitadelIssuer     string
+	ZitadelJWKSURL    string
+	ZitadelPAT        string
+	ZitadelMachineKey string
+	// PlatformOrgID is optional: an empty value is resolved from
+	// PlatformOrgName at boot.
 	PlatformOrgID   string
+	PlatformOrgName string
 	Audience        string
 	ConsoleClientID string
 	ConsoleURL      string
@@ -29,16 +33,18 @@ type Config struct {
 
 func Load() (Config, error) {
 	c := Config{
-		Port:            env("PORT", "8080"),
-		DatabaseURL:     os.Getenv("DATABASE_URL"),
-		ZitadelIssuer:   env("ZITADEL_ISSUER", "https://auth.tesserix.app"),
-		ZitadelPAT:      os.Getenv("ZITADEL_PAT"),
-		PlatformOrgID:   os.Getenv("PLATFORM_ORG_ID"),
-		Audience:        env("TOKEN_AUDIENCE", "onboarding-api"),
-		ConsoleClientID: os.Getenv("CONSOLE_CLIENT_ID"),
-		ConsoleURL:      env("CONSOLE_URL", "https://onboard.tesserix.app"),
-		SecureCookies:   env("SECURE_COOKIES", "true") == "true",
-		ShutdownGrace:   20 * time.Second,
+		Port:              env("PORT", "8080"),
+		DatabaseURL:       os.Getenv("DATABASE_URL"),
+		ZitadelIssuer:     env("ZITADEL_ISSUER", "https://auth.tesserix.app"),
+		ZitadelPAT:        os.Getenv("ZITADEL_PAT"),
+		ZitadelMachineKey: os.Getenv("ZITADEL_MACHINE_KEY"),
+		PlatformOrgID:     os.Getenv("PLATFORM_ORG_ID"),
+		PlatformOrgName:   env("PLATFORM_ORG_NAME", "TESSERIX"),
+		Audience:          env("TOKEN_AUDIENCE", "onboarding-api"),
+		ConsoleClientID:   os.Getenv("CONSOLE_CLIENT_ID"),
+		ConsoleURL:        env("CONSOLE_URL", "https://onboard.tesserix.app"),
+		SecureCookies:     env("SECURE_COOKIES", "true") == "true",
+		ShutdownGrace:     20 * time.Second,
 	}
 	c.ZitadelJWKSURL = env("ZITADEL_JWKS_URL", strings.TrimSuffix(c.ZitadelIssuer, "/")+"/oauth/v2/keys")
 	c.RedirectURI = env("OIDC_REDIRECT_URI", strings.TrimSuffix(c.ConsoleURL, "/")+"/api/auth/callback")
@@ -49,14 +55,16 @@ func Load() (Config, error) {
 	}
 	c.SessionKey = key
 
-	for name, value := range map[string]string{
-		"DATABASE_URL":    c.DatabaseURL,
-		"ZITADEL_PAT":     c.ZitadelPAT,
-		"PLATFORM_ORG_ID": c.PlatformOrgID,
-	} {
-		if value == "" {
-			return Config{}, fmt.Errorf("%s is required", name)
-		}
+	if c.DatabaseURL == "" {
+		return Config{}, fmt.Errorf("DATABASE_URL is required")
+	}
+	// Two credentials configured is worse than none: which one is in use stops
+	// being knowable from the manifest.
+	if (c.ZitadelPAT == "") == (c.ZitadelMachineKey == "") {
+		return Config{}, fmt.Errorf("set exactly one of ZITADEL_MACHINE_KEY or ZITADEL_PAT")
+	}
+	if c.PlatformOrgName == "" {
+		return Config{}, fmt.Errorf("PLATFORM_ORG_NAME is required")
 	}
 	return c, nil
 }

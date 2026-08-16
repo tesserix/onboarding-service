@@ -19,19 +19,19 @@ import (
 
 type Client struct {
 	base     string
-	token    string
+	tokens   TokenSource
 	adminOrg string // TESSERIX — the org that owns every product project
 	http     *http.Client
 	log      *slog.Logger
 }
 
-func New(baseURL, token, adminOrgID string, log *slog.Logger) *Client {
+func New(baseURL string, tokens TokenSource, adminOrgID string, log *slog.Logger) *Client {
 	if log == nil {
 		log = slog.Default()
 	}
 	return &Client{
 		base:     strings.TrimSuffix(baseURL, "/"),
-		token:    token,
+		tokens:   tokens,
 		adminOrg: adminOrgID,
 		http:     &http.Client{Timeout: 20 * time.Second},
 		log:      log,
@@ -58,11 +58,15 @@ func (c *Client) do(ctx context.Context, method, path, orgID string, in, out any
 		}
 		body = bytes.NewReader(encoded)
 	}
+	token, err := c.tokens.Token(ctx)
+	if err != nil {
+		return fmt.Errorf("zitadel: %s %s: %w", method, path, err)
+	}
 	req, err := http.NewRequestWithContext(ctx, method, c.base+path, body)
 	if err != nil {
 		return fmt.Errorf("zitadel: build %s %s: %w", method, path, err)
 	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 	if orgID != "" {
 		req.Header.Set("x-zitadel-orgid", orgID)
@@ -84,6 +88,33 @@ func (c *Client) do(ctx context.Context, method, path, orgID string, in, out any
 		}
 	}
 	return nil
+}
+
+// ResolveOrgByName turns the platform org's name into its id at boot. Anything
+// but exactly one match is an error: a wrong id here would scope every
+// management call to the wrong tenant, and silently.
+func (c *Client) ResolveOrgByName(ctx context.Context, name string) (string, error) {
+	var out struct {
+		Result []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"result"`
+	}
+	query := map[string]any{
+		"queries": []map[string]any{
+			{"nameQuery": map[string]any{"name": name, "method": "TEXT_QUERY_METHOD_EQUALS"}},
+		},
+	}
+	if err := c.do(ctx, http.MethodPost, "/admin/v1/orgs/_search", "", query, &out); err != nil {
+		return "", err
+	}
+	// The query asks for an exact match, so more than one result means it did
+	// not behave as asked — picking the first would be a guess.
+	if len(out.Result) != 1 || out.Result[0].Name != name {
+		return "", fmt.Errorf("zitadel: search for organization %q returned %d results, want exactly one exact match",
+			name, len(out.Result))
+	}
+	return out.Result[0].ID, nil
 }
 
 func (c *Client) CreateOrg(ctx context.Context, name string) (string, error) {

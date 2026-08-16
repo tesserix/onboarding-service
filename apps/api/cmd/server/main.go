@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -53,9 +54,23 @@ func run(log *slog.Logger) error {
 	defer pool.Close()
 
 	st := store.New(pool)
-	identity := onboarding.ZitadelIdentity{
-		Client: zitadel.New(cfg.ZitadelIssuer, cfg.ZitadelPAT, cfg.PlatformOrgID, log),
+	tokens, err := zitadelTokens(cfg, log)
+	if err != nil {
+		return err
 	}
+	client := zitadel.New(cfg.ZitadelIssuer, tokens, cfg.PlatformOrgID, log)
+
+	platformOrgID := cfg.PlatformOrgID
+	if platformOrgID == "" {
+		if platformOrgID, err = client.ResolveOrgByName(ctx, cfg.PlatformOrgName); err != nil {
+			return err
+		}
+		// Every management call is scoped by this id, so it is worth one log line.
+		log.Info("resolved platform organization", "name", cfg.PlatformOrgName, "id", platformOrgID)
+		client = zitadel.New(cfg.ZitadelIssuer, tokens, platformOrgID, log)
+	}
+
+	identity := onboarding.ZitadelIdentity{Client: client}
 	svc := onboarding.New(st, identity, authz.New(st), log)
 
 	verifier, err := auth.NewJWKSVerifier(ctx, cfg.ZitadelIssuer, cfg.ZitadelJWKSURL, cfg.Audience, http.DefaultClient)
@@ -73,7 +88,7 @@ func run(log *slog.Logger) error {
 		OIDC: &auth.OIDCClient{
 			Issuer: cfg.ZitadelIssuer, ClientID: cfg.ConsoleClientID, RedirectURI: cfg.RedirectURI,
 		},
-		PlatformOrgID: cfg.PlatformOrgID, ConsoleURL: cfg.ConsoleURL,
+		PlatformOrgID: platformOrgID, ConsoleURL: cfg.ConsoleURL,
 		SecureCookies: cfg.SecureCookies, Log: log,
 	})
 
@@ -105,6 +120,17 @@ func run(log *slog.Logger) error {
 	shutdown, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.ShutdownGrace)
 	defer cancel()
 	return srv.Shutdown(shutdown)
+}
+
+// The machine key is the credential this service is meant to run on; the PAT is
+// break-glass only, since it is instance-wide and cannot expire.
+func zitadelTokens(cfg config.Config, log *slog.Logger) (zitadel.TokenSource, error) {
+	if cfg.ZitadelMachineKey == "" {
+		log.Warn("using a personal access token for Zitadel; this credential is instance-wide")
+		return zitadel.StaticToken(cfg.ZitadelPAT), nil
+	}
+	tokenURL := strings.TrimSuffix(cfg.ZitadelIssuer, "/") + "/oauth/v2/token"
+	return zitadel.NewKeyTokenSource([]byte(cfg.ZitadelMachineKey), cfg.ZitadelIssuer, tokenURL, log)
 }
 
 // Idempotency keys are a replay window, not a record; the ledger is the record.

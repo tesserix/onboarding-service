@@ -66,7 +66,7 @@ func (r *recorder) find(method, pathSuffix string) *call {
 
 func newClient(t *testing.T, rec *recorder) *Client {
 	t.Helper()
-	return New(rec.serve(t).URL, "test-pat", "TESSERIX-ORG-ID", nil)
+	return New(rec.serve(t).URL, StaticToken("test-pat"), "TESSERIX-ORG-ID", nil)
 }
 
 func TestCreateOrgReturnsTheOrgID(t *testing.T) {
@@ -231,5 +231,42 @@ func TestIDPSpecRedactsItsSecret(t *testing.T) {
 	spec := IDPSpec{Type: "oidc", Name: "Okta", ClientSecret: "super-secret-value"}
 	if strings.Contains(spec.String(), "super-secret-value") {
 		t.Fatalf("secret rendered in String(): %s", spec.String())
+	}
+}
+
+// The platform org id is resolved from its name at boot, so no environment
+// carries a hand-copied numeric id that would silently scope every call to the
+// wrong tenant if it were stale.
+func TestResolveOrgByNameReturnsTheOneExactMatch(t *testing.T) {
+	rec := newRecorder()
+	rec.replies["/admin/v1/orgs/_search"] = map[string]any{
+		"result": []map[string]any{{"id": "org-tesserix", "name": "TESSERIX"}},
+	}
+	c := newClient(t, rec)
+
+	id, err := c.ResolveOrgByName(context.Background(), "TESSERIX")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != "org-tesserix" {
+		t.Fatalf("want org-tesserix, got %q", id)
+	}
+}
+
+func TestResolveOrgByNameRefusesAnythingButOneMatch(t *testing.T) {
+	for name, result := range map[string][]map[string]any{
+		"none": {},
+		"two": {
+			{"id": "org-a", "name": "TESSERIX"},
+			{"id": "org-b", "name": "TESSERIX Labs"},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := newRecorder()
+			rec.replies["/admin/v1/orgs/_search"] = map[string]any{"result": result}
+			if id, err := newClient(t, rec).ResolveOrgByName(context.Background(), "TESSERIX"); err == nil {
+				t.Fatalf("an ambiguous lookup resolved to %q", id)
+			}
+		})
 	}
 }
