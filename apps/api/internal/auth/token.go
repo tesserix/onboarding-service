@@ -17,11 +17,13 @@ import (
 var ErrInvalidToken = errors.New("invalid token")
 
 type Claims struct {
-	Subject   string
-	Email     string
-	OrgID     string
-	Roles     []string
-	ExpiresAt time.Time
+	Subject       string
+	Email         string
+	EmailVerified bool
+	Nonce         string
+	OrgID         string
+	Roles         []string
+	ExpiresAt     time.Time
 }
 
 type Verifier struct {
@@ -81,6 +83,12 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Claims, error) {
 	claims := Claims{Subject: subject, ExpiresAt: expiry.Time}
 	if email, ok := mapped["email"].(string); ok {
 		claims.Email = email
+	}
+	if verified, ok := mapped["email_verified"].(bool); ok {
+		claims.EmailVerified = verified
+	}
+	if nonce, ok := mapped["nonce"].(string); ok {
+		claims.Nonce = nonce
 	}
 	// Zitadel namespaces its own claims; the org is the one the user acted in.
 	if org, ok := mapped["urn:zitadel:iam:user:resourceowner:id"].(string); ok {

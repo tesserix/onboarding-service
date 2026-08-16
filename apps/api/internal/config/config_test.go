@@ -12,6 +12,9 @@ func setRequired(t *testing.T) {
 	t.Setenv("ZITADEL_PAT", "pat-token")
 	t.Setenv("PLATFORM_ORG_ID", "999")
 	t.Setenv("SESSION_KEY", base64.StdEncoding.EncodeToString(make([]byte, 32)))
+	t.Setenv("GOOGLE_CLIENT_ID", "client-1.apps.googleusercontent.com")
+	t.Setenv("GOOGLE_CLIENT_SECRET", "client-secret")
+	t.Setenv("PLATFORM_ADMIN_EMAILS", "first@example.test")
 }
 
 func TestLoadDerivesJWKSAndRedirectFromDefaults(t *testing.T) {
@@ -167,5 +170,46 @@ func TestPlatformOrgIsNamedNotNumbered(t *testing.T) {
 	}
 	if cfg.PlatformOrgName != "TESSERIX" {
 		t.Fatalf("platform org name = %q, want TESSERIX", cfg.PlatformOrgName)
+	}
+}
+
+func TestLoadRequiresTheConsoleSignInSettings(t *testing.T) {
+	for _, name := range []string{"GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "PLATFORM_ADMIN_EMAILS"} {
+		t.Run(name, func(t *testing.T) {
+			setRequired(t)
+			t.Setenv(name, "")
+
+			_, err := Load()
+			if err == nil {
+				t.Fatalf("Load succeeded without %s", name)
+			}
+			if !strings.Contains(err.Error(), name) {
+				t.Errorf("error %q does not name %s", err, name)
+			}
+		})
+	}
+}
+
+// An allowlist of only blanks parses to nothing, which would leave the console
+// with no admins at all — that is a misconfiguration, not an empty list.
+func TestLoadRejectsAnAllowlistThatNamesNobody(t *testing.T) {
+	setRequired(t)
+	t.Setenv("PLATFORM_ADMIN_EMAILS", " , ,")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load accepted an allowlist with no addresses on it")
+	}
+}
+
+func TestLoadKeepsTheAllowlistVerbatim(t *testing.T) {
+	setRequired(t)
+	t.Setenv("PLATFORM_ADMIN_EMAILS", "one@example.test, two@example.test")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PlatformAdminEmails != "one@example.test, two@example.test" {
+		t.Fatalf("allowlist = %q", cfg.PlatformAdminEmails)
 	}
 }

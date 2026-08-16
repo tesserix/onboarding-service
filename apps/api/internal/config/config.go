@@ -23,28 +23,34 @@ type Config struct {
 	PlatformOrgID   string
 	PlatformOrgName string
 	Audience        string
-	ConsoleClientID string
-	ConsoleURL      string
-	RedirectURI     string
-	SessionKey      []byte
-	SecureCookies   bool
-	ShutdownGrace   time.Duration
+	// Console humans sign in with Google; PlatformAdminEmails is the
+	// comma-separated list of who may hold a session, set from the chart.
+	GoogleClientID      string
+	GoogleClientSecret  string
+	PlatformAdminEmails string
+	ConsoleURL          string
+	RedirectURI         string
+	SessionKey          []byte
+	SecureCookies       bool
+	ShutdownGrace       time.Duration
 }
 
 func Load() (Config, error) {
 	c := Config{
-		Port:              env("PORT", "8080"),
-		DatabaseURL:       os.Getenv("DATABASE_URL"),
-		ZitadelIssuer:     env("ZITADEL_ISSUER", "https://auth.tesserix.app"),
-		ZitadelPAT:        os.Getenv("ZITADEL_PAT"),
-		ZitadelMachineKey: os.Getenv("ZITADEL_MACHINE_KEY"),
-		PlatformOrgID:     os.Getenv("PLATFORM_ORG_ID"),
-		PlatformOrgName:   env("PLATFORM_ORG_NAME", "TESSERIX"),
-		Audience:          env("TOKEN_AUDIENCE", "onboarding-api"),
-		ConsoleClientID:   os.Getenv("CONSOLE_CLIENT_ID"),
-		ConsoleURL:        env("CONSOLE_URL", "https://onboard.tesserix.app"),
-		SecureCookies:     env("SECURE_COOKIES", "true") == "true",
-		ShutdownGrace:     20 * time.Second,
+		Port:                env("PORT", "8080"),
+		DatabaseURL:         os.Getenv("DATABASE_URL"),
+		ZitadelIssuer:       env("ZITADEL_ISSUER", "https://auth.tesserix.app"),
+		ZitadelPAT:          os.Getenv("ZITADEL_PAT"),
+		ZitadelMachineKey:   os.Getenv("ZITADEL_MACHINE_KEY"),
+		PlatformOrgID:       os.Getenv("PLATFORM_ORG_ID"),
+		PlatformOrgName:     env("PLATFORM_ORG_NAME", "TESSERIX"),
+		Audience:            env("TOKEN_AUDIENCE", "onboarding-api"),
+		GoogleClientID:      os.Getenv("GOOGLE_CLIENT_ID"),
+		GoogleClientSecret:  os.Getenv("GOOGLE_CLIENT_SECRET"),
+		PlatformAdminEmails: os.Getenv("PLATFORM_ADMIN_EMAILS"),
+		ConsoleURL:          env("CONSOLE_URL", "https://onboard.tesserix.app"),
+		SecureCookies:       env("SECURE_COOKIES", "true") == "true",
+		ShutdownGrace:       20 * time.Second,
 	}
 	c.ZitadelJWKSURL = env("ZITADEL_JWKS_URL", strings.TrimSuffix(c.ZitadelIssuer, "/")+"/oauth/v2/keys")
 	c.RedirectURI = env("OIDC_REDIRECT_URI", strings.TrimSuffix(c.ConsoleURL, "/")+"/api/auth/callback")
@@ -65,6 +71,17 @@ func Load() (Config, error) {
 	}
 	if c.PlatformOrgName == "" {
 		return Config{}, fmt.Errorf("PLATFORM_ORG_NAME is required")
+	}
+	if c.GoogleClientID == "" {
+		return Config{}, fmt.Errorf("GOOGLE_CLIENT_ID is required")
+	}
+	if c.GoogleClientSecret == "" {
+		return Config{}, fmt.Errorf("GOOGLE_CLIENT_SECRET is required")
+	}
+	// A console nobody may sign in to is a misconfiguration; refuse to start
+	// rather than serve a door with no key.
+	if strings.Trim(c.PlatformAdminEmails, ", ") == "" {
+		return Config{}, fmt.Errorf("PLATFORM_ADMIN_EMAILS is required and must name at least one address")
 	}
 	return c, nil
 }

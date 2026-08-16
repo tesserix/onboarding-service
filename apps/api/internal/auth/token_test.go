@@ -134,3 +134,38 @@ func TestGarbageIsRejectedWithoutPanicking(t *testing.T) {
 		}
 	}
 }
+
+// A Google ID token replayed from another sign-in carries someone else's nonce,
+// and an unverified address proves nothing about who holds the mailbox. Both
+// have to survive verification for the caller to be able to check them.
+func TestVerifyCarriesTheNonceAndTheEmailVerifiedFlag(t *testing.T) {
+	s := newSigner(t)
+	claims := validClaims()
+	claims["nonce"] = "nonce-1"
+	claims["email_verified"] = true
+
+	got, err := newVerifier(s).Verify(context.Background(), s.sign(t, jwt.SigningMethodRS256, claims))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Nonce != "nonce-1" {
+		t.Errorf("nonce %q, want nonce-1", got.Nonce)
+	}
+	if !got.EmailVerified {
+		t.Error("email_verified true was dropped")
+	}
+}
+
+func TestVerifyReportsAnUnverifiedEmail(t *testing.T) {
+	s := newSigner(t)
+	claims := validClaims()
+	claims["email_verified"] = false
+
+	got, err := newVerifier(s).Verify(context.Background(), s.sign(t, jwt.SigningMethodRS256, claims))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.EmailVerified {
+		t.Fatal("an unverified address was reported as verified")
+	}
+}

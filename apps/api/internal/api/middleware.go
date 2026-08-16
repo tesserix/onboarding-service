@@ -128,6 +128,12 @@ func (d Deps) authenticate() gin.HandlerFunc {
 			abort(c, http.StatusUnauthorized, "authentication required")
 			return
 		}
+		// Re-checked per request, not just at sign-in: taking someone off the
+		// allowlist must end their access now, not in eight hours.
+		if !d.Allowlist.Allows(session.Email) {
+			abort(c, http.StatusUnauthorized, "authentication required")
+			return
+		}
 		if isUnsafe(c.Request.Method) && !auth.SameCSRF(session.CSRF, c.GetHeader("X-CSRF-Token")) {
 			abort(c, http.StatusForbidden, "missing or invalid CSRF token")
 			return
