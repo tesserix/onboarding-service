@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { Button, Card, ErrorNote, Field, inputClass } from "@/components/ui";
+import { Button, Card, ErrorNote, Field, WarningNote, inputClass } from "@/components/ui";
 import { apiFetch, newIdempotencyKey } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import type { Organization, Product } from "@/lib/types";
@@ -12,6 +12,8 @@ export default function NewOrgPage() {
   const router = useRouter();
   const products = useApi<{ products: Product[] }>("/v1/products");
   const [error, setError] = useState<string | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [createdID, setCreatedID] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     name: "",
@@ -36,7 +38,7 @@ export default function NewOrgPage() {
     setSaving(true);
     setError(null);
     try {
-      const org = await apiFetch<Organization>("/v1/orgs", {
+      const org = await apiFetch<Organization & { warnings?: string[] }>("/v1/orgs", {
         method: "POST",
         idempotencyKey: newIdempotencyKey(),
         body: {
@@ -52,6 +54,14 @@ export default function NewOrgPage() {
           externalRef: form.externalRef || undefined,
         },
       });
+      // Redirecting past a warning hides it — the org exists, but its owner or a
+      // grant does not, and only the operator can put that right.
+      if (org.warnings?.length) {
+        setWarnings(org.warnings);
+        setCreatedID(org.id);
+        setSaving(false);
+        return;
+      }
       router.push(`/orgs/${org.id}`);
     } catch (err) {
       setError((err as Error).message);
@@ -62,6 +72,12 @@ export default function NewOrgPage() {
   return (
     <div className="space-y-6">
       <ErrorNote error={error ?? products.error} />
+      <WarningNote warnings={warnings} />
+      {createdID && (
+        <Card title="Organization created, with gaps">
+          <Button onClick={() => router.push(`/orgs/${createdID}`)}>Open organization</Button>
+        </Card>
+      )}
       <Card title="New organization">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Name">

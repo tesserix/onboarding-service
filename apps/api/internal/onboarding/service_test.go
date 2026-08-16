@@ -73,6 +73,10 @@ func (f *fakeIdentity) SetOrgMetadata(_ context.Context, orgID, key, value strin
 	return nil
 }
 
+func (f *fakeIdentity) RemoveOrg(context.Context, string) error {
+	return f.record("RemoveOrg")
+}
+
 func (f *fakeIdentity) DeactivateOrg(context.Context, string) error {
 	return f.record("DeactivateOrg")
 }
@@ -209,6 +213,35 @@ func TestCreatingAnOrgWritesIdentityFirstThenTheProjection(t *testing.T) {
 	entitled, err := st.Entitled(ctx, org.ID.String(), "planning-poker")
 	if err != nil || !entitled {
 		t.Fatalf("projection not entitled: %v %v", entitled, err)
+	}
+}
+
+// The owner invite and the product grants happen after the org is real, so they
+// are not rolled back — but a plain 201 tells the operator everything worked
+// when in fact nobody can log in yet.
+func TestPartialFailuresAfterTheOrgExistsAreReportedToTheCaller(t *testing.T) {
+	for failAt, want := range map[string]string{
+		"CreateHumanUser": "cto@apollo.com",
+		"GrantProject":    "planning-poker",
+	} {
+		t.Run(failAt, func(t *testing.T) {
+			svc, id, st := newService(t)
+			seedProduct(t, st, "planning-poker")
+			id.failOn = failAt
+
+			org, err := svc.CreateOrganization(context.Background(), platform(), CreateOrgInput{
+				Name: "Apollo", OwnerEmail: "cto@apollo.com", Products: []string{"planning-poker"},
+			})
+			if err != nil {
+				t.Fatalf("a post-creation failure must not fail the whole create: %v", err)
+			}
+			if len(org.Warnings) == 0 {
+				t.Fatalf("%s failed silently; caller was told the org is complete", failAt)
+			}
+			if !strings.Contains(strings.Join(org.Warnings, " "), want) {
+				t.Fatalf("warning does not say what is missing: %v", org.Warnings)
+			}
+		})
 	}
 }
 
@@ -478,6 +511,34 @@ func TestAFailedIdentityWriteLeavesNoProjectionRow(t *testing.T) {
 	}
 	if len(orgs) != 0 {
 		t.Fatalf("projection holds %d orgs that do not exist in the identity plane", len(orgs))
+	}
+}
+
+// Zitadel is written before the projection, so a failure after CreateOrg must
+// undo it. Without this the org exists in the identity plane with no tenant_id
+// and no row anywhere — invisible to the console and impossible to retry, since
+// the name is now taken.
+func TestAFailureAfterCreateOrgRemovesTheIdentityOrg(t *testing.T) {
+	for _, failAt := range []string{"SetOrgMetadata"} {
+		t.Run(failAt, func(t *testing.T) {
+			svc, id, st := newService(t)
+			ctx := context.Background()
+			id.failOn = failAt
+
+			if _, err := svc.CreateOrganization(ctx, platform(), CreateOrgInput{Name: "Apollo", OwnerEmail: "a@b.com"}); err == nil {
+				t.Fatal("org creation reported success while the identity plane failed")
+			}
+			if !id.did("RemoveOrg") {
+				t.Fatalf("identity org was left behind; calls: %v", id.calls)
+			}
+			orgs, err := st.Organizations(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(orgs) != 0 {
+				t.Fatalf("projection holds %d orgs", len(orgs))
+			}
+		})
 	}
 }
 

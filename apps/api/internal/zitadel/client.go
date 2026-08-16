@@ -127,6 +127,12 @@ func (c *Client) CreateOrg(ctx context.Context, name string) (string, error) {
 	return out.ID, nil
 }
 
+// RemoveOrg is only ever the compensation for a create that failed part-way.
+// Nothing routed from the console deletes an organization.
+func (c *Client) RemoveOrg(ctx context.Context, orgID string) error {
+	return c.do(ctx, http.MethodDelete, "/management/v1/orgs/me", orgID, nil, nil)
+}
+
 func (c *Client) DeactivateOrg(ctx context.Context, orgID string) error {
 	return c.do(ctx, http.MethodPost, "/management/v1/orgs/me/_deactivate", orgID, map[string]any{}, nil)
 }
@@ -137,8 +143,11 @@ func (c *Client) ReactivateOrg(ctx context.Context, orgID string) error {
 
 // SetOrgMetadata is how tenant_id reaches the token: org metadata is projected
 // into the claim by the Action, and the product reads it there.
+//
+// The path is /metadata/{key}, not /orgs/me/metadata/{key} as the neighbouring
+// org calls would suggest — here the org comes from the header alone.
 func (c *Client) SetOrgMetadata(ctx context.Context, orgID, key, value string) error {
-	return c.do(ctx, http.MethodPost, "/management/v1/orgs/me/metadata/"+key, orgID,
+	return c.do(ctx, http.MethodPost, "/management/v1/metadata/"+key, orgID,
 		map[string]any{"value": base64.StdEncoding.EncodeToString([]byte(value))}, nil)
 }
 

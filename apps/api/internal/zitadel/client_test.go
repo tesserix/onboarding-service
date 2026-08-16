@@ -106,6 +106,25 @@ func TestOrgScopedCallsCarryTheOrgHeader(t *testing.T) {
 	}
 }
 
+// SetOrgMetadata binds to /metadata/{key}, not /orgs/me/metadata/{key} — the
+// org comes from the header alone. The plausible-looking path returns 404 and
+// stranded a created org with no tenant_id.
+func TestSetOrgMetadataUsesTheProtoPath(t *testing.T) {
+	rec := newRecorder()
+	c := newClient(t, rec)
+
+	if err := c.SetOrgMetadata(context.Background(), "org-123", "tenant_id", "9d1f"); err != nil {
+		t.Fatal(err)
+	}
+	got := rec.find("POST", "/management/v1/metadata/tenant_id")
+	if got == nil {
+		t.Fatalf("metadata not set at the proto path; calls: %+v", rec.calls)
+	}
+	if want := "OWQxZg=="; got.body["value"] != want {
+		t.Fatalf("value not base64 bytes: got %v, want %s", got.body["value"], want)
+	}
+}
+
 // A project grant is issued by the org that OWNS the project (TESSERIX), not by
 // the org receiving it. Getting this backwards is a silent no-op.
 func TestGrantProjectIsScopedToTheOwningOrg(t *testing.T) {
