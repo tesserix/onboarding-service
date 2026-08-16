@@ -11,7 +11,7 @@ export function AuditTable({ events }: { events: AuditEvent[] }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
-        <thead className="text-xs uppercase tracking-wide text-slate-500">
+        <thead className="text-xs uppercase tracking-wide text-muted-foreground">
           <tr>
             <th className="py-2 pr-4">Seq</th>
             <th className="py-2 pr-4">When</th>
@@ -22,21 +22,21 @@ export function AuditTable({ events }: { events: AuditEvent[] }) {
             <th className="py-2">Request</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody className="divide-y divide-border">
           {events.map((e) => (
             <tr key={e.seq}>
-              <td className="py-2 pr-4 font-mono text-xs text-slate-500">{e.seq}</td>
+              <td className="py-2 pr-4 font-mono text-xs text-muted-foreground">{e.seq}</td>
               <td className="py-2 pr-4 whitespace-nowrap">{new Date(e.occurredAt).toLocaleString()}</td>
               <td className="py-2 pr-4">
                 <span className="font-mono text-xs">{e.actorId}</span>
-                <span className="ml-1 text-xs text-slate-500">({e.actorType})</span>
+                <span className="ml-1 text-xs text-muted-foreground">({e.actorType})</span>
               </td>
               <td className="py-2 pr-4 font-medium">{e.action}</td>
-              <td className="py-2 pr-4 font-mono text-xs text-slate-500">{e.target ?? "—"}</td>
+              <td className="py-2 pr-4 font-mono text-xs text-muted-foreground">{e.target ?? "—"}</td>
               <td className="py-2 pr-4">
                 <Badge tone={tone[e.outcome] ?? "muted"}>{e.outcome}</Badge>
               </td>
-              <td className="py-2 font-mono text-xs text-slate-400">{e.requestId}</td>
+              <td className="py-2 font-mono text-xs text-muted-foreground/70">{e.requestId}</td>
             </tr>
           ))}
         </tbody>

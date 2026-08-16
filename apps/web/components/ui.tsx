@@ -1,18 +1,61 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import {
+  Alert,
+  AlertDescription,
+  Badge as DsBadge,
+  Button as DsButton,
+  Card as DsCard,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  EmptyState,
+  EmptyStateDescription,
+  Input,
+  Label,
+  PageHeader,
+  PageHeaderActions,
+  PageHeaderDescription,
+  PageHeaderHeading,
+  PageHeaderTitle,
+  PageHeaderTop,
+} from "@tesserix/web";
+
+export function PageTitle({
+  title,
+  description,
+  actions,
+}: {
+  title: string;
+  description?: string;
+  actions?: ReactNode;
+}) {
+  return (
+    <PageHeader>
+      <PageHeaderTop>
+        <PageHeaderHeading>
+          <PageHeaderTitle>{title}</PageHeaderTitle>
+          {description && <PageHeaderDescription>{description}</PageHeaderDescription>}
+        </PageHeaderHeading>
+        {actions && <PageHeaderActions>{actions}</PageHeaderActions>}
+      </PageHeaderTop>
+    </PageHeader>
+  );
+}
 
 export function Card({ title, action, children }: { title?: string; action?: ReactNode; children: ReactNode }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+    <DsCard>
       {(title || action) && (
-        <header className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-          <h2 className="text-sm font-semibold text-slate-700">{title}</h2>
-          {action}
-        </header>
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+          {action && <CardAction>{action}</CardAction>}
+        </CardHeader>
       )}
-      <div className="p-4">{children}</div>
-    </section>
+      <CardContent>{children}</CardContent>
+    </DsCard>
   );
 }
 
@@ -29,20 +72,11 @@ export function Button({
   variant?: "primary" | "secondary" | "danger";
   disabled?: boolean;
 }) {
-  const styles = {
-    primary: "bg-slate-900 text-white hover:bg-slate-700",
-    secondary: "border border-slate-300 bg-white text-slate-700 hover:bg-slate-100",
-    danger: "bg-red-600 text-white hover:bg-red-700",
-  }[variant];
+  const dsVariant = { primary: "default", secondary: "outline", danger: "destructive" } as const;
   return (
-    <button
-      type={type}
-      onClick={onClick}
-      disabled={disabled}
-      className={`rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-40 ${styles}`}
-    >
+    <DsButton type={type} onClick={onClick} disabled={disabled} size="sm" variant={dsVariant[variant]}>
       {children}
-    </button>
+    </DsButton>
   );
 }
 
@@ -56,38 +90,39 @@ export function Field({
   children: ReactNode;
 }) {
   return (
-    <label className="block space-y-1">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
+    <Label className="block space-y-1.5">
+      <span>{label}</span>
       {children}
-      {hint && <span className="block text-xs text-slate-500">{hint}</span>}
-    </label>
+      {hint && <span className="block text-xs font-normal text-muted-foreground">{hint}</span>}
+    </Label>
   );
 }
 
+// Pages render bare <input>/<select>/<textarea>, so the design system's field
+// styling is shared as a class rather than as a component.
 export const inputClass =
-  "w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-slate-500 focus:outline-none";
+  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50";
 
 export function Badge({ tone, children }: { tone: "ok" | "warn" | "bad" | "muted"; children: ReactNode }) {
-  const styles = {
-    ok: "bg-emerald-100 text-emerald-800",
-    warn: "bg-amber-100 text-amber-800",
-    bad: "bg-red-100 text-red-800",
-    muted: "bg-slate-100 text-slate-600",
-  }[tone];
-  return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${styles}`}>{children}</span>;
+  const variant = { ok: "success", warn: "warning", bad: "destructive", muted: "neutral" } as const;
+  return <DsBadge variant={variant[tone]}>{children}</DsBadge>;
 }
 
 export function ErrorNote({ error }: { error: string | null }) {
   if (!error) return null;
   return (
-    <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800">
-      {error}
-    </p>
+    <Alert role="alert" variant="destructive">
+      <AlertDescription>{error}</AlertDescription>
+    </Alert>
   );
 }
 
 export function Empty({ children }: { children: ReactNode }) {
-  return <p className="py-6 text-center text-sm text-slate-500">{children}</p>;
+  return (
+    <EmptyState size="sm">
+      <EmptyStateDescription>{children}</EmptyStateDescription>
+    </EmptyState>
+  );
 }
 
 // Every destructive action names what it destroys and makes the operator type
@@ -114,12 +149,12 @@ export function ConfirmDestructive({
     );
   }
   return (
-    <div className="space-y-2 rounded-md border border-red-200 bg-red-50 p-3">
-      <p className="text-sm text-red-900">{what}</p>
-      <p className="text-xs text-red-800">
+    <div className="space-y-3 rounded-md border border-destructive/30 bg-destructive/5 p-3">
+      <p className="text-sm">{what}</p>
+      <p className="text-xs text-muted-foreground">
         Type <code className="font-mono font-semibold">{confirmWord}</code> to confirm.
       </p>
-      <input className={inputClass} value={typed} onChange={(e) => setTyped(e.target.value)} />
+      <Input value={typed} onChange={(e) => setTyped(e.target.value)} />
       <div className="flex gap-2">
         <Button variant="danger" disabled={typed !== confirmWord} onClick={onConfirm}>
           {children}
@@ -146,7 +181,7 @@ export function CheckedState({
   return (
     <span className="inline-flex items-center gap-2">
       {verified ? <Badge tone="ok">verified</Badge> : <Badge tone="warn">waiting on {waitingOn}</Badge>}
-      <span className="text-xs text-slate-500">
+      <span className="text-xs text-muted-foreground">
         {lastCheckedAt ? `last checked ${new Date(lastCheckedAt).toLocaleString()}` : "never checked"}
       </span>
     </span>
