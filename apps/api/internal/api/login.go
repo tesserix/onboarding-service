@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/tesserix/onboarding-service/api/internal/auth"
+	"github.com/tesserix/onboarding-service/api/internal/authz"
 )
 
 const (
@@ -74,9 +75,22 @@ func (d Deps) callback(c *gin.Context) {
 		abort(c, http.StatusUnauthorized, "sign-in failed")
 		return
 	}
-	claims, err := d.Tokens.Verify(c.Request.Context(), tokens.IDToken)
+	claims, err := d.ConsoleTokens.Verify(c.Request.Context(), tokens.IDToken)
 	if err != nil {
 		abort(c, http.StatusUnauthorized, "sign-in failed")
+		return
+	}
+	// The nonce binds the ID token to this login, so one obtained elsewhere for
+	// the same client cannot be replayed here.
+	if !auth.SameCSRF(pending.CSRF, claims.Nonce) {
+		abort(c, http.StatusUnauthorized, "sign-in failed")
+		return
+	}
+	if !claims.EmailVerified || !d.Allowlist.Allows(claims.Email) {
+		d.logger().Warn("console sign-in refused",
+			"requestId", c.GetString(requestIDKey), "subject", claims.Subject,
+			"emailVerified", claims.EmailVerified)
+		abort(c, http.StatusForbidden, "this account is not permitted to use the console")
 		return
 	}
 
@@ -85,9 +99,12 @@ func (d Deps) callback(c *gin.Context) {
 		respondErr(c, d.logger(), err)
 		return
 	}
+	// Being on the allowlist is what makes someone platform staff; Google says
+	// who they are and nothing about what they may do.
 	session, err := d.Sessions.Encode(auth.Session{
-		Subject: claims.Subject, Email: claims.Email, OrgID: claims.OrgID, Roles: claims.Roles,
-		CSRF: csrf, ExpiresAt: time.Now().Add(sessionTTL),
+		Subject: claims.Subject, Email: claims.Email, OrgID: d.PlatformOrgID,
+		Roles: []string{authz.RolePlatformAdmin},
+		CSRF:  csrf, ExpiresAt: time.Now().Add(sessionTTL),
 	})
 	if err != nil {
 		respondErr(c, d.logger(), err)

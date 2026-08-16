@@ -16,10 +16,17 @@ import (
 type Deps struct {
 	Service *onboarding.Service
 	Store   *store.Store
-	Tokens  TokenVerifier
+	// Tokens verifies a product's Zitadel machine token; ConsoleTokens verifies
+	// the Google ID token a console human signs in with. Two issuers, two
+	// audiences, so they cannot be the same verifier.
+	Tokens        TokenVerifier
+	ConsoleTokens TokenVerifier
 	// Sessions seals the console's cookie; OIDC logs the human in.
 	Sessions *auth.SessionCodec
 	OIDC     *auth.OIDCClient
+	// Allowlist is the set of people who may hold a console session, checked on
+	// sign-in and again on every request so a removal takes effect at once.
+	Allowlist auth.Allowlist
 	// PlatformOrgID is the Zitadel org whose members are platform staff.
 	PlatformOrgID string
 	ConsoleURL    string

@@ -13,14 +13,17 @@ import (
 	"strings"
 )
 
-// OIDCClient logs console humans in against Zitadel. The console is a public
-// client: no secret, PKCE instead.
+// OIDCClient runs the authorization-code flow for console humans. Endpoints are
+// explicit rather than derived from an issuer: Google does not serve them under
+// its issuer host.
 type OIDCClient struct {
-	Issuer      string
-	ClientID    string
-	RedirectURI string
-	Scopes      []string
-	HTTP        *http.Client
+	AuthorizeEndpoint string
+	TokenEndpoint     string
+	ClientID          string
+	ClientSecret      string
+	RedirectURI       string
+	Scopes            []string
+	HTTP              *http.Client
 }
 
 type Tokens struct {
@@ -39,21 +42,17 @@ func NewPKCE() (verifier, challenge string, err error) {
 }
 
 func (c *OIDCClient) AuthorizeURL(state, nonce, challenge string) string {
-	scopes := c.Scopes
-	if len(scopes) == 0 {
-		scopes = []string{"openid", "profile", "email", "urn:zitadel:iam:user:resourceowner"}
-	}
 	q := url.Values{
 		"client_id":             {c.ClientID},
 		"redirect_uri":          {c.RedirectURI},
 		"response_type":         {"code"},
-		"scope":                 {strings.Join(scopes, " ")},
+		"scope":                 {strings.Join(c.Scopes, " ")},
 		"state":                 {state},
 		"nonce":                 {nonce},
 		"code_challenge":        {challenge},
 		"code_challenge_method": {"S256"},
 	}
-	return strings.TrimSuffix(c.Issuer, "/") + "/oauth/v2/authorize?" + q.Encode()
+	return c.AuthorizeEndpoint + "?" + q.Encode()
 }
 
 func (c *OIDCClient) Exchange(ctx context.Context, code, verifier string) (Tokens, error) {
@@ -64,8 +63,11 @@ func (c *OIDCClient) Exchange(ctx context.Context, code, verifier string) (Token
 		"client_id":     {c.ClientID},
 		"code_verifier": {verifier},
 	}
-	endpoint := strings.TrimSuffix(c.Issuer, "/") + "/oauth/v2/token"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
+	// Google rejects PKCE alone on a web-application client.
+	if c.ClientSecret != "" {
+		form.Set("client_secret", c.ClientSecret)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.TokenEndpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		return Tokens{}, fmt.Errorf("build token request: %w", err)
 	}

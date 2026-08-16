@@ -77,6 +77,12 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	// Console humans are verified against Google, product machine users against
+	// Zitadel; each verifier pins its own issuer and audience.
+	consoleVerifier, err := auth.NewJWKSVerifier(ctx, auth.GoogleIssuer, auth.GoogleJWKSURL, cfg.GoogleClientID, http.DefaultClient)
+	if err != nil {
+		return err
+	}
 	sessions, err := auth.NewSessionCodec(cfg.SessionKey)
 	if err != nil {
 		return err
@@ -84,10 +90,9 @@ func run(log *slog.Logger) error {
 
 	gin.SetMode(gin.ReleaseMode)
 	router := api.NewRouter(api.Deps{
-		Service: svc, Store: st, Tokens: verifier, Sessions: sessions,
-		OIDC: &auth.OIDCClient{
-			Issuer: cfg.ZitadelIssuer, ClientID: cfg.ConsoleClientID, RedirectURI: cfg.RedirectURI,
-		},
+		Service: svc, Store: st, Tokens: verifier, ConsoleTokens: consoleVerifier, Sessions: sessions,
+		OIDC:          auth.NewGoogleClient(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.RedirectURI),
+		Allowlist:     auth.ParseAllowlist(cfg.PlatformAdminEmails),
 		PlatformOrgID: platformOrgID, ConsoleURL: cfg.ConsoleURL,
 		SecureCookies: cfg.SecureCookies, Log: log,
 	})

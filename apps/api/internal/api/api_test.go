@@ -117,7 +117,10 @@ func newHarness(t *testing.T) *harness {
 	}}
 
 	return &harness{
-		router:   NewRouter(Deps{Service: svc, Store: st, Tokens: tokens, Sessions: sessions, PlatformOrgID: platformOrg}),
+		router: NewRouter(Deps{
+			Service: svc, Store: st, Tokens: tokens, Sessions: sessions,
+			Allowlist: auth.ParseAllowlist("sam@tesserix.app"), PlatformOrgID: platformOrg,
+		}),
 		store:    st,
 		sessions: sessions,
 	}
