@@ -3,7 +3,7 @@
 FROM node:22-alpine AS build
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@10.12.4 --activate
-COPY apps/web/package.json apps/web/pnpm-lock.yaml ./
+COPY apps/web/package.json apps/web/pnpm-lock.yaml apps/web/.npmrc ./
 # No @tesserix/* dependency here, so the build needs no registry token.
 RUN pnpm install --frozen-lockfile
 COPY apps/web/ ./
