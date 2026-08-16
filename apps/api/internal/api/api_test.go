@@ -38,6 +38,10 @@ func (f *fakeIdentity) CreateOrg(context.Context, string) (string, error) {
 	f.zitadelOrgs++
 	return "zorg-" + time.Now().Format("150405.000000000"), nil
 }
+func (f *fakeIdentity) RemoveOrg(context.Context, string) error {
+	f.zitadelOrgs--
+	return nil
+}
 func (f *fakeIdentity) SetOrgMetadata(context.Context, string, string, string) error { return nil }
 func (f *fakeIdentity) DeactivateOrg(context.Context, string) error                  { return nil }
 func (f *fakeIdentity) ReactivateOrg(context.Context, string) error                  { return nil }

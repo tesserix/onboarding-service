@@ -42,6 +42,9 @@ func respondErr(c *gin.Context, log *slog.Logger, err error) {
 	case errors.Is(err, onboarding.ErrInvalid):
 		abort(c, http.StatusBadRequest, trimSentinel(err, onboarding.ErrInvalid))
 	case errors.Is(err, onboarding.ErrUnavailable):
+		// The client is told nothing useful by design, so the cause has to land
+		// here or it exists nowhere.
+		log.Error("dependency unavailable", "path", c.FullPath(), "requestId", c.GetString(requestIDKey), "error", err)
 		abort(c, http.StatusServiceUnavailable, "a dependency is unavailable; no change was made")
 	case errors.Is(err, authz.ErrDenied):
 		abort(c, http.StatusForbidden, "not permitted")

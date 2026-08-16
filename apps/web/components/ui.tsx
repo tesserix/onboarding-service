@@ -117,6 +117,23 @@ export function ErrorNote({ error }: { error: string | null }) {
   );
 }
 
+// The org exists but something after it did not. Not an error — the operator
+// still has to act on it.
+export function WarningNote({ warnings }: { warnings: string[] }) {
+  if (warnings.length === 0) return null;
+  return (
+    <Alert role="status" variant="warning">
+      <AlertDescription>
+        <ul className="list-disc space-y-1 pl-4">
+          {warnings.map((w) => (
+            <li key={w}>{w}</li>
+          ))}
+        </ul>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 export function Empty({ children }: { children: ReactNode }) {
   return (
     <EmptyState size="sm">

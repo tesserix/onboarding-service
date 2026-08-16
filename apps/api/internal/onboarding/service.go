@@ -39,6 +39,7 @@ type Member struct {
 // Identity is the slice of Zitadel this service uses.
 type Identity interface {
 	CreateOrg(ctx context.Context, name string) (string, error)
+	RemoveOrg(ctx context.Context, orgID string) error
 	SetOrgMetadata(ctx context.Context, orgID, key, value string) error
 	DeactivateOrg(ctx context.Context, orgID string) error
 	ReactivateOrg(ctx context.Context, orgID string) error
@@ -167,14 +168,23 @@ type CreateOrgInput struct {
 	Labels       map[string]string `json:"labels,omitempty"`
 }
 
-func (s *Service) CreateOrganization(ctx context.Context, p authz.Principal, in CreateOrgInput) (store.Organization, error) {
+// CreateOrgResult is the org plus whatever failed after it became real. The
+// owner invite and the product grants are not rolled back — the org is usable —
+// but they must not fail silently either, or the operator is told an org is
+// complete when nobody can log into it.
+type CreateOrgResult struct {
+	store.Organization
+	Warnings []string `json:"warnings,omitempty"`
+}
+
+func (s *Service) CreateOrganization(ctx context.Context, p authz.Principal, in CreateOrgInput) (CreateOrgResult, error) {
 	if err := s.guard(ctx, p, authz.ActionOrgCreate, "", map[string]string{"name": in.Name}); err != nil {
-		return store.Organization{}, err
+		return CreateOrgResult{}, err
 	}
 
 	products, err := s.requestedProducts(ctx, p, in.Products)
 	if err != nil {
-		return store.Organization{}, err
+		return CreateOrgResult{}, err
 	}
 
 	// The tenant id is minted here, before Zitadel, because it is what we put
@@ -184,11 +194,12 @@ func (s *Service) CreateOrganization(ctx context.Context, p authz.Principal, in 
 	zitadelOrgID, err := s.idp.CreateOrg(ctx, in.Name)
 	if err != nil {
 		s.audit(ctx, p, "org.create", "", audit.OutcomeError, map[string]string{"name": in.Name, "stage": "identity"})
-		return store.Organization{}, fmt.Errorf("%w: create identity org: %v", ErrUnavailable, err)
+		return CreateOrgResult{}, fmt.Errorf("%w: create identity org: %v", ErrUnavailable, err)
 	}
 	if err := s.idp.SetOrgMetadata(ctx, zitadelOrgID, "tenant_id", tenantID.String()); err != nil {
+		s.undoOrg(ctx, zitadelOrgID)
 		s.audit(ctx, p, "org.create", "", audit.OutcomeError, map[string]string{"stage": "metadata"})
-		return store.Organization{}, fmt.Errorf("%w: set tenant_id: %v", ErrUnavailable, err)
+		return CreateOrgResult{}, fmt.Errorf("%w: set tenant_id: %v", ErrUnavailable, err)
 	}
 
 	org, err := s.store.CreateOrganization(ctx, store.Organization{
@@ -197,28 +208,42 @@ func (s *Service) CreateOrganization(ctx context.Context, p authz.Principal, in 
 		Plan: in.Plan, Seats: in.Seats, Region: in.Region, ExternalRef: in.ExternalRef, Labels: in.Labels,
 	})
 	if err != nil {
-		s.log.Error("identity org created but projection write failed; reconcile required",
-			"zitadelOrgId", zitadelOrgID, "tenantId", tenantID, "error", err)
+		s.undoOrg(ctx, zitadelOrgID)
 		s.audit(ctx, p, "org.create", "", audit.OutcomeError, map[string]string{"stage": "projection", "zitadelOrgId": zitadelOrgID})
-		return store.Organization{}, fmt.Errorf("record organization: %w", err)
+		return CreateOrgResult{}, fmt.Errorf("record organization: %w", err)
 	}
 
+	res := CreateOrgResult{Organization: org}
 	if in.OwnerEmail != "" {
 		if err := s.inviteOwner(ctx, zitadelOrgID, in.OwnerEmail, in.OwnerName); err != nil {
 			s.log.Error("organization created without its owner", "org", org.ID, "error", err)
+			res.Warnings = append(res.Warnings, fmt.Sprintf("owner %s was not invited; invite them from the members tab", in.OwnerEmail))
 		}
 	}
 	for _, prod := range products {
 		if err := s.attach(ctx, org, prod); err != nil {
 			s.log.Error("organization created without a requested grant",
 				"org", org.ID, "product", prod.Key, "error", err)
+			res.Warnings = append(res.Warnings, fmt.Sprintf("product %s was not granted; add it from the products tab", prod.Key))
 		}
 	}
 
 	s.audit(ctx, p, "org.create", org.ID.String(), audit.OutcomeSuccess, map[string]any{
 		"name": org.Name, "zitadelOrgId": zitadelOrgID, "products": productKeys(products),
+		"warnings": res.Warnings,
 	})
-	return org, nil
+	return res, nil
+}
+
+// undoOrg compensates a create that failed after the identity org existed.
+// Left behind, that org has no tenant_id and no row, so it is invisible to the
+// console and un-retryable — the name is already taken. Uses WithoutCancel so a
+// client disconnect does not strand it.
+func (s *Service) undoOrg(ctx context.Context, zitadelOrgID string) {
+	if err := s.idp.RemoveOrg(context.WithoutCancel(ctx), zitadelOrgID); err != nil {
+		s.log.Error("identity org left behind; remove it by hand",
+			"zitadelOrgId", zitadelOrgID, "error", err)
+	}
 }
 
 // A product caller may only ever attach itself; the body is a request, not an
