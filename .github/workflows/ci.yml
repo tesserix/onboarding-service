@@ -76,6 +76,9 @@ jobs:
     name: image build
     runs-on: ubuntu-latest
     needs: [api, web]
+    permissions:
+      contents: read
+      packages: write
     strategy:
       matrix:
         include:
@@ -86,10 +89,21 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      # A pull request builds but does not publish: a fork must never be able to
+      # push an image the cluster then pulls as latest.
+      - name: log in to ghcr
+        if: github.event_name == 'push'
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: build image
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          push: false
-          tags: ${{ matrix.image }}:${{ github.sha }}
+          push: ${{ github.event_name == 'push' }}
+          tags: |
+            ${{ matrix.image }}:${{ github.sha }}
+            ${{ matrix.image }}:latest
