@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/tesserix/onboarding-service/api/internal/audit"
@@ -170,6 +171,228 @@ func (s *Store) SetOrganizationState(ctx context.Context, id uuid.UUID, state st
 		return ErrNotFound
 	}
 	return nil
+}
+
+const registryTenantColumns = `tenant_id, zitadel_org_id, owner_subject, slug,
+	namespace, project_grant_id, state, created_at, updated_at`
+
+func scanRegistryTenant(row pgx.Row) (RegistryTenant, error) {
+	var tenant RegistryTenant
+	err := row.Scan(&tenant.TenantID, &tenant.ZitadelOrgID, &tenant.OwnerSubject,
+		&tenant.Slug, &tenant.Namespace, &tenant.ProjectGrantID, &tenant.State,
+		&tenant.CreatedAt, &tenant.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return RegistryTenant{}, ErrNotFound
+	}
+	return tenant, err
+}
+
+// CreateRegistryTenant records the organization and its Registry projection in
+// one transaction, after the corresponding Zitadel resources already exist.
+func (s *Store) CreateRegistryTenant(ctx context.Context, org Organization, tenant RegistryTenant) (RegistryTenant, error) {
+	if org.ID == uuid.Nil {
+		org.ID = uuid.New()
+	}
+	if org.Labels == nil {
+		org.Labels = map[string]string{}
+	}
+	tenant.TenantID = org.ID
+	var created RegistryTenant
+	err := pgx.BeginTxFunc(ctx, s.pool, pgx.TxOptions{}, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO organizations (id, zitadel_org_id, name, labels)
+			VALUES ($1,$2,$3,$4)`, org.ID, org.ZitadelOrgID, org.Name, org.Labels)
+		if err != nil {
+			return err
+		}
+		created, err = scanRegistryTenant(tx.QueryRow(ctx, `
+			INSERT INTO registry_tenants
+				(tenant_id, zitadel_org_id, owner_subject, slug, namespace, project_grant_id, state)
+			VALUES ($1,$2,$3,$4,$5,$6,$7)
+			RETURNING `+registryTenantColumns,
+			tenant.TenantID, tenant.ZitadelOrgID, tenant.OwnerSubject, tenant.Slug,
+			tenant.Namespace, tenant.ProjectGrantID, tenant.State))
+		return err
+	})
+	if isUniqueViolation(err) {
+		return RegistryTenant{}, ErrConflict
+	}
+	if err != nil {
+		return RegistryTenant{}, fmt.Errorf("create registry tenant: %w", err)
+	}
+	return created, nil
+}
+
+func (s *Store) RegistryTenantByOwner(ctx context.Context, subject string) (RegistryTenant, error) {
+	return scanRegistryTenant(s.pool.QueryRow(ctx,
+		`SELECT `+registryTenantColumns+` FROM registry_tenants WHERE owner_subject = $1`, subject))
+}
+
+func (s *Store) RegistryTenantByZitadelOrgID(ctx context.Context, orgID string) (RegistryTenant, error) {
+	return scanRegistryTenant(s.pool.QueryRow(ctx,
+		`SELECT `+registryTenantColumns+` FROM registry_tenants WHERE zitadel_org_id = $1`, orgID))
+}
+
+func (s *Store) RegistryTenant(ctx context.Context, id uuid.UUID) (RegistryTenant, error) {
+	return scanRegistryTenant(s.pool.QueryRow(ctx,
+		`SELECT `+registryTenantColumns+` FROM registry_tenants WHERE tenant_id = $1`, id))
+}
+
+const registryCredentialColumns = `id, tenant_id, zitadel_user_id, client_id, name,
+	scopes, namespaces, kinds, created_by, created_at, expires_at, status,
+	rotated_from, cutover_at, revoked_at, last_used_at`
+
+const registryCredentialJoinColumns = `c.id, c.tenant_id, c.zitadel_user_id, c.client_id, c.name,
+	c.scopes, c.namespaces, c.kinds, c.created_by, c.created_at, c.expires_at, c.status,
+	c.rotated_from, c.cutover_at, c.revoked_at, c.last_used_at`
+
+func scanRegistryCredential(row pgx.Row) (RegistryCredential, error) {
+	var credential RegistryCredential
+	err := row.Scan(&credential.ID, &credential.TenantID, &credential.ZitadelUserID,
+		&credential.ClientID, &credential.Name, &credential.Scopes, &credential.Namespaces,
+		&credential.Kinds, &credential.CreatedBy, &credential.CreatedAt, &credential.ExpiresAt,
+		&credential.Status, &credential.RotatedFrom, &credential.CutoverAt,
+		&credential.RevokedAt, &credential.LastUsedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return RegistryCredential{}, ErrNotFound
+	}
+	return credential, err
+}
+
+func (s *Store) CreateRegistryCredential(ctx context.Context, credential RegistryCredential) (RegistryCredential, error) {
+	if credential.ID == uuid.Nil {
+		credential.ID = uuid.New()
+	}
+	created, err := scanRegistryCredential(s.pool.QueryRow(ctx, `
+		INSERT INTO registry_credentials
+			(id, tenant_id, zitadel_user_id, client_id, name, scopes, namespaces, kinds,
+			 created_by, expires_at, status, rotated_from)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		RETURNING `+registryCredentialColumns,
+		credential.ID, credential.TenantID, credential.ZitadelUserID, credential.ClientID,
+		credential.Name, credential.Scopes, credential.Namespaces, credential.Kinds,
+		credential.CreatedBy, credential.ExpiresAt, orDefault(credential.Status, "active"),
+		credential.RotatedFrom))
+	if isUniqueViolation(err) {
+		return RegistryCredential{}, ErrConflict
+	}
+	if err != nil {
+		return RegistryCredential{}, fmt.Errorf("create registry credential: %w", err)
+	}
+	return created, nil
+}
+
+func (s *Store) RegistryCredentials(ctx context.Context, tenantID uuid.UUID) ([]RegistryCredential, error) {
+	rows, err := s.pool.Query(ctx, `SELECT `+registryCredentialColumns+`
+		FROM registry_credentials WHERE tenant_id = $1 ORDER BY created_at DESC`, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("list registry credentials: %w", err)
+	}
+	defer rows.Close()
+	return collect(rows, scanRegistryCredential)
+}
+
+func (s *Store) RegistryCredential(ctx context.Context, tenantID, id uuid.UUID) (RegistryCredential, error) {
+	return scanRegistryCredential(s.pool.QueryRow(ctx, `SELECT `+registryCredentialColumns+`
+		FROM registry_credentials WHERE tenant_id = $1 AND id = $2`, tenantID, id))
+}
+
+func (s *Store) CountLiveRegistryCredentials(ctx context.Context, tenantID uuid.UUID) (int, error) {
+	var count int
+	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM registry_credentials
+		WHERE tenant_id = $1 AND status IN ('active','rotating')`, tenantID).Scan(&count)
+	return count, err
+}
+
+func (s *Store) RotateRegistryCredential(
+	ctx context.Context,
+	priorID uuid.UUID,
+	credential RegistryCredential,
+	cutover time.Time,
+) (RegistryCredential, error) {
+	if credential.ID == uuid.Nil {
+		credential.ID = uuid.New()
+	}
+	credential.RotatedFrom = &priorID
+	var created RegistryCredential
+	err := pgx.BeginTxFunc(ctx, s.pool, pgx.TxOptions{}, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `UPDATE registry_credentials
+			SET status = 'rotating', cutover_at = $2
+			WHERE id = $1 AND tenant_id = $3 AND status = 'active'`,
+			priorID, cutover, credential.TenantID)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() != 1 {
+			return ErrConflict
+		}
+		created, err = scanRegistryCredential(tx.QueryRow(ctx, `
+			INSERT INTO registry_credentials
+				(id, tenant_id, zitadel_user_id, client_id, name, scopes, namespaces, kinds,
+				 created_by, expires_at, status, rotated_from)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'active',$11)
+			RETURNING `+registryCredentialColumns,
+			credential.ID, credential.TenantID, credential.ZitadelUserID, credential.ClientID,
+			credential.Name, credential.Scopes, credential.Namespaces, credential.Kinds,
+			credential.CreatedBy, credential.ExpiresAt, priorID))
+		return err
+	})
+	if err != nil {
+		return RegistryCredential{}, fmt.Errorf("rotate registry credential: %w", err)
+	}
+	return created, nil
+}
+
+func (s *Store) RevokeRegistryCredential(ctx context.Context, tenantID, id uuid.UUID) error {
+	tag, err := s.pool.Exec(ctx, `UPDATE registry_credentials
+		SET status = 'revoked', revoked_at = now()
+		WHERE tenant_id = $1 AND id = $2 AND status IN ('active','rotating')`, tenantID, id)
+	if err != nil {
+		return fmt.Errorf("revoke registry credential: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) RegistryCredentialsToReap(ctx context.Context, now time.Time, limit int) ([]RegistryCredentialReap, error) {
+	rows, err := s.pool.Query(ctx, `SELECT `+registryCredentialJoinColumns+`, t.zitadel_org_id
+		FROM registry_credentials c
+		JOIN registry_tenants t ON t.tenant_id = c.tenant_id
+		WHERE (c.status = 'active' AND c.expires_at <= $1)
+		   OR (c.status = 'rotating' AND c.cutover_at <= $1)
+		ORDER BY coalesce(c.cutover_at, c.expires_at) LIMIT $2`, now, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list registry credentials to reap: %w", err)
+	}
+	defer rows.Close()
+	return collect(rows, func(row pgx.Row) (RegistryCredentialReap, error) {
+		var item RegistryCredentialReap
+		var err error
+		item.Credential, err = scanRegistryCredentialWithTail(row, &item.ZitadelOrgID)
+		return item, err
+	})
+}
+
+func scanRegistryCredentialWithTail(row pgx.Row, orgID *string) (RegistryCredential, error) {
+	var credential RegistryCredential
+	err := row.Scan(&credential.ID, &credential.TenantID, &credential.ZitadelUserID,
+		&credential.ClientID, &credential.Name, &credential.Scopes, &credential.Namespaces,
+		&credential.Kinds, &credential.CreatedBy, &credential.CreatedAt, &credential.ExpiresAt,
+		&credential.Status, &credential.RotatedFrom, &credential.CutoverAt,
+		&credential.RevokedAt, &credential.LastUsedAt, orgID)
+	return credential, err
+}
+
+func (s *Store) MarkRegistryCredentialReaped(ctx context.Context, id uuid.UUID, status string) error {
+	if status != "expired" && status != "revoked" {
+		return fmt.Errorf("invalid reaped credential status %q", status)
+	}
+	_, err := s.pool.Exec(ctx, `UPDATE registry_credentials
+		SET status = $2, revoked_at = CASE WHEN $2 = 'revoked' THEN now() ELSE revoked_at END
+		WHERE id = $1`, id, status)
+	return err
 }
 
 func (s *Store) Grant(ctx context.Context, orgID uuid.UUID, productKey string, roles []string) error {
@@ -538,4 +761,9 @@ func orDefault(s, fallback string) string {
 		return fallback
 	}
 	return s
+}
+
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }

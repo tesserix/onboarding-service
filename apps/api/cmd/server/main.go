@@ -71,9 +71,14 @@ func run(log *slog.Logger) error {
 	}
 
 	identity := onboarding.ZitadelIdentity{Client: client}
-	svc := onboarding.New(st, identity, authz.New(st), log)
+	svc := onboarding.New(st, identity, authz.New(st), log,
+		onboarding.WithRegistryProjectID(cfg.RegistryProjectID))
 
 	verifier, err := auth.NewJWKSVerifier(ctx, cfg.ZitadelIssuer, cfg.ZitadelJWKSURL, cfg.Audience, http.DefaultClient)
+	if err != nil {
+		return err
+	}
+	registryVerifier, err := auth.NewJWKSVerifier(ctx, cfg.ZitadelIssuer, cfg.ZitadelJWKSURL, cfg.RegistryTokenAudience, http.DefaultClient)
 	if err != nil {
 		return err
 	}
@@ -90,7 +95,8 @@ func run(log *slog.Logger) error {
 
 	gin.SetMode(gin.ReleaseMode)
 	router := api.NewRouter(api.Deps{
-		Service: svc, Store: st, Tokens: verifier, ConsoleTokens: consoleVerifier, Sessions: sessions,
+		Service: svc, Store: st, Tokens: verifier, RegistryTokens: registryVerifier,
+		ConsoleTokens: consoleVerifier, Sessions: sessions,
 		OIDC:          auth.NewGoogleClient(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.RedirectURI),
 		Allowlist:     auth.ParseAllowlist(cfg.PlatformAdminEmails),
 		PlatformOrgID: platformOrgID, ConsoleURL: cfg.ConsoleURL,
@@ -107,6 +113,7 @@ func run(log *slog.Logger) error {
 	}
 
 	go purgeIdempotencyKeys(ctx, st, log)
+	go reapRegistryCredentials(ctx, svc, log)
 
 	errs := make(chan error, 1)
 	go func() {
@@ -125,6 +132,21 @@ func run(log *slog.Logger) error {
 	shutdown, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.ShutdownGrace)
 	defer cancel()
 	return srv.Shutdown(shutdown)
+}
+
+func reapRegistryCredentials(ctx context.Context, svc *onboarding.Service, log *slog.Logger) {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		if err := svc.ReapRegistryCredentials(ctx, 100); err != nil && !errors.Is(err, context.Canceled) {
+			log.Warn("could not reap Registry credentials", "error", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 // The machine key is the credential this service is meant to run on; the PAT is

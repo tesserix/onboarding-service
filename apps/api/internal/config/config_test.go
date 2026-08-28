@@ -15,6 +15,8 @@ func setRequired(t *testing.T) {
 	t.Setenv("GOOGLE_CLIENT_ID", "client-1.apps.googleusercontent.com")
 	t.Setenv("GOOGLE_CLIENT_SECRET", "client-secret")
 	t.Setenv("PLATFORM_ADMIN_EMAILS", "first@example.test")
+	t.Setenv("REGISTRY_TOKEN_AUDIENCE", "386930054896026901")
+	t.Setenv("REGISTRY_PROJECT_ID", "386930054896026901")
 }
 
 func TestLoadDerivesJWKSAndRedirectFromDefaults(t *testing.T) {
@@ -69,6 +71,18 @@ func TestLoadRejectsMissingSecrets(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), name) {
 				t.Errorf("error %q does not name %s", err, name)
+			}
+		})
+	}
+}
+
+func TestLoadRequiresRegistryIdentitySettings(t *testing.T) {
+	for _, name := range []string{"REGISTRY_TOKEN_AUDIENCE", "REGISTRY_PROJECT_ID"} {
+		t.Run(name, func(t *testing.T) {
+			setRequired(t)
+			t.Setenv(name, "")
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), name) {
+				t.Fatalf("Load without %s: %v", name, err)
 			}
 		})
 	}

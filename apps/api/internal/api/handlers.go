@@ -46,6 +46,12 @@ func (d Deps) registerRoutes(g *gin.RouterGroup) {
 	g.GET("/audit", d.listAudit)
 	g.GET("/orgs/:id/audit", d.listOrgAudit)
 	g.GET("/me", d.me)
+
+	g.POST("/registry/tenants", d.onboardRegistryTenant)
+	g.GET("/registry/credentials", d.listRegistryCredentials)
+	g.POST("/registry/credentials", d.createRegistryCredential)
+	g.POST("/registry/credentials/:credentialId/rotate", d.rotateRegistryCredential)
+	g.DELETE("/registry/credentials/:credentialId", d.revokeRegistryCredential)
 }
 
 // orgID parses the path parameter. A malformed id is a 400 and never reaches

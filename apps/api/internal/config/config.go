@@ -20,9 +20,11 @@ type Config struct {
 	ZitadelMachineKey string
 	// PlatformOrgID is optional: an empty value is resolved from
 	// PlatformOrgName at boot.
-	PlatformOrgID   string
-	PlatformOrgName string
-	Audience        string
+	PlatformOrgID         string
+	PlatformOrgName       string
+	Audience              string
+	RegistryTokenAudience string
+	RegistryProjectID     string
 	// Console humans sign in with Google; PlatformAdminEmails is the
 	// comma-separated list of who may hold a session, set from the chart.
 	GoogleClientID      string
@@ -37,20 +39,22 @@ type Config struct {
 
 func Load() (Config, error) {
 	c := Config{
-		Port:                env("PORT", "8080"),
-		DatabaseURL:         os.Getenv("DATABASE_URL"),
-		ZitadelIssuer:       env("ZITADEL_ISSUER", "https://auth.tesserix.app"),
-		ZitadelPAT:          os.Getenv("ZITADEL_PAT"),
-		ZitadelMachineKey:   os.Getenv("ZITADEL_MACHINE_KEY"),
-		PlatformOrgID:       os.Getenv("PLATFORM_ORG_ID"),
-		PlatformOrgName:     env("PLATFORM_ORG_NAME", "TESSERIX"),
-		Audience:            env("TOKEN_AUDIENCE", "onboarding-api"),
-		GoogleClientID:      os.Getenv("GOOGLE_CLIENT_ID"),
-		GoogleClientSecret:  os.Getenv("GOOGLE_CLIENT_SECRET"),
-		PlatformAdminEmails: os.Getenv("PLATFORM_ADMIN_EMAILS"),
-		ConsoleURL:          env("CONSOLE_URL", "https://onboard.tesserix.app"),
-		SecureCookies:       env("SECURE_COOKIES", "true") == "true",
-		ShutdownGrace:       20 * time.Second,
+		Port:                  env("PORT", "8080"),
+		DatabaseURL:           os.Getenv("DATABASE_URL"),
+		ZitadelIssuer:         env("ZITADEL_ISSUER", "https://auth.tesserix.app"),
+		ZitadelPAT:            os.Getenv("ZITADEL_PAT"),
+		ZitadelMachineKey:     os.Getenv("ZITADEL_MACHINE_KEY"),
+		PlatformOrgID:         os.Getenv("PLATFORM_ORG_ID"),
+		PlatformOrgName:       env("PLATFORM_ORG_NAME", "TESSERIX"),
+		Audience:              env("TOKEN_AUDIENCE", "onboarding-api"),
+		RegistryTokenAudience: os.Getenv("REGISTRY_TOKEN_AUDIENCE"),
+		RegistryProjectID:     os.Getenv("REGISTRY_PROJECT_ID"),
+		GoogleClientID:        os.Getenv("GOOGLE_CLIENT_ID"),
+		GoogleClientSecret:    os.Getenv("GOOGLE_CLIENT_SECRET"),
+		PlatformAdminEmails:   os.Getenv("PLATFORM_ADMIN_EMAILS"),
+		ConsoleURL:            env("CONSOLE_URL", "https://onboard.tesserix.app"),
+		SecureCookies:         env("SECURE_COOKIES", "true") == "true",
+		ShutdownGrace:         20 * time.Second,
 	}
 	c.ZitadelJWKSURL = env("ZITADEL_JWKS_URL", strings.TrimSuffix(c.ZitadelIssuer, "/")+"/oauth/v2/keys")
 	c.RedirectURI = env("OIDC_REDIRECT_URI", strings.TrimSuffix(c.ConsoleURL, "/")+"/api/auth/callback")
@@ -71,6 +75,12 @@ func Load() (Config, error) {
 	}
 	if c.PlatformOrgName == "" {
 		return Config{}, fmt.Errorf("PLATFORM_ORG_NAME is required")
+	}
+	if c.RegistryTokenAudience == "" {
+		return Config{}, fmt.Errorf("REGISTRY_TOKEN_AUDIENCE is required")
+	}
+	if c.RegistryProjectID == "" {
+		return Config{}, fmt.Errorf("REGISTRY_PROJECT_ID is required")
 	}
 	if c.GoogleClientID == "" {
 		return Config{}, fmt.Errorf("GOOGLE_CLIENT_ID is required")

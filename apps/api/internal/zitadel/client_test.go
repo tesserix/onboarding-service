@@ -146,6 +146,65 @@ func TestGrantProjectIsScopedToTheOwningOrg(t *testing.T) {
 	}
 }
 
+func TestRegistryCredentialLifecycleUsesTheCustomerOrganization(t *testing.T) {
+	rec := newRecorder()
+	rec.replies["/management/v1/users/machine"] = map[string]any{"userId": "svc-123"}
+	rec.replies["/v2/users/svc-123/secret"] = map[string]any{"clientSecret": "shown-once"}
+	rec.replies["/management/v1/projects/proj-registry/grants"] = map[string]any{"grantId": "grant-9"}
+	rec.replies["/management/v1/users/svc-123/grants"] = map[string]any{"userGrantId": "user-grant-7"}
+	c := newClient(t, rec)
+	ctx := context.Background()
+
+	userID, err := c.CreateMachineUserInOrg(ctx, "customer-org", "registry-acme-bot", "Acme publisher")
+	if err != nil || userID != "svc-123" {
+		t.Fatalf("create machine user: id=%q err=%v", userID, err)
+	}
+	secret, err := c.AddMachineSecret(ctx, "customer-org", userID)
+	if err != nil || secret != "shown-once" {
+		t.Fatalf("add secret: secret=%q err=%v", secret, err)
+	}
+	if err := c.SetUserMetadata(ctx, "customer-org", userID, map[string][]byte{
+		"registry_namespaces": []byte(`["acme"]`),
+		"registry_kinds":      []byte(`["Agent"]`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	grantID, err := c.CreateProjectGrant(ctx, "proj-registry", "customer-org", []string{"registry.publisher"})
+	if err != nil || grantID != "grant-9" {
+		t.Fatalf("create project grant: id=%q err=%v", grantID, err)
+	}
+	userGrantID, err := c.GrantUserProjectRoles(ctx, "customer-org", userID, "proj-registry", grantID, []string{"registry.publisher"})
+	if err != nil || userGrantID != "user-grant-7" {
+		t.Fatalf("grant user roles: id=%q err=%v", userGrantID, err)
+	}
+	if err := c.RemoveMachineSecret(ctx, "customer-org", userID); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.DeactivateUser(ctx, "customer-org", userID); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.ReactivateUser(ctx, "customer-org", userID); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, call := range rec.calls {
+		if strings.Contains(call.path, "/users/") && !strings.Contains(call.path, "/projects/") && call.orgID != "customer-org" {
+			t.Fatalf("%s %s scoped to %q, want customer-org", call.method, call.path, call.orgID)
+		}
+	}
+	metadata := rec.find(http.MethodPost, "/v2/users/svc-123/metadata")
+	if metadata == nil {
+		t.Fatal("credential restrictions were not written to signed user metadata")
+	}
+	entries, ok := metadata.body["metadata"].([]any)
+	if !ok || len(entries) != 2 {
+		t.Fatalf("metadata payload = %#v", metadata.body)
+	}
+	if rec.find(http.MethodDelete, "/v2/users/svc-123/secret") == nil {
+		t.Fatal("revocation did not remove the machine secret")
+	}
+}
+
 func TestCreateIDPBindsItToTheLoginPolicy(t *testing.T) {
 	rec := newRecorder()
 	rec.replies["/management/v1/idps/oidc"] = map[string]any{"id": "idp-9"}

@@ -169,3 +169,75 @@ func TestVerifyReportsAnUnverifiedEmail(t *testing.T) {
 		t.Fatal("an unverified address was reported as verified")
 	}
 }
+
+func TestActingOrganizationClaimTakesPrecedenceOverResourceOwner(t *testing.T) {
+	s := newSigner(t)
+	claims := validClaims()
+	claims["urn:zitadel:iam:org:id"] = "customer-org"
+	claims["urn:zitadel:iam:user:resourceowner:id"] = "platform-org"
+
+	got, err := newVerifier(s).Verify(context.Background(), s.sign(t, jwt.SigningMethodRS256, claims))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.OrgID != "customer-org" {
+		t.Fatalf("acting organization = %q, want customer-org", got.OrgID)
+	}
+}
+
+func TestResourceOwnerRemainsTheOrganizationFallback(t *testing.T) {
+	s := newSigner(t)
+	claims := validClaims()
+	claims["urn:zitadel:iam:user:resourceowner:id"] = "platform-org"
+
+	got, err := newVerifier(s).Verify(context.Background(), s.sign(t, jwt.SigningMethodRS256, claims))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.OrgID != "platform-org" {
+		t.Fatalf("organization fallback = %q, want platform-org", got.OrgID)
+	}
+}
+
+func TestRegistryRoleOrganizationOverridesPlatformResourceOwner(t *testing.T) {
+	s := newSigner(t)
+	claims := validClaims()
+	claims["urn:zitadel:iam:user:resourceowner:id"] = "platform-org"
+	claims["urn:zitadel:iam:org:project:roles"] = map[string]any{
+		"registry.reader":    map[string]any{"customer-org": "acme.example"},
+		"registry.publisher": map[string]any{"customer-org": "acme.example"},
+	}
+
+	got, err := newVerifier(s).Verify(context.Background(), s.sign(t, jwt.SigningMethodRS256, claims))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.OrgID != "customer-org" {
+		t.Fatalf("Registry role organization = %q, want customer-org", got.OrgID)
+	}
+}
+
+func TestRegistryTenantMetadataSelectsOnlyAGrantedOrganization(t *testing.T) {
+	s := newSigner(t)
+	claims := validClaims()
+	claims["urn:zitadel:iam:user:resourceowner:id"] = "platform-org"
+	claims["urn:zitadel:iam:org:project:roles"] = map[string]any{
+		"registry.reader": map[string]any{"org-a": "a.example", "org-b": "b.example"},
+	}
+	claims["urn:zitadel:iam:user:metadata"] = map[string]any{"registry_tenant": "b3JnLWI"}
+	got, err := newVerifier(s).Verify(context.Background(), s.sign(t, jwt.SigningMethodRS256, claims))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.OrgID != "org-b" {
+		t.Fatalf("selected organization = %q, want org-b", got.OrgID)
+	}
+	claims["urn:zitadel:iam:user:metadata"] = map[string]any{"registry_tenant": "b3JnLWM"}
+	got, err = newVerifier(s).Verify(context.Background(), s.sign(t, jwt.SigningMethodRS256, claims))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.OrgID != "platform-org" {
+		t.Fatalf("ungranted metadata selected organization %q", got.OrgID)
+	}
+}

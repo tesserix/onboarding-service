@@ -5,9 +5,11 @@ package auth
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/MicahParks/keyfunc/v3"
@@ -90,12 +92,82 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Claims, error) {
 	if nonce, ok := mapped["nonce"].(string); ok {
 		claims.Nonce = nonce
 	}
-	// Zitadel namespaces its own claims; the org is the one the user acted in.
-	if org, ok := mapped["urn:zitadel:iam:user:resourceowner:id"].(string); ok {
+	// The explicit organization scope is the org the user is acting in. The
+	// resource owner is only a fallback; for a platform-created human it remains
+	// TESSERIX even after that human switches into a customer organization.
+	if org, ok := mapped["urn:zitadel:iam:org:id"].(string); ok && org != "" {
+		claims.OrgID = org
+	} else if org := registryTenantMetadata(
+		mapped["urn:zitadel:iam:user:metadata"], mapped["urn:zitadel:iam:org:project:roles"],
+	); org != "" {
+		claims.OrgID = org
+	} else if org := registryRoleOrganization(mapped["urn:zitadel:iam:org:project:roles"]); org != "" {
+		claims.OrgID = org
+	} else if org, ok := mapped["urn:zitadel:iam:user:resourceowner:id"].(string); ok {
 		claims.OrgID = org
 	}
 	claims.Roles = projectRoles(mapped)
 	return claims, nil
+}
+
+func registryRoleOrganization(value any) string {
+	organizations := registryRoleOrganizations(value)
+	if len(organizations) != 1 {
+		return ""
+	}
+	for orgID := range organizations {
+		return orgID
+	}
+	return ""
+}
+
+func registryRoleOrganizations(value any) map[string]bool {
+	organizations := map[string]bool{}
+	roles, ok := value.(map[string]any)
+	if !ok {
+		return organizations
+	}
+	for _, role := range []string{"registry.reader", "registry.publisher", "registry.deleter"} {
+		grants, ok := roles[role].(map[string]any)
+		if !ok {
+			continue
+		}
+		for orgID := range grants {
+			if orgID != "" {
+				organizations[orgID] = true
+			}
+		}
+	}
+	return organizations
+}
+
+func registryTenantMetadata(metadataValue, roleValue any) string {
+	metadata, ok := metadataValue.(map[string]any)
+	if !ok {
+		return ""
+	}
+	encoded, ok := metadata["registry_tenant"].(string)
+	if !ok || encoded == "" {
+		return ""
+	}
+	var raw []byte
+	var err error
+	for _, encoding := range []*base64.Encoding{
+		base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding,
+	} {
+		raw, err = encoding.DecodeString(encoded)
+		if err == nil {
+			break
+		}
+	}
+	if err != nil {
+		return ""
+	}
+	candidate := strings.TrimSpace(string(raw))
+	if candidate == "" || len(candidate) > 200 || !registryRoleOrganizations(roleValue)[candidate] {
+		return ""
+	}
+	return candidate
 }
 
 // Zitadel projects roles as {"role": {"orgId": "domain"}}; only the key matters
