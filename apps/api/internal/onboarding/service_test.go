@@ -117,6 +117,43 @@ func (f *fakeIdentity) OrgMembers(_ context.Context, orgID string) ([]Member, er
 func (f *fakeIdentity) GrantProject(context.Context, string, string, []string) error {
 	return f.record("GrantProject")
 }
+func (f *fakeIdentity) CreateProjectGrant(context.Context, string, string, []string) (string, error) {
+	if err := f.record("CreateProjectGrant"); err != nil {
+		return "", err
+	}
+	return "project-grant-fake", nil
+}
+func (f *fakeIdentity) CreateMachineUserInOrg(context.Context, string, string, string) (string, error) {
+	if err := f.record("CreateMachineUserInOrg"); err != nil {
+		return "", err
+	}
+	f.nextID++
+	return fmt.Sprintf("machine-fake-%d", f.nextID), nil
+}
+func (f *fakeIdentity) AddMachineSecret(context.Context, string, string) (string, error) {
+	if err := f.record("AddMachineSecret"); err != nil {
+		return "", err
+	}
+	return "shown-once", nil
+}
+func (f *fakeIdentity) RemoveMachineSecret(context.Context, string, string) error {
+	return f.record("RemoveMachineSecret")
+}
+func (f *fakeIdentity) SetUserMetadata(context.Context, string, string, map[string][]byte) error {
+	return f.record("SetUserMetadata")
+}
+func (f *fakeIdentity) GrantUserProjectRoles(context.Context, string, string, string, string, []string) (string, error) {
+	if err := f.record("GrantUserProjectRoles"); err != nil {
+		return "", err
+	}
+	return "user-grant-fake", nil
+}
+func (f *fakeIdentity) DeactivateUser(context.Context, string, string) error {
+	return f.record("DeactivateUser")
+}
+func (f *fakeIdentity) ReactivateUser(context.Context, string, string) error {
+	return f.record("ReactivateUser")
+}
 
 func (f *fakeIdentity) AddOrgDomain(context.Context, string, string) error {
 	return f.record("AddOrgDomain")

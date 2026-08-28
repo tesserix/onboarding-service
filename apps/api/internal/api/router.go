@@ -19,8 +19,11 @@ type Deps struct {
 	// Tokens verifies a product's Zitadel machine token; ConsoleTokens verifies
 	// the Google ID token a console human signs in with. Two issuers, two
 	// audiences, so they cannot be the same verifier.
-	Tokens        TokenVerifier
-	ConsoleTokens TokenVerifier
+	Tokens TokenVerifier
+	// RegistryTokens verifies actor tokens delegated by Agent Registry. Its
+	// audience is the Registry project, distinct from product onboarding tokens.
+	RegistryTokens TokenVerifier
+	ConsoleTokens  TokenVerifier
 	// Sessions seals the console's cookie; OIDC logs the human in.
 	Sessions *auth.SessionCodec
 	OIDC     *auth.OIDCClient

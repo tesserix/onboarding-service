@@ -25,6 +25,7 @@ var (
 	// never confirms that an id exists to a caller with no grant on it.
 	ErrNotFound = errors.New("not found")
 	ErrInvalid  = errors.New("invalid request")
+	ErrConflict = errors.New("conflict")
 	// ErrUnavailable is a dependency failure, never a policy decision.
 	ErrUnavailable = errors.New("temporarily unavailable")
 )
@@ -48,6 +49,14 @@ type Identity interface {
 	RemoveOrgMember(ctx context.Context, orgID, userID string) error
 	OrgMembers(ctx context.Context, orgID string) ([]Member, error)
 	GrantProject(ctx context.Context, projectID, grantedOrgID string, roles []string) error
+	CreateProjectGrant(ctx context.Context, projectID, grantedOrgID string, roles []string) (string, error)
+	CreateMachineUserInOrg(ctx context.Context, orgID, username, name string) (string, error)
+	AddMachineSecret(ctx context.Context, orgID, userID string) (string, error)
+	RemoveMachineSecret(ctx context.Context, orgID, userID string) error
+	SetUserMetadata(ctx context.Context, orgID, userID string, values map[string][]byte) error
+	GrantUserProjectRoles(ctx context.Context, orgID, userID, projectID, projectGrantID string, roles []string) (string, error)
+	DeactivateUser(ctx context.Context, orgID, userID string) error
+	ReactivateUser(ctx context.Context, orgID, userID string) error
 	AddOrgDomain(ctx context.Context, orgID, domain string) error
 	RemoveOrgDomain(ctx context.Context, orgID, domain string) error
 	GenerateDomainChallenge(ctx context.Context, orgID, domain string) (zitadel.Challenge, error)
@@ -57,17 +66,28 @@ type Identity interface {
 }
 
 type Service struct {
-	store *store.Store
-	idp   Identity
-	authz *authz.Authorizer
-	log   *slog.Logger
+	store             *store.Store
+	idp               Identity
+	authz             *authz.Authorizer
+	log               *slog.Logger
+	registryProjectID string
 }
 
-func New(s *store.Store, idp Identity, a *authz.Authorizer, log *slog.Logger) *Service {
+type Option func(*Service)
+
+func WithRegistryProjectID(projectID string) Option {
+	return func(service *Service) { service.registryProjectID = strings.TrimSpace(projectID) }
+}
+
+func New(s *store.Store, idp Identity, a *authz.Authorizer, log *slog.Logger, options ...Option) *Service {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Service{store: s, idp: idp, authz: a, log: log}
+	service := &Service{store: s, idp: idp, authz: a, log: log}
+	for _, option := range options {
+		option(service)
+	}
+	return service
 }
 
 // guard authorizes and audits in one place: a denial is a ledger entry, not
@@ -121,6 +141,11 @@ func actorType(p authz.Principal) audit.ActorType {
 		return audit.ActorProduct
 	case authz.KindOrgAdmin:
 		return audit.ActorOrgAdmin
+	case authz.KindUser:
+		// The existing append-only schema predates self-service users. They have
+		// no tenant yet, so system is the only non-fabricated actor class; ActorID
+		// still records the verified subject.
+		return audit.ActorSystem
 	}
 	return audit.ActorSystem
 }

@@ -194,11 +194,22 @@ func (c *Client) CreateHumanUser(ctx context.Context, orgID, email, firstName, l
 // GrantProject is issued by the org that OWNS the project, not by the org
 // receiving it. Scoping this to the receiving org is a silent no-op.
 func (c *Client) GrantProject(ctx context.Context, projectID, grantedOrgID string, roles []string) error {
+	_, err := c.CreateProjectGrant(ctx, projectID, grantedOrgID, roles)
+	return err
+}
+
+// CreateProjectGrant returns the grant id needed to assign users of the
+// receiving organization roles in a project owned by the platform org.
+func (c *Client) CreateProjectGrant(ctx context.Context, projectID, grantedOrgID string, roles []string) (string, error) {
 	if roles == nil {
 		roles = []string{}
 	}
-	return c.do(ctx, http.MethodPost, "/management/v1/projects/"+projectID+"/grants", c.adminOrg,
-		map[string]any{"grantedOrgId": grantedOrgID, "roleKeys": roles}, nil)
+	var out struct {
+		GrantID string `json:"grantId"`
+	}
+	err := c.do(ctx, http.MethodPost, "/management/v1/projects/"+projectID+"/grants", c.adminOrg,
+		map[string]any{"grantedOrgId": grantedOrgID, "roleKeys": roles}, &out)
+	return out.GrantID, err
 }
 
 func (c *Client) AddOrgDomain(ctx context.Context, orgID, domain string) error {
@@ -401,15 +412,66 @@ type MachineKey struct {
 }
 
 func (c *Client) CreateMachineUser(ctx context.Context, username, name string) (string, error) {
+	return c.CreateMachineUserInOrg(ctx, c.adminOrg, username, name)
+}
+
+// CreateMachineUserInOrg keeps the credential's resource owner equal to the
+// customer organization, which is the tenant claim Registry authorizes.
+func (c *Client) CreateMachineUserInOrg(ctx context.Context, orgID, username, name string) (string, error) {
 	var out struct {
 		UserID string `json:"userId"`
 	}
-	err := c.do(ctx, http.MethodPost, "/management/v1/users/machine", c.adminOrg, map[string]any{
+	err := c.do(ctx, http.MethodPost, "/management/v1/users/machine", orgID, map[string]any{
 		"userName":        username,
 		"name":            name,
 		"accessTokenType": "ACCESS_TOKEN_TYPE_JWT",
 	}, &out)
 	return out.UserID, err
+}
+
+func (c *Client) AddMachineSecret(ctx context.Context, orgID, userID string) (string, error) {
+	var out struct {
+		ClientSecret string `json:"clientSecret"`
+	}
+	err := c.do(ctx, http.MethodPost, "/v2/users/"+userID+"/secret", orgID, map[string]any{}, &out)
+	return out.ClientSecret, err
+}
+
+func (c *Client) RemoveMachineSecret(ctx context.Context, orgID, userID string) error {
+	return c.do(ctx, http.MethodDelete, "/v2/users/"+userID+"/secret", orgID, nil, nil)
+}
+
+func (c *Client) SetUserMetadata(ctx context.Context, orgID, userID string, values map[string][]byte) error {
+	entries := make([]map[string]string, 0, len(values))
+	for key, value := range values {
+		entries = append(entries, map[string]string{
+			"key": key, "value": base64.StdEncoding.EncodeToString(value),
+		})
+	}
+	return c.do(ctx, http.MethodPost, "/v2/users/"+userID+"/metadata", orgID,
+		map[string]any{"metadata": entries}, nil)
+}
+
+func (c *Client) GrantUserProjectRoles(
+	ctx context.Context,
+	orgID, userID, projectID, projectGrantID string,
+	roles []string,
+) (string, error) {
+	var out struct {
+		UserGrantID string `json:"userGrantId"`
+	}
+	err := c.do(ctx, http.MethodPost, "/management/v1/users/"+userID+"/grants", orgID, map[string]any{
+		"projectId": projectID, "projectGrantId": projectGrantID, "roleKeys": roles,
+	}, &out)
+	return out.UserGrantID, err
+}
+
+func (c *Client) DeactivateUser(ctx context.Context, orgID, userID string) error {
+	return c.do(ctx, http.MethodPost, "/v2/users/"+userID+"/deactivate", orgID, map[string]any{}, nil)
+}
+
+func (c *Client) ReactivateUser(ctx context.Context, orgID, userID string) error {
+	return c.do(ctx, http.MethodPost, "/v2/users/"+userID+"/reactivate", orgID, map[string]any{}, nil)
 }
 
 func (c *Client) CreateMachineKey(ctx context.Context, userID string) (MachineKey, error) {

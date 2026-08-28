@@ -104,6 +104,9 @@ func (d Deps) authenticate() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if raw := bearer(c); raw != "" {
 			claims, err := d.Tokens.Verify(c.Request.Context(), raw)
+			if err != nil && d.RegistryTokens != nil {
+				claims, err = d.RegistryTokens.Verify(c.Request.Context(), raw)
+			}
 			if err != nil {
 				abort(c, http.StatusUnauthorized, "authentication required")
 				return
@@ -161,20 +164,42 @@ func (d Deps) principalFromClaims(c *gin.Context, claims auth.Claims) (authz.Pri
 		return authz.Principal{}, err
 	}
 
-	if claims.OrgID == d.PlatformOrgID {
+	if claims.OrgID == d.PlatformOrgID && hasPlatformRole(claims.Roles) {
 		return authz.Principal{
-			Kind: authz.KindPlatform, Subject: claims.Subject, Roles: claims.Roles,
+			Kind: authz.KindPlatform, Subject: claims.Subject, Email: claims.Email,
+			EmailVerified: claims.EmailVerified, ExternalOrgID: claims.OrgID, Roles: claims.Roles,
+		}, nil
+	}
+	if claims.OrgID == d.PlatformOrgID && claims.EmailVerified {
+		return authz.Principal{
+			Kind: authz.KindUser, Subject: claims.Subject, Email: claims.Email,
+			EmailVerified: true, ExternalOrgID: claims.OrgID, Roles: claims.Roles,
 		}, nil
 	}
 
 	// Anyone else is an admin of exactly the org their token was issued in.
+	// Machine users created for Registry publishing have no verified email and
+	// cannot use this human credential-management API directly.
+	if !claims.EmailVerified {
+		return authz.Principal{}, auth.ErrInvalidToken
+	}
 	org, err := d.Store.OrganizationByZitadelID(ctx, claims.OrgID)
 	if err != nil {
 		return authz.Principal{}, err
 	}
 	return authz.Principal{
-		Kind: authz.KindOrgAdmin, Subject: claims.Subject, OrgID: org.ID.String(), Roles: claims.Roles,
+		Kind: authz.KindOrgAdmin, Subject: claims.Subject, Email: claims.Email,
+		EmailVerified: true, OrgID: org.ID.String(), ExternalOrgID: claims.OrgID, Roles: claims.Roles,
 	}, nil
+}
+
+func hasPlatformRole(roles []string) bool {
+	for _, role := range roles {
+		if role == authz.RolePlatformAdmin || role == authz.RolePlatformOperator {
+			return true
+		}
+	}
+	return false
 }
 
 func bearer(c *gin.Context) string {
@@ -241,12 +266,28 @@ func (d Deps) idempotency() gin.HandlerFunc {
 		c.Next()
 
 		if recorder.Status() >= 200 && recorder.Status() < 300 {
+			status, responseBody := recorder.Status(), recorder.body
+			if isOneTimeSecretRoute(c) {
+				// Persisting the successful response would persist the OAuth client
+				// secret. A replay therefore becomes a safe conflict: the caller can
+				// list the created credential and rotate it for a new one-time value.
+				status = http.StatusConflict
+				responseBody = []byte(`{"type":"https://onboard.tesserix.app/problems/Conflict","title":"Conflict","status":409,"detail":"the credential secret was already issued; list the credential and rotate it to obtain a new secret"}`)
+			}
 			if _, err := d.Store.SaveIdempotent(c.Request.Context(), actor, key, hash,
-				recorder.Status(), recorder.body); err != nil {
+				status, responseBody); err != nil {
 				d.logger().Error("could not record idempotency key", "error", err)
 			}
 		}
 	}
+}
+
+func isOneTimeSecretRoute(c *gin.Context) bool {
+	if c.Request.Method != http.MethodPost {
+		return false
+	}
+	path := c.FullPath()
+	return path == "/v1/registry/credentials" || path == "/v1/registry/credentials/:credentialId/rotate"
 }
 
 type capturingWriter struct {

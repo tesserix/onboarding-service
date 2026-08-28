@@ -118,6 +118,33 @@ func TestUnknownActionIsDenied(t *testing.T) {
 	}
 }
 
+func TestVerifiedSelfServiceUserMayOnlyCreateARegistryTenant(t *testing.T) {
+	a := New(apolloUsesHMS)
+	user := Principal{Kind: KindUser, Subject: "user-1", EmailVerified: true}
+	if err := a.Authorize(context.Background(), user, ActionRegistryTenantCreate, ""); err != nil {
+		t.Fatalf("verified user denied self-service onboarding: %v", err)
+	}
+	for _, action := range []Action{ActionOrgCreate, ActionRegistryCredentialWrite, ActionProductRead} {
+		if err := a.Authorize(context.Background(), user, action, "apollo"); !errors.Is(err, ErrDenied) {
+			t.Fatalf("self-service user allowed %s: %v", action, err)
+		}
+	}
+	user.EmailVerified = false
+	if err := a.Authorize(context.Background(), user, ActionRegistryTenantCreate, ""); !errors.Is(err, ErrDenied) {
+		t.Fatal("unverified user created a Registry tenant")
+	}
+}
+
+func TestOrgAdminMayManageRegistryCredentialsOnlyInTheirTenant(t *testing.T) {
+	a := New(apolloUsesHMS)
+	if err := a.Authorize(context.Background(), orgAdmin("apollo"), ActionRegistryCredentialWrite, "apollo"); err != nil {
+		t.Fatalf("tenant admin denied credential management: %v", err)
+	}
+	if err := a.Authorize(context.Background(), orgAdmin("apollo"), ActionRegistryCredentialWrite, "acme"); !errors.Is(err, ErrDenied) {
+		t.Fatal("tenant admin managed another tenant's credentials")
+	}
+}
+
 func TestAnEntitlementLookupFailureDeniesRatherThanAllows(t *testing.T) {
 	a := New(brokenEntitlements{})
 	err := a.Authorize(context.Background(), product("hms"), ActionOrgRead, "apollo")

@@ -17,6 +17,7 @@ const (
 	KindPlatform Kind = "platform"
 	KindProduct  Kind = "product"
 	KindOrgAdmin Kind = "org_admin"
+	KindUser     Kind = "user"
 )
 
 const (
@@ -25,11 +26,14 @@ const (
 )
 
 type Principal struct {
-	Kind       Kind
-	Subject    string
-	ProductKey string
-	OrgID      string
-	Roles      []string
+	Kind          Kind
+	Subject       string
+	Email         string
+	EmailVerified bool
+	ProductKey    string
+	OrgID         string // internal platform tenant UUID
+	ExternalOrgID string // signed Zitadel organization id
+	Roles         []string
 }
 
 func (p Principal) hasRole(want string) bool {
@@ -44,22 +48,25 @@ func (p Principal) hasRole(want string) bool {
 type Action string
 
 const (
-	ActionOrgCreate     Action = "org.create"
-	ActionOrgRead       Action = "org.read"
-	ActionOrgWrite      Action = "org.write"
-	ActionOrgDeactivate Action = "org.deactivate"
-	ActionGrantRead     Action = "grant.read"
-	ActionGrantWrite    Action = "grant.write"
-	ActionDomainRead    Action = "domain.read"
-	ActionDomainWrite   Action = "domain.write"
-	ActionIDPRead       Action = "idp.read"
-	ActionIDPWrite      Action = "idp.write"
-	ActionMemberRead    Action = "member.read"
-	ActionMemberWrite   Action = "member.write"
-	ActionProductRead   Action = "product.read"
-	ActionProductWrite  Action = "product.write"
-	ActionAuditRead     Action = "audit.read"
-	ActionDiscovery     Action = "discovery.resolve"
+	ActionOrgCreate               Action = "org.create"
+	ActionOrgRead                 Action = "org.read"
+	ActionOrgWrite                Action = "org.write"
+	ActionOrgDeactivate           Action = "org.deactivate"
+	ActionGrantRead               Action = "grant.read"
+	ActionGrantWrite              Action = "grant.write"
+	ActionDomainRead              Action = "domain.read"
+	ActionDomainWrite             Action = "domain.write"
+	ActionIDPRead                 Action = "idp.read"
+	ActionIDPWrite                Action = "idp.write"
+	ActionMemberRead              Action = "member.read"
+	ActionMemberWrite             Action = "member.write"
+	ActionProductRead             Action = "product.read"
+	ActionProductWrite            Action = "product.write"
+	ActionAuditRead               Action = "audit.read"
+	ActionDiscovery               Action = "discovery.resolve"
+	ActionRegistryTenantCreate    Action = "registry.tenant.create"
+	ActionRegistryCredentialRead  Action = "registry.credential.read"
+	ActionRegistryCredentialWrite Action = "registry.credential.write"
 )
 
 type rule struct {
@@ -67,27 +74,31 @@ type rule struct {
 	orgScope bool // needs an org id, and entitlement for a product caller
 	product  bool // a product machine token may perform it
 	orgAdmin bool // a customer's org admin may perform it
+	user     bool // a verified signed-in human without a tenant
 }
 
 // The policy table. A missing entry is a denial, so a new action is closed
 // until it is deliberately opened here.
 var policy = map[Action]rule{
-	ActionOrgCreate:     {write: true, product: true},
-	ActionOrgRead:       {orgScope: true, product: true, orgAdmin: true},
-	ActionOrgWrite:      {write: true, orgScope: true, product: true, orgAdmin: true},
-	ActionOrgDeactivate: {write: true, orgScope: true},
-	ActionGrantRead:     {orgScope: true, product: true},
-	ActionGrantWrite:    {write: true, orgScope: true, product: true},
-	ActionDomainRead:    {orgScope: true, product: true, orgAdmin: true},
-	ActionDomainWrite:   {write: true, orgScope: true, product: true, orgAdmin: true},
-	ActionIDPRead:       {orgScope: true, product: true, orgAdmin: true},
-	ActionIDPWrite:      {write: true, orgScope: true, product: true, orgAdmin: true},
-	ActionMemberRead:    {orgScope: true, product: true, orgAdmin: true},
-	ActionMemberWrite:   {write: true, orgScope: true, product: true, orgAdmin: true},
-	ActionProductRead:   {product: true},
-	ActionProductWrite:  {write: true},
-	ActionAuditRead:     {orgScope: true, product: true, orgAdmin: true},
-	ActionDiscovery:     {product: true},
+	ActionOrgCreate:               {write: true, product: true},
+	ActionOrgRead:                 {orgScope: true, product: true, orgAdmin: true},
+	ActionOrgWrite:                {write: true, orgScope: true, product: true, orgAdmin: true},
+	ActionOrgDeactivate:           {write: true, orgScope: true},
+	ActionGrantRead:               {orgScope: true, product: true},
+	ActionGrantWrite:              {write: true, orgScope: true, product: true},
+	ActionDomainRead:              {orgScope: true, product: true, orgAdmin: true},
+	ActionDomainWrite:             {write: true, orgScope: true, product: true, orgAdmin: true},
+	ActionIDPRead:                 {orgScope: true, product: true, orgAdmin: true},
+	ActionIDPWrite:                {write: true, orgScope: true, product: true, orgAdmin: true},
+	ActionMemberRead:              {orgScope: true, product: true, orgAdmin: true},
+	ActionMemberWrite:             {write: true, orgScope: true, product: true, orgAdmin: true},
+	ActionProductRead:             {product: true},
+	ActionProductWrite:            {write: true},
+	ActionAuditRead:               {orgScope: true, product: true, orgAdmin: true},
+	ActionDiscovery:               {product: true},
+	ActionRegistryTenantCreate:    {write: true, user: true},
+	ActionRegistryCredentialRead:  {orgScope: true, orgAdmin: true},
+	ActionRegistryCredentialWrite: {write: true, orgScope: true, orgAdmin: true},
 }
 
 func AllActions() []Action {
@@ -155,6 +166,12 @@ func (a *Authorizer) Authorize(ctx context.Context, p Principal, action Action, 
 		}
 		if p.OrgID == "" || p.OrgID != orgID {
 			return fmt.Errorf("%w: principal is an admin of %q, not %q", ErrDenied, p.OrgID, orgID)
+		}
+		return nil
+
+	case KindUser:
+		if !r.user || !p.EmailVerified || p.Subject == "" {
+			return fmt.Errorf("%w: verified user cannot perform %s", ErrDenied, action)
 		}
 		return nil
 	}

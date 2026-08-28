@@ -54,8 +54,26 @@ func (f *fakeIdentity) OrgMembers(context.Context, string) ([]onboarding.Member,
 	return nil, nil
 }
 func (f *fakeIdentity) GrantProject(context.Context, string, string, []string) error { return nil }
-func (f *fakeIdentity) AddOrgDomain(context.Context, string, string) error           { return nil }
-func (f *fakeIdentity) RemoveOrgDomain(context.Context, string, string) error        { return nil }
+func (f *fakeIdentity) CreateProjectGrant(context.Context, string, string, []string) (string, error) {
+	return "project-grant-1", nil
+}
+func (f *fakeIdentity) CreateMachineUserInOrg(context.Context, string, string, string) (string, error) {
+	return "machine-user-1", nil
+}
+func (f *fakeIdentity) AddMachineSecret(context.Context, string, string) (string, error) {
+	return "shown-once", nil
+}
+func (f *fakeIdentity) RemoveMachineSecret(context.Context, string, string) error { return nil }
+func (f *fakeIdentity) SetUserMetadata(context.Context, string, string, map[string][]byte) error {
+	return nil
+}
+func (f *fakeIdentity) GrantUserProjectRoles(context.Context, string, string, string, string, []string) (string, error) {
+	return "user-grant-1", nil
+}
+func (f *fakeIdentity) DeactivateUser(context.Context, string, string) error  { return nil }
+func (f *fakeIdentity) ReactivateUser(context.Context, string, string) error  { return nil }
+func (f *fakeIdentity) AddOrgDomain(context.Context, string, string) error    { return nil }
+func (f *fakeIdentity) RemoveOrgDomain(context.Context, string, string) error { return nil }
 func (f *fakeIdentity) GenerateDomainChallenge(_ context.Context, _, domain string) (zitadel.Challenge, error) {
 	return zitadel.Challenge{Type: "TXT", Name: "_zitadel-challenge." + domain, Value: "tok"}, nil
 }

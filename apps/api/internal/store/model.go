@@ -99,3 +99,44 @@ type IdempotentResponse struct {
 	Status int
 	Body   []byte
 }
+
+// RegistryTenant is the local projection of a self-service Registry
+// workspace. ZitadelOrgID is the external tenant id carried in signed tokens;
+// TenantID is the internal platform UUID shared with organizations.
+type RegistryTenant struct {
+	TenantID       uuid.UUID `json:"-"`
+	ZitadelOrgID   string    `json:"id"`
+	OwnerSubject   string    `json:"-"`
+	Slug           string    `json:"slug"`
+	Namespace      string    `json:"namespace"`
+	ProjectGrantID string    `json:"-"`
+	State          string    `json:"state"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+// RegistryCredential contains projection metadata only. Client secrets and
+// their verifiers are deliberately absent; Zitadel returns the secret once.
+type RegistryCredential struct {
+	ID            uuid.UUID  `json:"id"`
+	TenantID      uuid.UUID  `json:"-"`
+	ZitadelUserID string     `json:"-"`
+	ClientID      string     `json:"client_id"`
+	Name          string     `json:"name"`
+	Scopes        []string   `json:"scopes"`
+	Namespaces    []string   `json:"namespaces"`
+	Kinds         []string   `json:"kinds"`
+	CreatedBy     string     `json:"-"`
+	CreatedAt     time.Time  `json:"created_at"`
+	ExpiresAt     time.Time  `json:"expires_at"`
+	Status        string     `json:"status"`
+	RotatedFrom   *uuid.UUID `json:"rotated_from,omitempty"`
+	CutoverAt     *time.Time `json:"cutover_at,omitempty"`
+	RevokedAt     *time.Time `json:"revoked_at,omitempty"`
+	LastUsedAt    *time.Time `json:"last_used_at,omitempty"`
+}
+
+type RegistryCredentialReap struct {
+	Credential   RegistryCredential
+	ZitadelOrgID string
+}
