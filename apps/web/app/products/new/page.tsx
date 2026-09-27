@@ -54,14 +54,7 @@ export default function NewProductPage() {
   const set = (field: keyof Form) => (value: string) => setForm({ ...form, [field]: value });
   const hosts = split(form.hosts);
   const roles = split(form.roles);
-  const snippets = productManifests({
-    key: form.key,
-    displayName: form.displayName,
-    hosts,
-    identity: form.identity,
-    tenantSecrets: form.tenantSecrets,
-    roles,
-  });
+  const snippets = created ? productManifests(created) : [];
 
   async function create() {
     setError(null);
@@ -181,7 +174,7 @@ export default function NewProductPage() {
             </Field>
             <Field
               label="Where do its customers' secrets live?"
-              hint="OpenBao provisions a per-tenant path at grant time. Platform secrets always go to GCP Secret Manager."
+              hint="Use tenant-scoped OpenBao paths for customer secrets. Product application credentials also use OpenBao."
             >
               <select
                 className={inputClass}

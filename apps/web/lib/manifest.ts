@@ -17,6 +17,9 @@ const list = (items: string[], indent: string) =>
 // The API creates the live objects; these are their git counterparts, so a
 // rebuilt cluster reproduces the product instead of inheriting it.
 export function productManifests(input: ManifestInput): Snippet[] {
+  if (input.key.length > 63 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(input.key)) {
+    throw new Error("Product key must be a Kubernetes namespace label");
+  }
   const snippets: Snippet[] = [];
   const redirects = input.hosts.map((host) => `https://${host}/auth/callback`);
 
@@ -44,9 +47,34 @@ ${list(redirects, "            ")}
   }
 
   snippets.push({
-    title: "Platform secrets",
+    title: "Application secrets",
     path: `external-secrets/prod/${input.key}/onboarding.yaml`,
-    body: `apiVersion: external-secrets.io/v1
+    body: `apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ${input.key}-identity-reader
+  namespace: ${input.key}
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: openbao-${input.key}-identity
+  namespace: ${input.key}
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-${input.key}-identity
+          serviceAccountRef:
+            name: ${input.key}-identity-reader
+---
+apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
   name: ${input.key}-identity
@@ -54,17 +82,38 @@ metadata:
 spec:
   refreshInterval: 1h
   secretStoreRef:
-    name: gcp-secret-store
-    kind: ClusterSecretStore
+    name: openbao-${input.key}-identity
+    kind: SecretStore
   target:
     name: ${input.key}-identity
   data:
     - secretKey: OIDC_CLIENT_SECRET
       remoteRef:
-        key: prod-${input.key}-oidc-client-secret
+        key: ${input.key}/app/${input.key}-oidc-client-secret
+        property: value
     - secretKey: MACHINE_KEY
       remoteRef:
-        key: prod-${input.key}-machine-key`,
+        key: ${input.key}/app/${input.key}-machine-key
+        property: value`,
+  });
+
+  snippets.push({
+    title: "OpenBao application access",
+    path: "charts/thirdparty/openbao/values.yaml",
+    body: `# Merge these entries into bootstrap; keep existing platform policies.
+# Provision field value using a temporary exact-path writer, then revoke it.
+bootstrap:
+  policies:
+    - name: read-${input.key}-identity
+      hcl: |
+        path "kv/data/${input.key}/app/${input.key}-oidc-client-secret" { capabilities = ["read"] }
+        path "kv/data/${input.key}/app/${input.key}-machine-key" { capabilities = ["read"] }
+  kubernetesRoles:
+    - name: read-${input.key}-identity
+      serviceAccounts: ["${input.key}-identity-reader"]
+      namespaces: ["${input.key}"]
+      policies: ["read-${input.key}-identity"]
+      ttl: 15m`,
   });
 
   snippets.push({
@@ -90,7 +139,8 @@ spec:
     snippets.push({
       title: "OpenBao tenant path",
       path: `charts/apps/openbao/policies/${input.key}.yaml`,
-      body: `# Customer secrets only. Platform credentials stay in GCP Secret Manager.
+      body: `# Tenant credentials have separate scope from application readers.
+# GCP retains only critical platform/bootstrap/recovery secrets.
 policy: |
   path "kv/data/${input.key}/tenants/{{identity.entity.aliases.auth_jwt.metadata.tenant_id}}/*" {
     capabilities = ["create", "read", "update", "delete", "list"]
