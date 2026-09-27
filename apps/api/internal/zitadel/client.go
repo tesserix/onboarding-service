@@ -407,7 +407,7 @@ type MachineKey struct {
 	UserID string `json:"userId"`
 	KeyID  string `json:"keyId"`
 	// KeyDetails is the private key. It is returned once, written straight to
-	// GCP Secret Manager, and never stored or logged here.
+	// a product-scoped OpenBao path, and never stored or logged here.
 	KeyDetails []byte `json:"keyDetails"`
 }
 

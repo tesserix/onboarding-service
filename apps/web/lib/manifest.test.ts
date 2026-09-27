@@ -26,11 +26,13 @@ describe("productManifests", () => {
     expect(bootstrap?.body).toContain("https://poker.tesserix.app/auth/callback");
   });
 
-  it("reads both product secrets from GCP Secret Manager under the prod- prefix", () => {
+  it("reads both application secrets from a namespaced OpenBao store", () => {
     const secret = productManifests(base).find((s) => s.path.startsWith("external-secrets/"));
-    expect(secret?.body).toContain("prod-planning-poker-oidc-client-secret");
-    expect(secret?.body).toContain("prod-planning-poker-machine-key");
-    expect(secret?.body).toContain("gcp-secret-store");
+    expect(secret?.body).toContain("planning-poker/app/planning-poker-oidc-client-secret");
+    expect(secret?.body).toContain("planning-poker/app/planning-poker-machine-key");
+    expect(secret?.body).toContain("openbao-planning-poker-identity");
+    expect(secret?.body).toContain("property: value");
+    expect(secret?.body).not.toContain("gcp-secret-store");
   });
 
   it("pins the authorization policy to the Zitadel issuer and the product audience", () => {
@@ -39,16 +41,33 @@ describe("productManifests", () => {
     expect(policy?.body).toContain("planning-poker");
   });
 
-  it("emits an OpenBao policy only when the product holds customer secrets", () => {
-    const withBao = productManifests(base).map((s) => s.path);
-    expect(withBao.some((p) => p.includes("openbao"))).toBe(true);
+  it("emits tenant access only for products holding customer secrets", () => {
+    const withBao = productManifests(base).map((s) => s.title);
+    expect(withBao.some((p) => p === "OpenBao tenant path")).toBe(true);
 
-    const without = productManifests({ ...base, tenantSecrets: "none" }).map((s) => s.path);
-    expect(without.some((p) => p.includes("openbao"))).toBe(false);
+    const without = productManifests({ ...base, tenantSecrets: "none" }).map((s) => s.title);
+    expect(without.some((p) => p === "OpenBao tenant path")).toBe(false);
   });
 
   it("does not emit Zitadel objects for a GIP product", () => {
     const paths = productManifests({ ...base, identity: "gip" }).map((s) => s.path);
     expect(paths.some((p) => p.includes("zitadel-bootstrap"))).toBe(false);
+  });
+});
+
+
+describe("application access scope", () => {
+  it("still provisions app readers when tenant secrets are disabled", () => {
+    const snippets = productManifests({ ...base, tenantSecrets: "none" });
+    const access = snippets.find((s) => s.title === "OpenBao application access");
+    expect(access?.body).toContain('path "kv/data/planning-poker/app/planning-poker-oidc-client-secret"');
+    expect(access?.body).toContain('capabilities = ["read"]');
+    expect(access?.body).toContain('serviceAccounts: ["planning-poker-identity-reader"]');
+    expect(access?.body).toContain('namespaces: ["planning-poker"]');
+    expect(access?.body).not.toContain('"create"');
+    expect(access?.body).not.toContain('*');
+  });
+  it.each(["../other", "bad\nnamespace", "", "UPPER", "x".repeat(64)])("rejects unsafe product key %s", (key) => {
+    expect(() => productManifests({ ...base, key })).toThrow();
   });
 });
