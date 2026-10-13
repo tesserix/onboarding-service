@@ -14,7 +14,7 @@
   "dependencies": {
     "@tesserix/web": "1.8.1",
     "framer-motion": "^12.43.0",
-    "next": "^16.0.0",
+    "next": "16.4.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
@@ -24,7 +24,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "eslint": "9.39.5",
-    "eslint-config-next": "16.3.1",
+    "eslint-config-next": "16.4.0",
     "jsdom": "^30.0.1",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0",
