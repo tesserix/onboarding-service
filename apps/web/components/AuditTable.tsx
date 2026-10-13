@@ -26,13 +26,17 @@ export function AuditTable({ events }: { events: AuditEvent[] }) {
           {events.map((e) => (
             <tr key={e.seq}>
               <td className="py-2 pr-4 font-mono text-xs text-muted-foreground">{e.seq}</td>
-              <td className="py-2 pr-4 whitespace-nowrap">{new Date(e.occurredAt).toLocaleString()}</td>
+              <td className="py-2 pr-4 whitespace-nowrap">
+                {new Date(e.occurredAt).toLocaleString()}
+              </td>
               <td className="py-2 pr-4">
                 <span className="font-mono text-xs">{e.actorId}</span>
                 <span className="ml-1 text-xs text-muted-foreground">({e.actorType})</span>
               </td>
               <td className="py-2 pr-4 font-medium">{e.action}</td>
-              <td className="py-2 pr-4 font-mono text-xs text-muted-foreground">{e.target ?? "—"}</td>
+              <td className="py-2 pr-4 font-mono text-xs text-muted-foreground">
+                {e.target ?? "—"}
+              </td>
               <td className="py-2 pr-4">
                 <Badge tone={tone[e.outcome] ?? "muted"}>{e.outcome}</Badge>
               </td>

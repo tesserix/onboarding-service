@@ -22,12 +22,18 @@ export default function OrgsPage() {
 
   return (
     <div className="space-y-8">
-      <PageTitle title="Organizations" description="Every customer organization, and which product created it." />
+      <PageTitle
+        title="Organizations"
+        description="Every customer organization, and which product created it."
+      />
       <ErrorNote error={error} />
       <Card
         title="Organizations"
         action={
-          <Link href="/orgs/new" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+          <Link
+            href="/orgs/new"
+            className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
             New organization
           </Link>
         }
@@ -61,7 +67,9 @@ export default function OrgsPage() {
                     <span className="block font-mono text-xs text-muted-foreground">{org.id}</span>
                   </td>
                   <td className="py-2 pr-4 text-muted-foreground">{org.primaryDomain ?? "—"}</td>
-                  <td className="py-2 pr-4 text-muted-foreground">{org.createdByProduct || "platform"}</td>
+                  <td className="py-2 pr-4 text-muted-foreground">
+                    {org.createdByProduct || "platform"}
+                  </td>
                   <td className="py-2 pr-4 text-muted-foreground">{org.plan ?? "—"}</td>
                   <td className="py-2">
                     <Badge tone={org.state === "active" ? "ok" : "muted"}>{org.state}</Badge>

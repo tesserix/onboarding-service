@@ -62,3 +62,13 @@ cd apps/web && pnpm install && pnpm typecheck && pnpm test && pnpm build
 | `SECURE_COOKIES` | no | `true` |
 | `DB_MAX_CONNS` | no | `10` |
 | `PORT` | no | `8080` |
+
+## Production delivery
+
+The API (`apps/api`) and console (`apps/web`) use the shared Tesserix base images
+and reusable quality/container workflows. Kargo promotes verified `deploy` commits
+to Argo CD. See [the delivery contract](docs/adr/0001-standard-delivery.md) for image
+ownership, gates, recovery and rollout requirements.
+
+Web checks: `pnpm --dir apps/web format:check`, `lint`, `test`, `check-types`, `build`.
+Release contracts: `python3 -m unittest discover -s tests -v`.
