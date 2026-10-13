@@ -4,24 +4,40 @@ import { useCallback, useEffect, useState } from "react";
 
 import { apiFetch } from "./api";
 
+type Result<T> = { path: string; version: number; data: T | null; error: string | null };
+
 export function useApi<T>(path: string | null) {
-  const [data, setData] = useState<T | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(path !== null);
+  const [result, setResult] = useState<Result<T> | null>(null);
+  const [version, setVersion] = useState(0);
+  const reload = useCallback(() => setVersion((value) => value + 1), []);
 
-  const reload = useCallback(() => {
+  useEffect(() => {
     if (path === null) return;
-    setLoading(true);
+    let current = true;
     apiFetch<T>(path)
-      .then((result) => {
-        setData(result);
-        setError(null);
+      .then((data) => {
+        if (current) setResult({ path, version, data, error: null });
       })
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, [path]);
+      .catch((err: Error) => {
+        if (current) {
+          setResult((previous) => ({
+            path,
+            version,
+            data: previous?.path === path ? previous.data : null,
+            error: err.message,
+          }));
+        }
+      });
+    return () => {
+      current = false;
+    };
+  }, [path, version]);
 
-  useEffect(reload, [reload]);
-
-  return { data, error, loading, reload };
+  const visible = result?.path === path ? result : null;
+  return {
+    data: visible?.data ?? null,
+    error: visible?.error ?? null,
+    loading: path !== null && (!visible || visible.version !== version),
+    reload,
+  };
 }
