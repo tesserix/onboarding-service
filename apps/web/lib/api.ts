@@ -39,6 +39,7 @@ export async function apiFetch<T = unknown>(path: string, options: Options = {})
   });
 
   if (response.status === 401) {
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- This API endpoint starts an OAuth redirect chain and requires a full document navigation.
     location.assign("/api/auth/login");
     throw new ApiError("session expired", 401);
   }

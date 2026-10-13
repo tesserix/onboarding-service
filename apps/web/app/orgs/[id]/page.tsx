@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useState } from "react";
+import Link from "next/link";
 
 import { AuditTable } from "@/components/AuditTable";
 import {
@@ -42,21 +43,53 @@ export default function OrgPage({ params }: { params: Promise<{ id: string }> })
     <div className="space-y-6">
       <ErrorNote error={error ?? org.error} />
 
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">{org.data?.name ?? "…"}</h1>
-          <p className="font-mono text-xs text-muted-foreground">tenant {id}</p>
+      <header className="space-y-5">
+        <Link
+          href="/orgs"
+          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <span aria-hidden="true">←</span> All organizations
+        </Link>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex min-w-0 items-start gap-4">
+            <span
+              aria-hidden="true"
+              className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-border bg-card text-lg font-semibold text-primary shadow-sm"
+            >
+              {org.data?.name.slice(0, 2).toUpperCase() || "…"}
+            </span>
+            <div className="min-w-0">
+              <p className="mb-1 text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                Organization workspace
+              </p>
+              <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+                {org.data?.name ?? "Loading organization…"}
+              </h1>
+              <p className="mt-2 break-all text-xs text-muted-foreground">
+                Tenant ID <span className="font-mono">{id}</span>
+              </p>
+            </div>
+          </div>
+          {org.data && (
+            <Badge tone={org.data.state === "active" ? "ok" : "muted"}>{org.data.state}</Badge>
+          )}
         </div>
-        {org.data && <Badge tone={org.data.state === "active" ? "ok" : "muted"}>{org.data.state}</Badge>}
-      </div>
+      </header>
 
-      <nav className="flex gap-2 border-b border-border pb-2">
+      <nav
+        aria-label="Organization sections"
+        className="flex gap-1 overflow-x-auto border-b border-border pb-3 pt-2"
+      >
         {tabs.map((name) => (
           <button
             key={name}
+            type="button"
+            aria-pressed={tab === name}
             onClick={() => setTab(name)}
-            className={`rounded-md px-3 py-1 text-sm ${
-              tab === name ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+            className={`min-h-10 shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${
+              tab === name
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
           >
             {name}
@@ -78,7 +111,13 @@ export default function OrgPage({ params }: { params: Promise<{ id: string }> })
 
 type Act = (run: () => Promise<unknown>, reload: () => void) => void;
 
-function Overview({ org, onAct }: { org: Organization; onAct: (run: () => Promise<unknown>) => void }) {
+function Overview({
+  org,
+  onAct,
+}: {
+  org: Organization;
+  onAct: (run: () => Promise<unknown>) => void;
+}) {
   const fields: [string, string | number | undefined][] = [
     ["Identity org", org.zitadelOrgId],
     ["Primary domain", org.primaryDomain],
@@ -100,7 +139,9 @@ function Overview({ org, onAct }: { org: Organization; onAct: (run: () => Promis
           {fields.map(([label, value]) => (
             <div key={label} className="flex justify-between border-b border-border py-1">
               <dt className="text-muted-foreground">{label}</dt>
-              <dd className="font-mono text-xs">{value === undefined || value === "" ? "—" : value}</dd>
+              <dd className="font-mono text-xs">
+                {value === undefined || value === "" ? "—" : value}
+              </dd>
             </div>
           ))}
         </dl>
@@ -117,14 +158,20 @@ function Overview({ org, onAct }: { org: Organization; onAct: (run: () => Promis
 
       <Card title="State">
         {inactive ? (
-          <Button onClick={() => onAct(() => apiFetch(`/v1/orgs/${org.id}/reactivate`, { method: "POST" }))}>
+          <Button
+            onClick={() =>
+              onAct(() => apiFetch(`/v1/orgs/${org.id}/reactivate`, { method: "POST" }))
+            }
+          >
             Reactivate
           </Button>
         ) : (
           <ConfirmDestructive
             what={`Deactivating ${org.name} signs out every one of its users across every product.`}
             confirmWord={org.name}
-            onConfirm={() => onAct(() => apiFetch(`/v1/orgs/${org.id}/deactivate`, { method: "POST" }))}
+            onConfirm={() =>
+              onAct(() => apiFetch(`/v1/orgs/${org.id}/deactivate`, { method: "POST" }))
+            }
           >
             Deactivate
           </ConfirmDestructive>
@@ -139,8 +186,12 @@ function Products({ orgId, onAct }: { orgId: string; onAct: Act }) {
   const products = useApi<{ products: Product[] }>("/v1/products");
   const [productKey, setProductKey] = useState("");
 
-  const held = new Set((grants.data?.grants ?? []).filter((g) => !g.revokedAt).map((g) => g.productKey));
-  const available = (products.data?.products ?? []).filter((p) => p.identity === "zitadel" && !held.has(p.key));
+  const held = new Set(
+    (grants.data?.grants ?? []).filter((g) => !g.revokedAt).map((g) => g.productKey),
+  );
+  const available = (products.data?.products ?? []).filter(
+    (p) => p.identity === "zitadel" && !held.has(p.key),
+  );
 
   return (
     <div className="space-y-4">
@@ -151,7 +202,9 @@ function Products({ orgId, onAct }: { orgId: string; onAct: Act }) {
               <li key={grant.productKey} className="flex items-center justify-between py-2 text-sm">
                 <div>
                   <span className="font-medium">{grant.productKey}</span>
-                  <span className="ml-2 font-mono text-xs text-muted-foreground">{grant.roles.join(", ")}</span>
+                  <span className="ml-2 font-mono text-xs text-muted-foreground">
+                    {grant.roles.join(", ")}
+                  </span>
                 </div>
                 {grant.revokedAt ? (
                   <Badge tone="muted">revoked</Badge>
@@ -161,7 +214,10 @@ function Products({ orgId, onAct }: { orgId: string; onAct: Act }) {
                     confirmWord={grant.productKey}
                     onConfirm={() =>
                       onAct(
-                        () => apiFetch(`/v1/orgs/${orgId}/grants/${grant.productKey}`, { method: "DELETE" }),
+                        () =>
+                          apiFetch(`/v1/orgs/${orgId}/grants/${grant.productKey}`, {
+                            method: "DELETE",
+                          }),
                         grants.reload,
                       )
                     }
@@ -180,7 +236,11 @@ function Products({ orgId, onAct }: { orgId: string; onAct: Act }) {
       <Card title="Grant a product">
         <div className="flex items-end gap-2">
           <Field label="Product">
-            <select className={inputClass} value={productKey} onChange={(e) => setProductKey(e.target.value)}>
+            <select
+              className={inputClass}
+              value={productKey}
+              onChange={(e) => setProductKey(e.target.value)}
+            >
               <option value="">Choose…</option>
               {available.map((p) => (
                 <option key={p.key} value={p.key}>
@@ -193,7 +253,8 @@ function Products({ orgId, onAct }: { orgId: string; onAct: Act }) {
             disabled={!productKey}
             onClick={() =>
               onAct(
-                () => apiFetch(`/v1/orgs/${orgId}/grants`, { method: "POST", body: { productKey } }),
+                () =>
+                  apiFetch(`/v1/orgs/${orgId}/grants`, { method: "POST", body: { productKey } }),
                 grants.reload,
               )
             }
@@ -237,9 +298,12 @@ function Domains({ orgId, onAct }: { orgId: string; onAct: Act }) {
                       onClick={() =>
                         onAct(
                           () =>
-                            apiFetch(`/v1/orgs/${orgId}/domains/${encodeURIComponent(d.domain)}/verify`, {
-                              method: "POST",
-                            }),
+                            apiFetch(
+                              `/v1/orgs/${orgId}/domains/${encodeURIComponent(d.domain)}/verify`,
+                              {
+                                method: "POST",
+                              },
+                            ),
                           domains.reload,
                         )
                       }
@@ -274,15 +338,22 @@ function Domains({ orgId, onAct }: { orgId: string; onAct: Act }) {
       <Card title="Claim a domain">
         <div className="flex items-end gap-2">
           <Field label="Domain" hint="Discovery only routes to it once the DNS record is in place.">
-            <input className={inputClass} value={domain} onChange={(e) => setDomain(e.target.value)} />
+            <input
+              className={inputClass}
+              value={domain}
+              onChange={(e) => setDomain(e.target.value)}
+            />
           </Field>
           <Button
             disabled={!domain}
             onClick={() =>
-              onAct(() => apiFetch(`/v1/orgs/${orgId}/domains`, { method: "POST", body: { domain } }), () => {
-                setDomain("");
-                domains.reload();
-              })
+              onAct(
+                () => apiFetch(`/v1/orgs/${orgId}/domains`, { method: "POST", body: { domain } }),
+                () => {
+                  setDomain("");
+                  domains.reload();
+                },
+              )
             }
           >
             Claim
@@ -321,14 +392,19 @@ function IDPs({ orgId, onAct }: { orgId: string; onAct: Act }) {
                   <span className="font-medium">{idp.displayName}</span>
                   <span className="ml-2 font-mono text-xs text-muted-foreground">{idp.type}</span>
                   {idp.autoRegister && (
-                    <span className="ml-2 text-xs text-muted-foreground">auto-registers new users</span>
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      auto-registers new users
+                    </span>
                   )}
                 </div>
                 <ConfirmDestructive
                   what={`Deleting ${idp.displayName} locks out everyone who signs in through it.`}
                   confirmWord={idp.displayName}
                   onConfirm={() =>
-                    onAct(() => apiFetch(`/v1/orgs/${orgId}/idps/${idp.id}`, { method: "DELETE" }), idps.reload)
+                    onAct(
+                      () => apiFetch(`/v1/orgs/${orgId}/idps/${idp.id}`, { method: "DELETE" }),
+                      idps.reload,
+                    )
                   }
                 >
                   Delete
@@ -359,7 +435,11 @@ function IDPs({ orgId, onAct }: { orgId: string; onAct: Act }) {
             </select>
           </Field>
           <Field label="Display name" hint="What the customer's staff see on the sign-in button.">
-            <input className={inputClass} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <input
+              className={inputClass}
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+            />
           </Field>
           {!saml && (
             <>
@@ -377,7 +457,10 @@ function IDPs({ orgId, onAct }: { orgId: string; onAct: Act }) {
                   onChange={(e) => setForm({ ...form, clientId: e.target.value })}
                 />
               </Field>
-              <Field label="Client secret" hint="Write-only. It goes straight to the identity plane.">
+              <Field
+                label="Client secret"
+                hint="Write-only. It goes straight to the identity plane."
+              >
                 <input
                   className={inputClass}
                   type="password"
@@ -452,22 +535,57 @@ function Members({ orgId, onAct }: { orgId: string; onAct: Act }) {
   const [form, setForm] = useState({ email: "", name: "", role: "ORG_USER_MANAGER" });
 
   return (
-    <div className="space-y-4">
-      <Card title="Members">
+    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(320px,1fr)]">
+      <Card
+        title="Members"
+        description="People and service identities with access to this organization."
+        action={members.data && <Badge tone="muted">{members.data.members.length} members</Badge>}
+      >
         {members.data?.members.length ? (
           <ul className="divide-y divide-border">
             {members.data.members.map((member) => (
-              <li key={member.userId} className="flex items-center justify-between py-2 text-sm">
-                <div>
-                  <span className="font-medium">{member.displayName || member.email || member.userId}</span>
-                  <span className="ml-2 font-mono text-xs text-muted-foreground">{member.roles.join(", ")}</span>
+              <li
+                key={member.userId}
+                className="flex flex-wrap items-center justify-between gap-4 py-5 text-sm first:pt-0 last:pb-0"
+              >
+                <div className="flex min-w-0 items-start gap-3">
+                  <span
+                    aria-hidden="true"
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold text-secondary-foreground"
+                  >
+                    {(member.displayName || member.email || "?").slice(0, 2).toUpperCase()}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="break-all font-medium leading-5">
+                      {member.displayName || member.email || member.userId}
+                    </p>
+                    {member.displayName && member.email && (
+                      <p className="mt-1 break-all text-xs text-muted-foreground">{member.email}</p>
+                    )}
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {member.roles.map((role) => (
+                        <Badge key={role} tone="muted">
+                          {(
+                            {
+                              ORG_OWNER: "Owner",
+                              ORG_USER_MANAGER: "User manager",
+                              ORG_OWNER_VIEWER: "Viewer",
+                            } as Record<string, string>
+                          )[role] ?? role}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
                 </div>
                 <ConfirmDestructive
                   what={`Removing ${member.email || member.userId} ends their access to this organization.`}
                   confirmWord={member.email || member.userId}
                   onConfirm={() =>
                     onAct(
-                      () => apiFetch(`/v1/orgs/${orgId}/members/${member.userId}`, { method: "DELETE" }),
+                      () =>
+                        apiFetch(`/v1/orgs/${orgId}/members/${member.userId}`, {
+                          method: "DELETE",
+                        }),
                       members.reload,
                     )
                   }
@@ -482,24 +600,29 @@ function Members({ orgId, onAct }: { orgId: string; onAct: Act }) {
         )}
       </Card>
 
-      <Card title="Invite a member">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Field label="Email">
+      <Card
+        title="Invite a member"
+        description="Invite a colleague and choose the access they need."
+      >
+        <div className="grid grid-cols-1 gap-5">
+          <Field label="Work email">
             <input
               className={inputClass}
               type="email"
+              autoComplete="email"
+              placeholder="name@organization.com"
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
             />
           </Field>
-          <Field label="Name">
+          <Field label="Name" hint="Optional. Their name in the member directory.">
             <input
               className={inputClass}
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
           </Field>
-          <Field label="Role">
+          <Field label="Role" hint="Choose only the access this person needs.">
             <select
               className={inputClass}
               value={form.role}
@@ -511,7 +634,7 @@ function Members({ orgId, onAct }: { orgId: string; onAct: Act }) {
             </select>
           </Field>
         </div>
-        <div className="mt-4">
+        <div className="mt-6 flex justify-end border-t border-border pt-5">
           <Button
             disabled={!form.email}
             onClick={() =>

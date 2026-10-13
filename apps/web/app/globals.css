@@ -1,5 +1,5 @@
 @import "@tesserix/web/styles";
-@import "@tesserix/web/tailwind-source";
+@source "../node_modules/@tesserix/web/dist";
 
 :root {
   color-scheme: light;
@@ -7,4 +7,13 @@
 
 body {
   @apply bg-background text-foreground antialiased;
+}
+
+@theme {
+  --color-success-muted: var(--color-emerald-50);
+  --color-success-muted-foreground: var(--color-emerald-800);
+  --color-warning-muted: var(--color-amber-50);
+  --color-warning-muted-foreground: var(--color-amber-800);
+  --color-neutral-muted: var(--color-slate-100);
+  --color-neutral-muted-foreground: var(--color-slate-700);
 }

@@ -45,12 +45,25 @@ export function PageTitle({
   );
 }
 
-export function Card({ title, action, children }: { title?: string; action?: ReactNode; children: ReactNode }) {
+export function Card({
+  title,
+  description,
+  action,
+  children,
+}: {
+  title?: string;
+  description?: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <DsCard>
+    <DsCard className="rounded-2xl border-border/70 shadow-sm hover:shadow-sm">
       {(title || action) && (
-        <CardHeader>
-          <CardTitle>{title}</CardTitle>
+        <CardHeader className="gap-2 pb-5">
+          <CardTitle className="text-base font-semibold leading-6">{title}</CardTitle>
+          {description && (
+            <p className="text-sm leading-relaxed text-muted-foreground">{description}</p>
+          )}
           {action && <CardAction>{action}</CardAction>}
         </CardHeader>
       )}
@@ -74,7 +87,13 @@ export function Button({
 }) {
   const dsVariant = { primary: "default", secondary: "outline", danger: "destructive" } as const;
   return (
-    <DsButton type={type} onClick={onClick} disabled={disabled} size="sm" variant={dsVariant[variant]}>
+    <DsButton
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      size="sm"
+      variant={dsVariant[variant]}
+    >
       {children}
     </DsButton>
   );
@@ -90,7 +109,7 @@ export function Field({
   children: ReactNode;
 }) {
   return (
-    <Label className="block space-y-1.5">
+    <Label className="flex min-w-0 flex-col items-stretch gap-2 text-sm font-medium">
       <span>{label}</span>
       {children}
       {hint && <span className="block text-xs font-normal text-muted-foreground">{hint}</span>}
@@ -101,9 +120,15 @@ export function Field({
 // Pages render bare <input>/<select>/<textarea>, so the design system's field
 // styling is shared as a class rather than as a component.
 export const inputClass =
-  "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50";
+  "flex h-11 w-full min-w-0 rounded-lg border border-input bg-background px-3 py-2 text-sm font-normal shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50";
 
-export function Badge({ tone, children }: { tone: "ok" | "warn" | "bad" | "muted"; children: ReactNode }) {
+export function Badge({
+  tone,
+  children,
+}: {
+  tone: "ok" | "warn" | "bad" | "muted";
+  children: ReactNode;
+}) {
   const variant = { ok: "success", warn: "warning", bad: "destructive", muted: "neutral" } as const;
   return <DsBadge variant={variant[tone]}>{children}</DsBadge>;
 }
@@ -160,7 +185,7 @@ export function ConfirmDestructive({
 
   if (!open) {
     return (
-      <Button variant="danger" onClick={() => setOpen(true)}>
+      <Button variant="secondary" onClick={() => setOpen(true)}>
         {children}
       </Button>
     );
@@ -197,9 +222,15 @@ export function CheckedState({
 }) {
   return (
     <span className="inline-flex items-center gap-2">
-      {verified ? <Badge tone="ok">verified</Badge> : <Badge tone="warn">waiting on {waitingOn}</Badge>}
+      {verified ? (
+        <Badge tone="ok">verified</Badge>
+      ) : (
+        <Badge tone="warn">waiting on {waitingOn}</Badge>
+      )}
       <span className="text-xs text-muted-foreground">
-        {lastCheckedAt ? `last checked ${new Date(lastCheckedAt).toLocaleString()}` : "never checked"}
+        {lastCheckedAt
+          ? `last checked ${new Date(lastCheckedAt).toLocaleString()}`
+          : "never checked"}
       </span>
     </span>
   );
