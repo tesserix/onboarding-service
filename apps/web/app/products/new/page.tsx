@@ -93,7 +93,9 @@ export default function NewProductPage() {
   async function acknowledge() {
     setError(null);
     try {
-      await apiFetch(`/v1/products/${encodeURIComponent(form.key)}/manifests-acknowledged`, { method: "POST" });
+      await apiFetch(`/v1/products/${encodeURIComponent(form.key)}/manifests-acknowledged`, {
+        method: "POST",
+      });
       setAcked(true);
     } catch (err) {
       setError((err as Error).message);
@@ -107,7 +109,9 @@ export default function NewProductPage() {
           <li
             key={label}
             className={`rounded-full px-3 py-1 ${
-              index === step ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+              index === step
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted text-muted-foreground"
             }`}
           >
             {index + 1}. {label}
@@ -120,8 +124,15 @@ export default function NewProductPage() {
       {step === 0 && (
         <Card title="Identity">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Key" hint="Lowercase, stable — it names the namespace, the roles and every secret.">
-              <input className={inputClass} value={form.key} onChange={(e) => set("key")(e.target.value)} />
+            <Field
+              label="Key"
+              hint="Lowercase, stable — it names the namespace, the roles and every secret."
+            >
+              <input
+                className={inputClass}
+                value={form.key}
+                onChange={(e) => set("key")(e.target.value)}
+              />
             </Field>
             <Field label="Display name">
               <input
@@ -137,7 +148,10 @@ export default function NewProductPage() {
                 onChange={(e) => set("zitadelProjectId")(e.target.value)}
               />
             </Field>
-            <Field label="Machine user id" hint="The svc- user whose JWT the product calls this API with.">
+            <Field
+              label="Machine user id"
+              hint="The svc- user whose JWT the product calls this API with."
+            >
               <input
                 className={inputClass}
                 value={form.machineUserId}
@@ -151,8 +165,15 @@ export default function NewProductPage() {
                 onChange={(e) => set("oidcClientId")(e.target.value)}
               />
             </Field>
-            <Field label="Hosts" hint="Comma separated. Drives the redirect URIs in the git snippet.">
-              <input className={inputClass} value={form.hosts} onChange={(e) => set("hosts")(e.target.value)} />
+            <Field
+              label="Hosts"
+              hint="Comma separated. Drives the redirect URIs in the git snippet."
+            >
+              <input
+                className={inputClass}
+                value={form.hosts}
+                onChange={(e) => set("hosts")(e.target.value)}
+              />
             </Field>
           </div>
           <div className="mt-4">
@@ -192,8 +213,15 @@ export default function NewProductPage() {
                 <option value="none">None — it holds nothing on a customer&apos;s behalf</option>
               </select>
             </Field>
-            <Field label="Tenancy" hint="ephemeral+org means anonymous usage can later be claimed into an org.">
-              <select className={inputClass} value={form.tenancy} onChange={(e) => set("tenancy")(e.target.value)}>
+            <Field
+              label="Tenancy"
+              hint="ephemeral+org means anonymous usage can later be claimed into an org."
+            >
+              <select
+                className={inputClass}
+                value={form.tenancy}
+                onChange={(e) => set("tenancy")(e.target.value)}
+              >
                 <option value="org">org</option>
                 <option value="ephemeral+org">ephemeral+org</option>
               </select>
@@ -208,8 +236,15 @@ export default function NewProductPage() {
                 <option value="other">other</option>
               </select>
             </Field>
-            <Field label="Project roles" hint="Comma separated, deliberately short. Row-level rules belong to OpenFGA.">
-              <input className={inputClass} value={form.roles} onChange={(e) => set("roles")(e.target.value)} />
+            <Field
+              label="Project roles"
+              hint="Comma separated, deliberately short. Row-level rules belong to OpenFGA."
+            >
+              <input
+                className={inputClass}
+                value={form.roles}
+                onChange={(e) => set("roles")(e.target.value)}
+              />
             </Field>
           </div>
           <div className="mt-4 flex gap-2">
@@ -224,12 +259,14 @@ export default function NewProductPage() {
       {step === 2 && (
         <Card title="Review">
           <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
-            {Object.entries({ ...form, hosts: hosts.join(", "), roles: roles.join(", ") }).map(([key, value]) => (
-              <div key={key} className="flex justify-between border-b border-border py-1">
-                <dt className="text-muted-foreground">{key}</dt>
-                <dd className="font-mono text-xs">{value || "—"}</dd>
-              </div>
-            ))}
+            {Object.entries({ ...form, hosts: hosts.join(", "), roles: roles.join(", ") }).map(
+              ([key, value]) => (
+                <div key={key} className="flex justify-between border-b border-border py-1">
+                  <dt className="text-muted-foreground">{key}</dt>
+                  <dd className="font-mono text-xs">{value || "—"}</dd>
+                </div>
+              ),
+            )}
           </dl>
           <div className="mt-4 flex gap-2">
             <Button variant="secondary" onClick={() => setStep(1)}>
@@ -244,7 +281,8 @@ export default function NewProductPage() {
         <div className="space-y-4">
           <Card title={`${created.displayName} is live`}>
             <p className="text-sm text-muted-foreground">
-              The objects exist. Raise a PR with the snippets below so a rebuilt cluster reproduces them.
+              The objects exist. Raise a PR with the snippets below so a rebuilt cluster reproduces
+              them.
             </p>
           </Card>
 

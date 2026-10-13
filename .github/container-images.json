@@ -1,0 +1,20 @@
+[
+  {
+    "name": "onboarding-api",
+    "context": ".",
+    "dockerfile": "deploy/Dockerfile.api",
+    "target": "runtime",
+    "source_root": "apps/api",
+    "smoke_port": 0,
+    "smoke_path": "/healthz"
+  },
+  {
+    "name": "onboarding-web",
+    "context": ".",
+    "dockerfile": "deploy/Dockerfile.web",
+    "target": "runtime",
+    "source_root": "apps/web",
+    "smoke_port": 3500,
+    "smoke_path": "/healthz"
+  }
+]

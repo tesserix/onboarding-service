@@ -1,21 +1,20 @@
 # syntax=docker/dockerfile:1
-
-FROM node:22-alpine AS build
+FROM ghcr.io/tesserix/base-node-builder-24:latest@sha256:f210283d939b44a2404d8970865e5ec848704556542464297f71644ca28f4302 AS build
 WORKDIR /app
-RUN corepack enable && corepack prepare pnpm@10.12.4 --activate
+RUN corepack prepare pnpm@10.12.4 --activate
 COPY apps/web/package.json apps/web/pnpm-lock.yaml apps/web/.npmrc ./
-# No @tesserix/* dependency here, so the build needs no registry token.
 RUN pnpm install --frozen-lockfile
 COPY apps/web/ ./
-ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm build
 
-FROM node:22-alpine
+FROM ghcr.io/tesserix/base-node-runtime-24:latest@sha256:48607e5eef602f303299d13d70b36eeb39bd69eee62e00af64d127ba839463e3 AS runtime
 WORKDIR /app
-ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3500
+USER 0:0
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /opt/yarn-* \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg
 COPY --from=build --chown=1000:1000 /app/.next/standalone ./
 COPY --from=build --chown=1000:1000 /app/.next/static ./.next/static
+ENV PORT=3500
 EXPOSE 3500
-# Numeric so Kubernetes' runAsNonRoot check can verify uid>0 at admission.
 USER 1000:1000
 CMD ["node", "server.js"]

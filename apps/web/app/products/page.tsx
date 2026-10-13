@@ -12,12 +12,18 @@ export default function ProductsPage() {
 
   return (
     <div className="space-y-8">
-      <PageTitle title="Products" description="Projects onboarded to the platform and how each one carries identity and tenant secrets." />
+      <PageTitle
+        title="Products"
+        description="Projects onboarded to the platform and how each one carries identity and tenant secrets."
+      />
       <ErrorNote error={error} />
       <Card
         title="Products"
         action={
-          <Link href="/products/new" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+          <Link
+            href="/products/new"
+            className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
             New product
           </Link>
         }
@@ -47,11 +53,17 @@ export default function ProductsPage() {
                     <Badge tone={p.identity === "zitadel" ? "ok" : "muted"}>{p.identity}</Badge>
                   </td>
                   <td className="py-2 pr-4">
-                    <Badge tone={p.tenantSecrets === "openbao" ? "ok" : "muted"}>{p.tenantSecrets}</Badge>
+                    <Badge tone={p.tenantSecrets === "openbao" ? "ok" : "muted"}>
+                      {p.tenantSecrets}
+                    </Badge>
                   </td>
                   <td className="py-2 pr-4 text-muted-foreground">{p.tenancy}</td>
-                  <td className="py-2 pr-4 font-mono text-xs text-muted-foreground">{p.roles.join(", ") || "—"}</td>
-                  <td className="py-2 font-mono text-xs text-muted-foreground">{p.hosts?.join(", ") || "—"}</td>
+                  <td className="py-2 pr-4 font-mono text-xs text-muted-foreground">
+                    {p.roles.join(", ") || "—"}
+                  </td>
+                  <td className="py-2 font-mono text-xs text-muted-foreground">
+                    {p.hosts?.join(", ") || "—"}
+                  </td>
                 </tr>
               ))}
             </tbody>

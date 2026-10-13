@@ -81,9 +81,16 @@ export default function NewOrgPage() {
       <Card title="New organization">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Name">
-            <input className={inputClass} value={form.name} onChange={(e) => set("name")(e.target.value)} />
+            <input
+              className={inputClass}
+              value={form.name}
+              onChange={(e) => set("name")(e.target.value)}
+            />
           </Field>
-          <Field label="Owner email" hint="Becomes ORG_OWNER and the only person who can invite others.">
+          <Field
+            label="Owner email"
+            hint="Becomes ORG_OWNER and the only person who can invite others."
+          >
             <input
               className={inputClass}
               type="email"
@@ -92,9 +99,13 @@ export default function NewOrgPage() {
             />
           </Field>
           <Field label="Owner name">
-            <input className={inputClass} value={form.ownerName} onChange={(e) => set("ownerName")(e.target.value)} />
+            <input
+              className={inputClass}
+              value={form.ownerName}
+              onChange={(e) => set("ownerName")(e.target.value)}
+            />
           </Field>
-          <Field label="Billing email" hint="So an incident does not start with &quot;who do we tell&quot;.">
+          <Field label="Billing email" hint='So an incident does not start with "who do we tell".'>
             <input
               className={inputClass}
               type="email"
@@ -111,7 +122,11 @@ export default function NewOrgPage() {
             />
           </Field>
           <Field label="Plan" hint="A label, not an entitlement — billing lives elsewhere.">
-            <input className={inputClass} value={form.plan} onChange={(e) => set("plan")(e.target.value)} />
+            <input
+              className={inputClass}
+              value={form.plan}
+              onChange={(e) => set("plan")(e.target.value)}
+            />
           </Field>
           <Field label="Seats">
             <input
@@ -123,9 +138,16 @@ export default function NewOrgPage() {
             />
           </Field>
           <Field label="Region">
-            <input className={inputClass} value={form.region} onChange={(e) => set("region")(e.target.value)} />
+            <input
+              className={inputClass}
+              value={form.region}
+              onChange={(e) => set("region")(e.target.value)}
+            />
           </Field>
-          <Field label="External reference" hint="Your CRM or signup id, so reconciliation never needs a name match.">
+          <Field
+            label="External reference"
+            hint="Your CRM or signup id, so reconciliation never needs a name match."
+          >
             <input
               className={inputClass}
               value={form.externalRef}

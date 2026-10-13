@@ -2,20 +2,22 @@
 
 # Base images are pinned by digest: the :latest tags are mutable, so an
 # unpinned build is not reproducible.
-FROM ghcr.io/tesserix/base-go-builder:latest@sha256:40fbd9b59ef20100c90213a5390332c48fa4ef7d5908223f4f088cb4ab476972 AS build
+FROM --platform=$BUILDPLATFORM ghcr.io/tesserix/base-go-builder:latest@sha256:03f7dc939802b567835fce13a09edb89bb9904918dd5edd0025022f1976f4c89 AS build
 USER 0:0
 WORKDIR /src
+ENV GOTOOLCHAIN=go1.26.9
 COPY apps/api/go.mod apps/api/go.sum ./
 RUN go mod download
 COPY apps/api/ ./
-ARG VERSION=dev
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-s -w" -trimpath -o /out/onboarding-api ./cmd/server
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags "-s -w" -trimpath -o /out/onboarding-api ./cmd/server
 
 # distroless has no shell to adduser, so the passwd/group entries are made here.
 RUN addgroup -g 1000 onboarding \
     && adduser -u 1000 -G onboarding -D -H onboarding
 
-FROM ghcr.io/tesserix/base-distroless-static:latest@sha256:ccf26e72c62d53b69caae2ab73f3b059fe46785c0e5c18868e103b63c52a729f
+FROM ghcr.io/tesserix/base-distroless-static:latest@sha256:489f033f622bfac077447cfe7e8d9dbec9678429fa717e1bb74bfe770f9e61ba AS runtime
 WORKDIR /app
 COPY --from=build /etc/passwd /etc/group /etc/
 COPY --from=build --chown=onboarding:onboarding /out/onboarding-api /app/onboarding-api

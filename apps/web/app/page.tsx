@@ -48,7 +48,10 @@ export default function Dashboard() {
       <Card
         title="Products"
         action={
-          <Link href="/products/new" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+          <Link
+            href="/products/new"
+            className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
             New product
           </Link>
         }
@@ -82,7 +85,10 @@ export default function Dashboard() {
       <Card
         title="Last 20 audit events"
         action={
-          <Link href="/audit" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+          <Link
+            href="/audit"
+            className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
             All events
           </Link>
         }

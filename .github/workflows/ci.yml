@@ -1,112 +1,82 @@
-name: ci
+name: CI
 
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  api:
-    name: api (go)
+  contracts:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/api
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: onboarding
-          POSTGRES_PASSWORD: onboarding
-          POSTGRES_DB: onboarding_db
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd pg_isready --health-interval 5s
-          --health-timeout 5s --health-retries 10
-    env:
-      ONBOARDING_TEST_DSN: postgres://onboarding:onboarding@127.0.0.1:5432/onboarding_db
+    outputs:
+      images: ${{ steps.images.outputs.images }}
+      release_images: ${{ steps.images.outputs.release_images }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          # go.work pins the exact toolchain; "1.26" resolves to whichever patch
-          # the runner has cached, which GOTOOLCHAIN=local then rejects.
-          go-version-file: go.work
-          cache-dependency-path: apps/api/go.sum
-      - name: load schema
+      - run: python3 -m unittest discover -s tests -v
+      - id: images
         run: |
-          curl -sSfL -o /tmp/onboarding_db.sql \
-            https://raw.githubusercontent.com/tesserix/tesserix-k8s/main/charts/apps/db-schema-bootstrap/schemas/global/global/onboarding_db.sql
-          PGPASSWORD=onboarding psql -h 127.0.0.1 -U onboarding -d onboarding_db -v ON_ERROR_STOP=1 -f /tmp/onboarding_db.sql
-      - name: format check
-        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
-      - name: vet
-        run: go vet ./...
-      # -p 1: every package shares one database and wipes it in its fixture, so
-      # packages running concurrently truncate each other mid-test.
-      - name: test
-        run: go test -race -p 1 ./...
-      - name: build
-        run: go build ./...
+          echo "images=$(jq -c . .github/container-images.json)" >> "$GITHUB_OUTPUT"
+          echo "release_images=$(jq -c '{include: .}' .github/container-images.json)" >> "$GITHUB_OUTPUT"
+
+  api:
+    uses: tesserix/tesserix-workflows/.github/workflows/go-ci.yml@f013aca347aa44d810cf1e976c5717b28bdb0a67
+    with:
+      working_directory: apps/api
+      go_version: 1.26.9
+      # Measured with PostgreSQL: 47.4%. Prevent regression while raising coverage.
+      coverage_min_lines: 47
+      database_enabled: true
+      database_setup_script: scripts/ci/setup-postgres.sh
+      database_environment_prefix: ONBOARDING_TEST_
 
   web:
-    name: console (next)
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/web
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
-        with:
-          version: 10.12.4
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
-        with:
-          node-version: "22"
-          cache: pnpm
-          cache-dependency-path: apps/web/pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm test
-      - run: pnpm build
+    uses: tesserix/tesserix-workflows/.github/workflows/nextjs-ci.yml@f013aca347aa44d810cf1e976c5717b28bdb0a67
+    with:
+      working_directory: apps/web
+      node_version: '24'
+      package_manager: pnpm
+      pnpm_version: 10.12.4
 
-  image:
-    name: image build
-    runs-on: ubuntu-latest
-    needs: [api, web]
+  secrets:
+    uses: tesserix/tesserix-workflows/.github/workflows/secret-scan.yml@f013aca347aa44d810cf1e976c5717b28bdb0a67
+
+  containers:
+    needs: contracts
+    uses: tesserix/tesserix-workflows/.github/workflows/container-ci.yml@f013aca347aa44d810cf1e976c5717b28bdb0a67
+    with:
+      images: ${{ needs.contracts.outputs.images }}
+
+  release:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: [contracts, api, web, secrets, containers]
     permissions:
       contents: read
       packages: write
-    strategy:
-      matrix:
-        include:
-          - dockerfile: deploy/Dockerfile.api
-            image: ghcr.io/tesserix/onboarding-api
-          - dockerfile: deploy/Dockerfile.web
-            image: ghcr.io/tesserix/onboarding-web
+      id-token: write
+    uses: tesserix/tesserix-workflows/.github/workflows/container-release.yml@f013aca347aa44d810cf1e976c5717b28bdb0a67
+    with:
+      namespace: tesserix
+      images: ${{ needs.contracts.outputs.release_images }}
+
+  advance-deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: [release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
-      # A pull request builds but does not publish: a fork must never be able to
-      # push an image the cluster then pulls as latest.
-      - name: log in to ghcr
-        if: github.event_name == 'push'
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: build image
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
-        with:
-          context: .
-          file: ${{ matrix.dockerfile }}
-          push: ${{ github.event_name == 'push' }}
-          tags: |
-            ${{ matrix.image }}:${{ github.sha }}
-            ${{ matrix.image }}:latest
+          fetch-depth: 0
+      - name: Advance only after both images pass release gates
+        run: git push origin "${GITHUB_SHA}:refs/heads/deploy"
