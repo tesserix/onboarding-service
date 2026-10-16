@@ -7,10 +7,14 @@ append-only ledger.
 
 Design and API surface: [`tesserix-k8s/docs/onboarding-api.md`](https://github.com/tesserix/tesserix-k8s/blob/main/docs/onboarding-api.md).
 
+Product machines can obtain fresh, minimized identity observations through the
+[live product identity contract](docs/api/product-organisation-identity.md).
+Stored organisation profiles alone do not prove current source entitlement.
+
 ## Layout
 
 ```
-apps/api/          Go 1.26 + Gin + pgx API
+apps/api/          Go 1.27.2 + Gin + pgx API
   cmd/server       wiring only
   internal/zitadel Zitadel management client (sole holder of the iam-admin PAT)
   internal/store   onboarding_db projection and the audit ledger

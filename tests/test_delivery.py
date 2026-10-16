@@ -20,6 +20,14 @@ class DeliveryTests(unittest.TestCase):
         self.assertNotIn('--force', workflow)
         self.assertNotIn('continue-on-error', workflow)
 
+    def test_api_toolchain_matches_required_go_version(self):
+        expected = '1.27.2'
+        module = (ROOT / 'apps/api/go.mod').read_text()
+        self.assertEqual(re.search(r'^go (\S+)$', module, re.M).group(1), expected)
+        self.assertEqual(re.search(r'^go (\S+)$', (ROOT / 'go.work').read_text(), re.M).group(1), expected)
+        self.assertIn('go_version: ' + expected, (ROOT / '.github/workflows/ci.yml').read_text())
+        self.assertIn('ENV GOTOOLCHAIN=go' + expected, (ROOT / 'deploy/Dockerfile.api').read_text())
+
     def test_image_contract_covers_both_production_workloads(self):
         images = json.loads((ROOT / '.github/container-images.json').read_text())
         self.assertEqual({image['name'] for image in images}, {'onboarding-api', 'onboarding-web'})

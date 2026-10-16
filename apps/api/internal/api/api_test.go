@@ -32,7 +32,17 @@ func (s stubTokens) Verify(_ context.Context, raw string) (auth.Claims, error) {
 	return c, nil
 }
 
-type fakeIdentity struct{ zitadelOrgs int }
+type fakeIdentity struct {
+	zitadelOrgs int
+	verify      func(context.Context, string, string, string) (zitadel.OrganizationIdentity, error)
+}
+
+func (f *fakeIdentity) VerifyOrganization(ctx context.Context, org, tenant, project string) (zitadel.OrganizationIdentity, error) {
+	if f.verify == nil {
+		return zitadel.OrganizationIdentity{}, zitadel.ErrIdentityUnavailable
+	}
+	return f.verify(ctx, org, tenant, project)
+}
 
 func (f *fakeIdentity) CreateOrg(context.Context, string) (string, error) {
 	f.zitadelOrgs++
@@ -94,6 +104,7 @@ type harness struct {
 	router   *gin.Engine
 	store    *store.Store
 	sessions *auth.SessionCodec
+	identity *fakeIdentity
 }
 
 func newHarness(t *testing.T) *harness {
@@ -130,7 +141,8 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc := onboarding.New(st, &fakeIdentity{}, authz.New(st), nil)
+	identity := &fakeIdentity{}
+	svc := onboarding.New(st, identity, authz.New(st), nil)
 
 	tokens := stubTokens{claims: map[string]auth.Claims{
 		platformToken: {Subject: "sam", Email: "sam@tesserix.app", OrgID: platformOrg, Roles: []string{authz.RolePlatformAdmin}},
@@ -145,6 +157,7 @@ func newHarness(t *testing.T) *harness {
 		}),
 		store:    st,
 		sessions: sessions,
+		identity: identity,
 	}
 }
 

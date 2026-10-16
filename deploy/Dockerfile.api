@@ -5,7 +5,7 @@
 FROM --platform=$BUILDPLATFORM ghcr.io/tesserix/base-go-builder:latest@sha256:03f7dc939802b567835fce13a09edb89bb9904918dd5edd0025022f1976f4c89 AS build
 USER 0:0
 WORKDIR /src
-ENV GOTOOLCHAIN=go1.26.9
+ENV GOTOOLCHAIN=go1.27.2
 COPY apps/api/go.mod apps/api/go.sum ./
 RUN go mod download
 COPY apps/api/ ./
