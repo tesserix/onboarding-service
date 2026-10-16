@@ -29,7 +29,7 @@ jobs:
           echo "release_images=$(jq -c '{include: .}' .github/container-images.json)" >> "$GITHUB_OUTPUT"
 
   api:
-    uses: tesserix/tesserix-workflows/.github/workflows/go-ci.yml@f013aca347aa44d810cf1e976c5717b28bdb0a67
+    uses: tesserix/tesserix-workflows/.github/workflows/go-ci.yml@3ac75a0647d89812954ac01e20bfb78117b2dcec
     with:
       working_directory: apps/api
       go_version: 1.27.2
@@ -40,7 +40,7 @@ jobs:
       database_environment_prefix: ONBOARDING_TEST_
 
   web:
-    uses: tesserix/tesserix-workflows/.github/workflows/nextjs-ci.yml@f013aca347aa44d810cf1e976c5717b28bdb0a67
+    uses: tesserix/tesserix-workflows/.github/workflows/nextjs-ci.yml@3ac75a0647d89812954ac01e20bfb78117b2dcec
     with:
       working_directory: apps/web
       node_version: '24'
@@ -48,11 +48,11 @@ jobs:
       pnpm_version: 10.12.4
 
   secrets:
-    uses: tesserix/tesserix-workflows/.github/workflows/secret-scan.yml@f013aca347aa44d810cf1e976c5717b28bdb0a67
+    uses: tesserix/tesserix-workflows/.github/workflows/secret-scan.yml@3ac75a0647d89812954ac01e20bfb78117b2dcec
 
   containers:
     needs: contracts
-    uses: tesserix/tesserix-workflows/.github/workflows/container-ci.yml@f013aca347aa44d810cf1e976c5717b28bdb0a67
+    uses: tesserix/tesserix-workflows/.github/workflows/container-ci.yml@3ac75a0647d89812954ac01e20bfb78117b2dcec
     with:
       images: ${{ needs.contracts.outputs.images }}
 
@@ -63,7 +63,7 @@ jobs:
       contents: read
       packages: write
       id-token: write
-    uses: tesserix/tesserix-workflows/.github/workflows/container-release.yml@f013aca347aa44d810cf1e976c5717b28bdb0a67
+    uses: tesserix/tesserix-workflows/.github/workflows/container-release.yml@3ac75a0647d89812954ac01e20bfb78117b2dcec
     with:
       namespace: tesserix
       images: ${{ needs.contracts.outputs.release_images }}
