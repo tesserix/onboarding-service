@@ -42,7 +42,7 @@ const split = (value: string) =>
     .map((item) => item.trim())
     .filter(Boolean);
 
-const steps = ["Identity", "Capabilities", "Review", "Git"];
+const steps = ["Identity", "Capabilities", "Review", "Integration review"];
 
 export default function NewProductPage() {
   const [step, setStep] = useState(0);
@@ -54,14 +54,9 @@ export default function NewProductPage() {
   const set = (field: keyof Form) => (value: string) => setForm({ ...form, [field]: value });
   const hosts = split(form.hosts);
   const roles = split(form.roles);
-  const snippets = productManifests({
-    key: form.key,
-    displayName: form.displayName,
-    hosts,
-    identity: form.identity,
-    tenantSecrets: form.tenantSecrets,
-    roles,
-  });
+  const snippets = created
+    ? productManifests({ ...created, machineUserId: form.machineUserId })
+    : [];
 
   async function create() {
     setError(null);
@@ -281,11 +276,20 @@ export default function NewProductPage() {
         <div className="space-y-4">
           <Card title={`${created.displayName} is registered`}>
             <p className="text-sm text-muted-foreground">
-              The registry entry is saved. Review and deploy the infrastructure snippets through
-              GitOps before onboarding customers.
+              The registry entry is saved. The record below preserves its reviewed identifiers; it
+              does not deploy infrastructure. Verify the existing identity and authorization
+              configuration in GitOps before onboarding customers.
             </p>
           </Card>
 
+          {created.key === "helivanta" && (
+            <Link
+              href="/orgs/hospital"
+              className="block text-sm font-medium underline underline-offset-4"
+            >
+              Onboard or adopt a hospital identity
+            </Link>
+          )}
           {snippets.map((snippet) => (
             <Card
               key={snippet.path}
@@ -299,13 +303,14 @@ export default function NewProductPage() {
             </Card>
           ))}
 
-          <Card title="Git">
+          <Card title="Integration review">
             {acked ? (
               <p className="text-sm text-emerald-600">
-                Recorded in the audit ledger. <Link href="/products">Back to products</Link>
+                Review acknowledgement recorded in the audit ledger.{" "}
+                <Link href="/products">Back to products</Link>
               </p>
             ) : (
-              <Button onClick={acknowledge}>I&apos;ve raised the PR</Button>
+              <Button onClick={acknowledge}>Record review acknowledgement</Button>
             )}
           </Card>
         </div>
