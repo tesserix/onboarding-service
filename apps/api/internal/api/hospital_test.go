@@ -111,3 +111,38 @@ func TestHospitalCompletionFailsClosedAndPreservesCanonicalBinding(t *testing.T)
 		t.Fatal("controller request replaced initial admin")
 	}
 }
+
+func TestHospitalStatusIsScopedAndInternalRouteRejectsProductSessions(t *testing.T) {
+	h := newHarness(t)
+	claims := hospitalclaims.New(fake.NewSimpleDynamicClient(runtime.NewScheme()), "identity-operator")
+	tenant := "11111111-1111-4111-8111-111111111111"
+	if e := h.store.CreateProduct(t.Context(), store.Product{Key: "helivanta", DisplayName: "Helivanta", ZitadelProjectID: "proj-helivanta", MachineUserID: "svc-helivanta", Identity: store.IdentityZitadel, TenantSecrets: store.TenantSecretsOpenBao, Tenancy: store.TenancyOrg, Roles: []string{}, DataResidency: "in"}); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := claims.Create(t.Context(), hospitalclaims.Spec{Product: "helivanta", TenantID: tenant, DisplayName: "TEST Group", InitialAdminUserID: "human"}); e != nil {
+		t.Fatal(e)
+	}
+	svc := onboarding.New(h.store, h.identity, authz.New(h.store), nil, onboarding.WithHospitals(onboarding.HospitalConfig{Claims: claims, Product: "helivanta"}))
+	h.router = NewRouter(Deps{Service: svc, Store: h.store, Tokens: stubTokens{claims: map[string]auth.Claims{"helivanta": {Subject: "svc-helivanta"}, "foreign": {Subject: "svc-mark8ly"}}}})
+	path := "/v1/hospital-onboardings/" + tenant + "?product=helivanta"
+	for _, token := range []string{"foreign", ""} {
+		w := h.do(t, http.MethodGet, path, token, "")
+		if w.Code != 404 && w.Code != 401 {
+			t.Fatalf("foreign read status=%d", w.Code)
+		}
+	}
+	w := h.do(t, http.MethodGet, path, "helivanta", "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"state":"pending"`) {
+		t.Fatalf("pending state=%d %s", w.Code, w.Body.String())
+	}
+	for _, token := range []string{"helivanta", "foreign", ""} {
+		w = h.do(t, http.MethodPost, "/internal/v1/hospital-enrolments", token, `{}`)
+		if w.Code != 401 {
+			t.Fatalf("ordinary product reached controller endpoint: %d", w.Code)
+		}
+	}
+	input := onboarding.StartHospitalInput{Product: "helivanta", DisplayName: "TEST", InitialAdminUserID: "human", TenantID: tenant, OrganizationID: "existing"}
+	if _, e := svc.StartHospital(t.Context(), authz.Principal{Kind: authz.KindProduct, Subject: "svc-helivanta", ProductKey: "helivanta"}, input, "TEST-fresh-adoption-key"); e != onboarding.ErrNotFound {
+		t.Fatalf("product adoption decision=%v", e)
+	}
+}
