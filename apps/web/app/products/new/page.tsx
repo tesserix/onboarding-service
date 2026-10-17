@@ -202,7 +202,7 @@ export default function NewProductPage() {
             </Field>
             <Field
               label="Where do its customers' secrets live?"
-              hint="OpenBao provisions a per-tenant path at grant time. Platform secrets always go to GCP Secret Manager."
+              hint="Application and operational secrets belong in environment-scoped OpenBao paths. The product registry stores configuration, never secret values."
             >
               <select
                 className={inputClass}
@@ -279,10 +279,10 @@ export default function NewProductPage() {
 
       {step === 3 && created && (
         <div className="space-y-4">
-          <Card title={`${created.displayName} is live`}>
+          <Card title={`${created.displayName} is registered`}>
             <p className="text-sm text-muted-foreground">
-              The objects exist. Raise a PR with the snippets below so a rebuilt cluster reproduces
-              them.
+              The registry entry is saved. Review and deploy the infrastructure snippets through
+              GitOps before onboarding customers.
             </p>
           </Card>
 

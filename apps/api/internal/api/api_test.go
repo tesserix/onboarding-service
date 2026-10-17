@@ -34,6 +34,7 @@ func (s stubTokens) Verify(_ context.Context, raw string) (auth.Claims, error) {
 
 type fakeIdentity struct {
 	zitadelOrgs int
+	orgMembers  []onboarding.Member
 	verify      func(context.Context, string, string, string) (zitadel.OrganizationIdentity, error)
 }
 
@@ -61,7 +62,7 @@ func (f *fakeIdentity) CreateHumanUser(_ context.Context, _, email, _, _ string)
 func (f *fakeIdentity) AddOrgMember(context.Context, string, string, string) error { return nil }
 func (f *fakeIdentity) RemoveOrgMember(context.Context, string, string) error      { return nil }
 func (f *fakeIdentity) OrgMembers(context.Context, string) ([]onboarding.Member, error) {
-	return nil, nil
+	return f.orgMembers, nil
 }
 func (f *fakeIdentity) GrantProject(context.Context, string, string, []string) error { return nil }
 func (f *fakeIdentity) CreateProjectGrant(context.Context, string, string, []string) (string, error) {

@@ -18,9 +18,14 @@ import (
 	"github.com/tesserix/onboarding-service/api/internal/auth"
 	"github.com/tesserix/onboarding-service/api/internal/authz"
 	"github.com/tesserix/onboarding-service/api/internal/config"
+	"github.com/tesserix/onboarding-service/api/internal/hospitalclaims"
 	"github.com/tesserix/onboarding-service/api/internal/onboarding"
 	"github.com/tesserix/onboarding-service/api/internal/store"
+	"github.com/tesserix/onboarding-service/api/internal/workloadidentity"
 	"github.com/tesserix/onboarding-service/api/internal/zitadel"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
+	"net/url"
 )
 
 func main() {
@@ -74,6 +79,28 @@ func run(log *slog.Logger) error {
 	svc := onboarding.New(st, identity, authz.New(st), log,
 		onboarding.WithRegistryProjectID(cfg.RegistryProjectID))
 
+	var hospitalWorkloads api.WorkloadVerifier
+	if os.Getenv("HOSPITAL_PROVISIONING_ENABLED") == "true" {
+		kubeConfig, err := rest.InClusterConfig()
+		if err != nil {
+			return err
+		}
+		kube, err := dynamic.NewForConfig(kubeConfig)
+		if err != nil {
+			return err
+		}
+		hospitalWorkloads, err = workloadidentity.New(kubeConfig, "onboarding-provisioning", "system:serviceaccount:identity-operator:zitadel-operator")
+		if err != nil {
+			return err
+		}
+		target := os.Getenv("HELIVANTA_PROVISIONING_URL")
+		u, err := url.Parse(target)
+		if err != nil || u.Scheme != "https" || u.Host != "helivanta.app" || u.Path != "/api/internal/v1/hospital-enrolments" || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+			return errors.New("invalid Helivanta provisioning destination")
+		}
+		svc = onboarding.New(st, identity, authz.New(st), log, onboarding.WithRegistryProjectID(cfg.RegistryProjectID), onboarding.WithHospitals(onboarding.HospitalConfig{Claims: hospitalclaims.New(kube, "identity-operator"), Product: "helivanta", HelivantaURL: target, HelivantaTokenFile: "/var/run/helivanta-provisioning/token"}))
+	}
+
 	verifier, err := auth.NewJWKSVerifier(ctx, cfg.ZitadelIssuer, cfg.ZitadelJWKSURL, cfg.Audience, http.DefaultClient)
 	if err != nil {
 		return err
@@ -95,7 +122,7 @@ func run(log *slog.Logger) error {
 
 	gin.SetMode(gin.ReleaseMode)
 	router := api.NewRouter(api.Deps{
-		Service: svc, Store: st, Tokens: verifier, RegistryTokens: registryVerifier,
+		Service: svc, Store: st, Tokens: verifier, RegistryTokens: registryVerifier, HospitalWorkloads: hospitalWorkloads,
 		ConsoleTokens: consoleVerifier, Sessions: sessions,
 		OIDC:          auth.NewGoogleClient(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.RedirectURI),
 		Allowlist:     auth.ParseAllowlist(cfg.PlatformAdminEmails),

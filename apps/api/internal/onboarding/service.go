@@ -72,6 +72,7 @@ type Service struct {
 	authz             *authz.Authorizer
 	log               *slog.Logger
 	registryProjectID string
+	hospitals         *HospitalConfig
 }
 
 type Option func(*Service)
@@ -280,6 +281,9 @@ func (s *Service) requestedProducts(ctx context.Context, p authz.Principal, requ
 	}
 	products := make([]store.Product, 0, len(requested))
 	for _, key := range requested {
+		if key == operatorManagedHospitalProduct {
+			return nil, errHospitalWorkflow
+		}
 		prod, err := s.store.Product(ctx, key)
 		if err != nil {
 			if errors.Is(err, store.ErrNotFound) {
@@ -399,6 +403,10 @@ func (s *Service) AddGrant(ctx context.Context, p authz.Principal, orgID uuid.UU
 	}
 	if p.Kind == authz.KindProduct && p.ProductKey != productKey {
 		return fmt.Errorf("%w: a product may only grant itself", ErrInvalid)
+	}
+
+	if productKey == operatorManagedHospitalProduct {
+		return errHospitalWorkflow
 	}
 
 	org, err := s.store.Organization(ctx, orgID)

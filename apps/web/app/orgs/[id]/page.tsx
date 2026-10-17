@@ -190,7 +190,7 @@ function Products({ orgId, onAct }: { orgId: string; onAct: Act }) {
     (grants.data?.grants ?? []).filter((g) => !g.revokedAt).map((g) => g.productKey),
   );
   const available = (products.data?.products ?? []).filter(
-    (p) => p.identity === "zitadel" && !held.has(p.key),
+    (p) => p.key !== "helivanta" && p.identity === "zitadel" && !held.has(p.key),
   );
 
   return (
@@ -233,6 +233,13 @@ function Products({ orgId, onAct }: { orgId: string; onAct: Act }) {
         )}
       </Card>
 
+      <p className="text-sm">
+        Helivanta identity adoption uses{" "}
+        <Link href="/orgs/hospital" className="underline underline-offset-4">
+          hospital onboarding
+        </Link>
+        .
+      </p>
       <Card title="Grant a product">
         <div className="flex items-end gap-2">
           <Field label="Product">

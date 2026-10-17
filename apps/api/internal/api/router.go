@@ -14,8 +14,9 @@ import (
 )
 
 type Deps struct {
-	Service *onboarding.Service
-	Store   *store.Store
+	HospitalWorkloads WorkloadVerifier
+	Service           *onboarding.Service
+	Store             *store.Store
 	// Tokens verifies a product's Zitadel machine token; ConsoleTokens verifies
 	// the Google ID token a console human signs in with. Two issuers, two
 	// audiences, so they cannot be the same verifier.
@@ -64,5 +65,8 @@ func NewRouter(d Deps) *gin.Engine {
 
 	v1 := r.Group("/v1", readBody(), d.authenticate(), newRateLimiter(20, 40).middleware(), d.idempotency())
 	d.registerRoutes(v1)
+	v1.POST("/hospital-onboardings", d.startHospital)
+	v1.GET("/hospital-onboardings/:tenantId", d.getHospital)
+	r.POST("/internal/v1/hospital-enrolments", d.completeHospital)
 	return r
 }

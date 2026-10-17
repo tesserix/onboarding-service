@@ -177,7 +177,7 @@ func (d Deps) principalFromClaims(c *gin.Context, claims auth.Claims) (authz.Pri
 		}, nil
 	}
 
-	// Anyone else is an admin of exactly the org their token was issued in.
+	// Customer login claims require a live organization-owner membership.
 	// Machine users created for Registry publishing have no verified email and
 	// cannot use this human credential-management API directly.
 	if !claims.EmailVerified {
@@ -186,6 +186,10 @@ func (d Deps) principalFromClaims(c *gin.Context, claims auth.Claims) (authz.Pri
 	org, err := d.Store.OrganizationByZitadelID(ctx, claims.OrgID)
 	if err != nil {
 		return authz.Principal{}, err
+	}
+	owner, err := d.Service.IsOrganizationOwner(ctx, org.ZitadelOrgID, claims.Subject)
+	if err != nil || !owner {
+		return authz.Principal{}, auth.ErrInvalidToken
 	}
 	return authz.Principal{
 		Kind: authz.KindOrgAdmin, Subject: claims.Subject, Email: claims.Email,

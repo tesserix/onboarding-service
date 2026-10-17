@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -32,7 +33,9 @@ export default function NewOrgPage() {
 
   // Only Zitadel products can hold an org, so a GIP product is not offered here
   // rather than being offered and then refused by the API.
-  const grantable = (products.data?.products ?? []).filter((p) => p.identity === "zitadel");
+  const grantable = (products.data?.products ?? []).filter(
+    (p) => p.key !== "helivanta" && p.identity === "zitadel",
+  );
 
   async function create() {
     setSaving(true);
@@ -78,6 +81,13 @@ export default function NewOrgPage() {
           <Button onClick={() => router.push(`/orgs/${createdID}`)}>Open organization</Button>
         </Card>
       )}
+      <p className="text-sm">
+        For Helivanta, use{" "}
+        <Link href="/orgs/hospital" className="underline underline-offset-4">
+          hospital onboarding and adoption
+        </Link>
+        .
+      </p>
       <Card title="New organization">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Name">
