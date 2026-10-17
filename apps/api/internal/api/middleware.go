@@ -104,11 +104,18 @@ func (d Deps) authenticate() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if raw := bearer(c); raw != "" {
 			claims, err := d.Tokens.Verify(c.Request.Context(), raw)
+			if err != nil && d.ConsoleAccessTokens != nil {
+				claims, err = d.ConsoleAccessTokens.Verify(c.Request.Context(), raw)
+			}
 			if err != nil && d.RegistryTokens != nil {
 				claims, err = d.RegistryTokens.Verify(c.Request.Context(), raw)
 			}
 			if err != nil {
 				abort(c, http.StatusUnauthorized, "authentication required")
+				return
+			}
+			if claims.Console && (c.Request.Method == http.MethodDelete || strings.HasSuffix(c.Request.URL.Path, "/deactivate")) && !claims.HardDelete {
+				abort(c, http.StatusForbidden, "additional permission required")
 				return
 			}
 			principal, err := d.principalFromClaims(c, claims)

@@ -119,14 +119,23 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	var consoleAccess api.TokenVerifier
+	if cfg.ConsoleProjectID != "" {
+		v, err := auth.NewJWKSVerifier(ctx, cfg.ZitadelIssuer, cfg.ZitadelJWKSURL, cfg.ConsoleProjectID, http.DefaultClient)
+		if err != nil {
+			return err
+		}
+		consoleAccess = v.ForConsole(cfg.ConsoleClientID, platformOrgID)
+	}
 
 	gin.SetMode(gin.ReleaseMode)
 	router := api.NewRouter(api.Deps{
 		Service: svc, Store: st, Tokens: verifier, RegistryTokens: registryVerifier, HospitalWorkloads: hospitalWorkloads,
 		ConsoleTokens: consoleVerifier, Sessions: sessions,
-		OIDC:          auth.NewGoogleClient(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.RedirectURI),
-		Allowlist:     auth.ParseAllowlist(cfg.PlatformAdminEmails),
-		PlatformOrgID: platformOrgID, ConsoleURL: cfg.ConsoleURL,
+		ConsoleAccessTokens: consoleAccess,
+		OIDC:                auth.NewGoogleClient(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.RedirectURI),
+		Allowlist:           auth.ParseAllowlist(cfg.PlatformAdminEmails),
+		PlatformOrgID:       platformOrgID, ConsoleURL: cfg.ConsoleURL,
 		SecureCookies: cfg.SecureCookies, Log: log,
 	})
 

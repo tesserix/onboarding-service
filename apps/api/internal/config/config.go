@@ -23,6 +23,8 @@ type Config struct {
 	PlatformOrgID         string
 	PlatformOrgName       string
 	Audience              string
+	ConsoleProjectID      string
+	ConsoleClientID       string
 	RegistryTokenAudience string
 	RegistryProjectID     string
 	// Console humans sign in with Google; PlatformAdminEmails is the
@@ -47,6 +49,8 @@ func Load() (Config, error) {
 		PlatformOrgID:         os.Getenv("PLATFORM_ORG_ID"),
 		PlatformOrgName:       env("PLATFORM_ORG_NAME", "TESSERIX"),
 		Audience:              env("TOKEN_AUDIENCE", "onboarding-api"),
+		ConsoleProjectID:      os.Getenv("CONSOLE_PROJECT_ID"),
+		ConsoleClientID:       os.Getenv("CONSOLE_CLIENT_ID"),
 		RegistryTokenAudience: os.Getenv("REGISTRY_TOKEN_AUDIENCE"),
 		RegistryProjectID:     os.Getenv("REGISTRY_PROJECT_ID"),
 		GoogleClientID:        os.Getenv("GOOGLE_CLIENT_ID"),
@@ -58,6 +62,9 @@ func Load() (Config, error) {
 	}
 	c.ZitadelJWKSURL = env("ZITADEL_JWKS_URL", strings.TrimSuffix(c.ZitadelIssuer, "/")+"/oauth/v2/keys")
 	c.RedirectURI = env("OIDC_REDIRECT_URI", strings.TrimSuffix(c.ConsoleURL, "/")+"/api/auth/callback")
+	if (c.ConsoleProjectID == "") != (c.ConsoleClientID == "") {
+		return Config{}, fmt.Errorf("CONSOLE_PROJECT_ID and CONSOLE_CLIENT_ID must be configured together")
+	}
 
 	key, err := sessionKey(os.Getenv("SESSION_KEY"))
 	if err != nil {
