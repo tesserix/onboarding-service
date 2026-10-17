@@ -204,3 +204,26 @@ func TestLoginSendsTheBrowserToGoogle(t *testing.T) {
 		t.Fatalf("login goes to %q", got)
 	}
 }
+
+func TestDisabledLegacyConsoleRejectsPreviouslyIssuedCookiesAndLogin(t *testing.T) {
+	h := newConsoleHarness(t, "first@example.test")
+	h.router = NewRouter(Deps{DisableLegacyConsole: true, Tokens: h.tokens, Sessions: h.sessions, OIDC: auth.NewGoogleClient("client", "secret", "https://example.test/callback"), Allowlist: auth.ParseAllowlist("first@example.test")})
+	if rec := func() *httptest.ResponseRecorder {
+		r := httptest.NewRecorder()
+		h.router.ServeHTTP(r, httptest.NewRequest(http.MethodGet, "/api/auth/login", nil))
+		return r
+	}(); rec.Code != 404 {
+		t.Fatalf("legacy login reachable: %d", rec.Code)
+	}
+	cookie, err := h.sessions.Encode(auth.Session{Subject: "legacy-admin", Email: "first@example.test", OrgID: platformOrg, Roles: []string{"platform-admin"}, ExpiresAt: time.Now().Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/v1/me", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+	rec := httptest.NewRecorder()
+	h.router.ServeHTTP(rec, req)
+	if rec.Code != 401 {
+		t.Fatalf("legacy cookie accepted: %d", rec.Code)
+	}
+}

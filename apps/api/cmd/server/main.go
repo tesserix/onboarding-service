@@ -109,16 +109,22 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	// Console humans are verified against Google, product machine users against
-	// Zitadel; each verifier pins its own issuer and audience.
-	consoleVerifier, err := auth.NewJWKSVerifier(ctx, auth.GoogleIssuer, auth.GoogleJWKSURL, cfg.GoogleClientID, http.DefaultClient)
-	if err != nil {
-		return err
+	var legacyTokens api.TokenVerifier
+	var legacyOIDC *auth.OIDCClient
+	var sessions *auth.SessionCodec
+	if cfg.LegacyConsoleEnabled {
+		v, e := auth.NewJWKSVerifier(ctx, auth.GoogleIssuer, auth.GoogleJWKSURL, cfg.GoogleClientID, http.DefaultClient)
+		if e != nil {
+			return e
+		}
+		legacyTokens = v
+		legacyOIDC = auth.NewGoogleClient(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.RedirectURI)
+		sessions, e = auth.NewSessionCodec(cfg.SessionKey)
+		if e != nil {
+			return e
+		}
 	}
-	sessions, err := auth.NewSessionCodec(cfg.SessionKey)
-	if err != nil {
-		return err
-	}
+
 	var consoleAccess api.TokenVerifier
 	if cfg.ConsoleProjectID != "" {
 		v, err := auth.NewJWKSVerifier(ctx, cfg.ZitadelIssuer, cfg.ZitadelJWKSURL, cfg.ConsoleProjectID, http.DefaultClient)
@@ -131,11 +137,12 @@ func run(log *slog.Logger) error {
 	gin.SetMode(gin.ReleaseMode)
 	router := api.NewRouter(api.Deps{
 		Service: svc, Store: st, Tokens: verifier, RegistryTokens: registryVerifier, HospitalWorkloads: hospitalWorkloads,
-		ConsoleTokens: consoleVerifier, Sessions: sessions,
-		ConsoleAccessTokens: consoleAccess,
-		OIDC:                auth.NewGoogleClient(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.RedirectURI),
-		Allowlist:           auth.ParseAllowlist(cfg.PlatformAdminEmails),
-		PlatformOrgID:       platformOrgID, ConsoleURL: cfg.ConsoleURL,
+		ConsoleTokens: legacyTokens, Sessions: sessions,
+		ConsoleAccessTokens:  consoleAccess,
+		DisableLegacyConsole: !cfg.LegacyConsoleEnabled,
+		OIDC:                 legacyOIDC,
+		Allowlist:            auth.ParseAllowlist(cfg.PlatformAdminEmails),
+		PlatformOrgID:        platformOrgID, ConsoleURL: cfg.ConsoleURL,
 		SecureCookies: cfg.SecureCookies, Log: log,
 	})
 

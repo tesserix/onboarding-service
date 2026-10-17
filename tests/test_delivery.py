@@ -10,11 +10,11 @@ ROOT = Path(__file__).resolve().parents[1]
 class DeliveryTests(unittest.TestCase):
     def test_ci_uses_shared_quality_and_image_gates(self):
         workflow = (ROOT / '.github/workflows/ci.yml').read_text()
-        for name in ('go-ci', 'nextjs-ci', 'secret-scan', 'container-ci', 'container-release'):
+        for name in ('go-ci', 'secret-scan', 'container-ci', 'container-release'):
             self.assertRegex(workflow, rf'tesserix/tesserix-workflows/.github/workflows/{name}\.yml@[0-9a-f]{{40}}')
         self.assertIn('database_enabled: true', workflow)
-        self.assertIn('package_manager: pnpm', workflow)
-        self.assertIn('needs: [contracts, api, web, secrets, containers]', workflow)
+        self.assertNotIn('working_directory: apps/web', workflow)
+        self.assertIn('needs: [contracts, api, secrets, containers]', workflow)
         self.assertIn('needs: [release]', workflow)
         self.assertIn('"${GITHUB_SHA}:refs/heads/deploy"', workflow)
         self.assertNotIn('--force', workflow)
@@ -28,18 +28,18 @@ class DeliveryTests(unittest.TestCase):
         self.assertIn('go_version: ' + expected, (ROOT / '.github/workflows/ci.yml').read_text())
         self.assertIn('ENV GOTOOLCHAIN=go' + expected, (ROOT / 'deploy/Dockerfile.api').read_text())
 
-    def test_image_contract_covers_both_production_workloads(self):
+    def test_image_contract_covers_only_the_retained_private_api(self):
         images = json.loads((ROOT / '.github/container-images.json').read_text())
-        self.assertEqual({image['name'] for image in images}, {'onboarding-api', 'onboarding-web'})
+        self.assertEqual({image['name'] for image in images}, {'onboarding-api'})
         for image in images:
             self.assertEqual(image['context'], '.')
             self.assertEqual(image['target'], 'runtime')
             self.assertTrue((ROOT / image['dockerfile']).is_file())
-        web = next(image for image in images if image['name'] == 'onboarding-web')
-        self.assertEqual((web['smoke_port'], web['smoke_path']), (3500, '/healthz'))
+        self.assertFalse((ROOT / 'apps/web/package.json').exists())
+        self.assertFalse((ROOT / 'deploy/Dockerfile.web').exists())
 
     def test_images_use_only_digest_pinned_shared_bases(self):
-        for name in ('api', 'web'):
+        for name in ('api',):
             dockerfile = (ROOT / f'deploy/Dockerfile.{name}').read_text()
             bases = re.findall(r'^FROM (?:--platform=\S+ )?(\S+)', dockerfile, re.M)
             self.assertEqual(len(bases), 2)

@@ -39,14 +39,6 @@ jobs:
       database_setup_script: scripts/ci/setup-postgres.sh
       database_environment_prefix: ONBOARDING_TEST_
 
-  web:
-    uses: tesserix/tesserix-workflows/.github/workflows/nextjs-ci.yml@3ac75a0647d89812954ac01e20bfb78117b2dcec
-    with:
-      working_directory: apps/web
-      node_version: '24'
-      package_manager: pnpm
-      pnpm_version: 10.12.4
-
   secrets:
     uses: tesserix/tesserix-workflows/.github/workflows/secret-scan.yml@3ac75a0647d89812954ac01e20bfb78117b2dcec
 
@@ -58,7 +50,7 @@ jobs:
 
   release:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    needs: [contracts, api, web, secrets, containers]
+    needs: [contracts, api, secrets, containers]
     permissions:
       contents: read
       packages: write
@@ -78,5 +70,5 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - name: Advance only after both images pass release gates
+      - name: Advance only after the API passes release gates
         run: git push origin "${GITHUB_SHA}:refs/heads/deploy"

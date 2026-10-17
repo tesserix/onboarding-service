@@ -1,6 +1,6 @@
 # Standard onboarding delivery
 
-Status: implementation ready for CI; production cutover waits for successful release gates.
+Status: historical two-workload delivery decision. The standalone web app is superseded by [console identity onboarding](https://github.com/tesserix/tesserix-home/blob/main/docs/adr/0058-console-identity-onboarding.md); current releases build only the retained private API.
 
 The onboarding API and Next.js console are one product in `apps/api` and `apps/web`.
 There is no demo application or mock API in the production source. Tests belong in
