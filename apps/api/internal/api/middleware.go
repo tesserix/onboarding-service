@@ -128,6 +128,10 @@ func (d Deps) authenticate() gin.HandlerFunc {
 			return
 		}
 
+		if d.DisableLegacyConsole {
+			abort(c, http.StatusUnauthorized, "authentication required")
+			return
+		}
 		cookie, err := c.Cookie(sessionCookie)
 		if err != nil || cookie == "" {
 			abort(c, http.StatusUnauthorized, "authentication required")

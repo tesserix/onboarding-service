@@ -1,7 +1,7 @@
 # Hospital and group onboarding
 
 The trusted platform console or Helivanta backend calls
-`POST /v1/hospital-onboardings` on `https://onboard.tesserix.app` with an
+`POST /v1/hospital-onboardings` on `https://console.tesserix.app` with an
 `Idempotency-Key` of 16–200 characters. Console sessions retain the normal CSRF
 check. Service tokens must be issued for the configured onboarding project
 audience and map to the registered Helivanta machine user. Browser users never

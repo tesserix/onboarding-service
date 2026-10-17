@@ -227,3 +227,20 @@ func TestLoadKeepsTheAllowlistVerbatim(t *testing.T) {
 		t.Fatalf("allowlist = %q", cfg.PlatformAdminEmails)
 	}
 }
+
+func TestConsoleCutoverNeedsNoLegacyLoginSecrets(t *testing.T) {
+	setRequired(t)
+	t.Setenv("LEGACY_CONSOLE_ENABLED", "false")
+	t.Setenv("CONSOLE_PROJECT_ID", "console-project")
+	t.Setenv("CONSOLE_CLIENT_ID", "console-client")
+	for _, key := range []string{"SESSION_KEY", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "PLATFORM_ADMIN_EMAILS"} {
+		t.Setenv(key, "")
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LegacyConsoleEnabled || len(cfg.SessionKey) != 0 {
+		t.Fatal("legacy authentication remains enabled")
+	}
+}

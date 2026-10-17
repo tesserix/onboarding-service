@@ -14,9 +14,10 @@ import (
 )
 
 type Deps struct {
-	HospitalWorkloads WorkloadVerifier
-	Service           *onboarding.Service
-	Store             *store.Store
+	DisableLegacyConsole bool
+	HospitalWorkloads    WorkloadVerifier
+	Service              *onboarding.Service
+	Store                *store.Store
 	// Tokens verifies a product's Zitadel machine token; ConsoleTokens verifies
 	// the Google ID token a console human signs in with. Two issuers, two
 	// audiences, so they cannot be the same verifier.
@@ -60,7 +61,7 @@ func NewRouter(d Deps) *gin.Engine {
 		c.JSON(http.StatusOK, gin.H{"status": "ready"})
 	})
 
-	if d.OIDC != nil {
+	if d.OIDC != nil && !d.DisableLegacyConsole {
 		d.registerAuthRoutes(r)
 	}
 

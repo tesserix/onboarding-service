@@ -12,12 +12,13 @@ import (
 )
 
 type Config struct {
-	Port              string
-	DatabaseURL       string
-	ZitadelIssuer     string
-	ZitadelJWKSURL    string
-	ZitadelPAT        string
-	ZitadelMachineKey string
+	LegacyConsoleEnabled bool
+	Port                 string
+	DatabaseURL          string
+	ZitadelIssuer        string
+	ZitadelJWKSURL       string
+	ZitadelPAT           string
+	ZitadelMachineKey    string
 	// PlatformOrgID is optional: an empty value is resolved from
 	// PlatformOrgName at boot.
 	PlatformOrgID         string
@@ -41,6 +42,7 @@ type Config struct {
 
 func Load() (Config, error) {
 	c := Config{
+		LegacyConsoleEnabled:  env("LEGACY_CONSOLE_ENABLED", "true") == "true",
 		Port:                  env("PORT", "8080"),
 		DatabaseURL:           os.Getenv("DATABASE_URL"),
 		ZitadelIssuer:         env("ZITADEL_ISSUER", "https://auth.tesserix.app"),
@@ -66,11 +68,15 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("CONSOLE_PROJECT_ID and CONSOLE_CLIENT_ID must be configured together")
 	}
 
-	key, err := sessionKey(os.Getenv("SESSION_KEY"))
-	if err != nil {
-		return Config{}, err
+	if c.LegacyConsoleEnabled {
+		key, err := sessionKey(os.Getenv("SESSION_KEY"))
+		if err != nil {
+			return Config{}, err
+		}
+		c.SessionKey = key
+	} else if c.ConsoleProjectID == "" || c.ConsoleClientID == "" {
+		return Config{}, fmt.Errorf("console project and client are required when legacy login is disabled")
 	}
-	c.SessionKey = key
 
 	if c.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
@@ -89,16 +95,18 @@ func Load() (Config, error) {
 	if c.RegistryProjectID == "" {
 		return Config{}, fmt.Errorf("REGISTRY_PROJECT_ID is required")
 	}
-	if c.GoogleClientID == "" {
-		return Config{}, fmt.Errorf("GOOGLE_CLIENT_ID is required")
-	}
-	if c.GoogleClientSecret == "" {
-		return Config{}, fmt.Errorf("GOOGLE_CLIENT_SECRET is required")
-	}
-	// A console nobody may sign in to is a misconfiguration; refuse to start
-	// rather than serve a door with no key.
-	if strings.Trim(c.PlatformAdminEmails, ", ") == "" {
-		return Config{}, fmt.Errorf("PLATFORM_ADMIN_EMAILS is required and must name at least one address")
+	if c.LegacyConsoleEnabled {
+		if c.GoogleClientID == "" {
+			return Config{}, fmt.Errorf("GOOGLE_CLIENT_ID is required")
+		}
+		if c.GoogleClientSecret == "" {
+			return Config{}, fmt.Errorf("GOOGLE_CLIENT_SECRET is required")
+		}
+		// A console nobody may sign in to is a misconfiguration; refuse to start
+		// rather than serve a door with no key.
+		if strings.Trim(c.PlatformAdminEmails, ", ") == "" {
+			return Config{}, fmt.Errorf("PLATFORM_ADMIN_EMAILS is required and must name at least one address")
+		}
 	}
 	return c, nil
 }
