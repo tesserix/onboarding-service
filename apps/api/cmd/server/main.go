@@ -135,8 +135,17 @@ func run(log *slog.Logger) error {
 	}
 
 	gin.SetMode(gin.ReleaseMode)
+	var mcpTokens api.TokenVerifier
+	if cfg.MCPGatewayProjectID != "" {
+		v, e := auth.NewJWKSVerifier(ctx, cfg.ZitadelIssuer, cfg.ZitadelJWKSURL, cfg.MCPGatewayProjectID, &http.Client{Timeout: 10 * time.Second})
+		if e != nil {
+			return e
+		}
+		mcpTokens = v.ForMCP(cfg.Audience, platformOrgID)
+	}
 	router := api.NewRouter(api.Deps{
-		Service: svc, Store: st, Tokens: verifier, RegistryTokens: registryVerifier, HospitalWorkloads: hospitalWorkloads,
+		MCPTokens: mcpTokens,
+		Service:   svc, Store: st, Tokens: verifier, RegistryTokens: registryVerifier, HospitalWorkloads: hospitalWorkloads,
 		ConsoleTokens: legacyTokens, Sessions: sessions,
 		ConsoleAccessTokens:  consoleAccess,
 		DisableLegacyConsole: !cfg.LegacyConsoleEnabled,

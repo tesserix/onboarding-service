@@ -1,0 +1,572 @@
+{
+  "apiVersion": "registry.agentic.dev/v1alpha1",
+  "kind": "MCPServer",
+  "metadata": {
+    "labels": {
+      "devai.io/source": "onboarding-service",
+      "mcp.devai.io/server": "operator-onboarding-mcp",
+      "mcp.tesserix.app/class": "platform",
+      "mcp.tesserix.app/tenant": "onboarding"
+    },
+    "name": "operator-onboarding-mcp",
+    "namespace": "devai",
+    "visibility": "internal"
+  },
+  "spec": {
+    "authMode": "bearer",
+    "description": "Authenticated operational hospital identity onboarding. Read and create roles are separate; adoption requires explicit additional authority. No clinical data or deletion tools.",
+    "displayName": "Operator Onboarding MCP",
+    "endpoint": "http://onboarding-api.onboarding.svc.cluster.local:8080/mcp",
+    "name": "operator-onboarding-mcp",
+    "protocolVersion": "2026-07-28",
+    "remotes": [
+      {
+        "type": "streamableHttp",
+        "url": "http://onboarding-api.onboarding.svc.cluster.local:8080/mcp"
+      }
+    ],
+    "toolSelector": {
+      "matchLabels": {
+        "mcp.devai.io/server": "operator-onboarding-mcp"
+      }
+    },
+    "tools": [
+      "adopt_hospital_onboarding",
+      "get_hospital_onboarding",
+      "get_onboarding_context",
+      "list_hospital_tenants",
+      "request_hospital_onboarding"
+    ],
+    "x-tesserix": {
+      "consumerProfile": "privileged-operator",
+      "contractDigest": "sha256:94c5f0e960b9ae12cf523da3cf46c7d2b7da892568e432f9f0cd6b807ef1eed4",
+      "directAccess": false,
+      "gatewayProject": "387190457387450503",
+      "resourceAudience": "395476377970673709",
+      "source": "https://github.com/tesserix/onboarding-service",
+      "transport": "stateless"
+    }
+  }
+}
+---
+{
+  "apiVersion": "registry.agentic.dev/v1alpha1",
+  "kind": "Tool",
+  "metadata": {
+    "annotations": {
+      "mcp.devai.io/wire-name": "adopt_hospital_onboarding"
+    },
+    "labels": {
+      "devai.io/source": "onboarding-service",
+      "mcp.devai.io/server": "operator-onboarding-mcp",
+      "mcp.tesserix.app/class": "platform",
+      "mcp.tesserix.app/tenant": "onboarding"
+    },
+    "name": "onboarding-adopt-hospital-onboarding",
+    "namespace": "devai",
+    "visibility": "internal"
+  },
+  "spec": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false
+    },
+    "description": "Adopt an EXISTING verified hospital binding without changing its login policy. Requires separate adoption authority and explicit user intent; never invent or replace identifiers.",
+    "displayName": "adopt_hospital_onboarding",
+    "effects": [
+      "identity.adopt"
+    ],
+    "idempotency": "caller_key",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "displayName": {
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "description": "16 to 200 characters; retain this exact key and intent across retries",
+          "type": "string"
+        },
+        "initialAdminUserId": {
+          "description": "Existing verified Zitadel user to appoint; do not invent a user ID",
+          "type": "string"
+        },
+        "organizationId": {
+          "type": "string"
+        },
+        "preserveLoginPolicy": {
+          "description": "Must be true to preserve the existing login policy",
+          "type": "boolean"
+        },
+        "tenantId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "displayName",
+        "initialAdminUserId",
+        "idempotencyKey",
+        "tenantId",
+        "organizationId",
+        "preserveLoginPolicy"
+      ],
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "archiveGeneration": {
+          "type": "string"
+        },
+        "archiveObject": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer"
+        },
+        "observedGeneration": {
+          "type": "integer"
+        },
+        "organizationId": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "sourceLocator": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "tenantId",
+        "displayName",
+        "organizationId",
+        "reason",
+        "generation",
+        "observedGeneration",
+        "archiveObject",
+        "archiveGeneration",
+        "sourceLocator"
+      ],
+      "type": "object"
+    },
+    "requiredScopes": [
+      "onboarding.helivanta.read",
+      "onboarding.helivanta.adopt"
+    ],
+    "server": "operator-onboarding-mcp",
+    "tags": [
+      "onboarding",
+      "operator",
+      "mcp-tool"
+    ],
+    "version": "1.0.0"
+  }
+}
+---
+{
+  "apiVersion": "registry.agentic.dev/v1alpha1",
+  "kind": "Tool",
+  "metadata": {
+    "annotations": {
+      "mcp.devai.io/wire-name": "get_hospital_onboarding"
+    },
+    "labels": {
+      "devai.io/source": "onboarding-service",
+      "mcp.devai.io/server": "operator-onboarding-mcp",
+      "mcp.tesserix.app/class": "platform",
+      "mcp.tesserix.app/tenant": "onboarding"
+    },
+    "name": "onboarding-get-hospital-onboarding",
+    "namespace": "devai",
+    "visibility": "internal"
+  },
+  "spec": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Read an existing Helivanta onboarding request and its current retained archive receipt. This does not provision or activate anything.",
+    "displayName": "get_hospital_onboarding",
+    "effects": [],
+    "idempotency": "not_applicable",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "tenantId": {
+          "description": "Canonical tenant UUID identifying the requested resource, never caller identity",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tenantId"
+      ],
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "archiveGeneration": {
+          "type": "string"
+        },
+        "archiveObject": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer"
+        },
+        "observedGeneration": {
+          "type": "integer"
+        },
+        "organizationId": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "sourceLocator": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "tenantId",
+        "displayName",
+        "organizationId",
+        "reason",
+        "generation",
+        "observedGeneration",
+        "archiveObject",
+        "archiveGeneration",
+        "sourceLocator"
+      ],
+      "type": "object"
+    },
+    "requiredScopes": [
+      "onboarding.helivanta.read"
+    ],
+    "server": "operator-onboarding-mcp",
+    "tags": [
+      "onboarding",
+      "operator",
+      "mcp-tool"
+    ],
+    "version": "1.0.0"
+  }
+}
+---
+{
+  "apiVersion": "registry.agentic.dev/v1alpha1",
+  "kind": "Tool",
+  "metadata": {
+    "annotations": {
+      "mcp.devai.io/wire-name": "get_onboarding_context"
+    },
+    "labels": {
+      "devai.io/source": "onboarding-service",
+      "mcp.devai.io/server": "operator-onboarding-mcp",
+      "mcp.tesserix.app/class": "platform",
+      "mcp.tesserix.app/tenant": "onboarding"
+    },
+    "name": "onboarding-get-onboarding-context",
+    "namespace": "devai",
+    "visibility": "internal"
+  },
+  "spec": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "Describe this verified caller's onboarding permissions, tenancy model and safe workflow.",
+    "displayName": "get_onboarding_context",
+    "effects": [],
+    "idempotency": "not_applicable",
+    "inputSchema": {
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "canAdopt": {
+          "type": "boolean"
+        },
+        "canCreate": {
+          "type": "boolean"
+        },
+        "product": {
+          "type": "string"
+        },
+        "sourceLocator": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "tenancy": {
+          "type": "string"
+        },
+        "workflow": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "product",
+        "subject",
+        "canCreate",
+        "canAdopt",
+        "tenancy",
+        "workflow",
+        "sourceLocator"
+      ],
+      "type": "object"
+    },
+    "requiredScopes": [
+      "onboarding.helivanta.read"
+    ],
+    "server": "operator-onboarding-mcp",
+    "tags": [
+      "onboarding",
+      "operator",
+      "mcp-tool"
+    ],
+    "version": "1.0.0"
+  }
+}
+---
+{
+  "apiVersion": "registry.agentic.dev/v1alpha1",
+  "kind": "Tool",
+  "metadata": {
+    "annotations": {
+      "mcp.devai.io/wire-name": "list_hospital_tenants"
+    },
+    "labels": {
+      "devai.io/source": "onboarding-service",
+      "mcp.devai.io/server": "operator-onboarding-mcp",
+      "mcp.tesserix.app/class": "platform",
+      "mcp.tesserix.app/tenant": "onboarding"
+    },
+    "name": "onboarding-list-hospital-tenants",
+    "namespace": "devai",
+    "visibility": "internal"
+  },
+  "spec": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "description": "List only tenants with a live Helivanta grant, using cursor pagination.",
+    "displayName": "list_hospital_tenants",
+    "effects": [],
+    "idempotency": "not_applicable",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "after": {
+          "description": "Tenant UUID cursor returned by the previous page",
+          "type": "string"
+        },
+        "limit": {
+          "description": "Page size from 1 to 100; defaults to 50",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "nextCursor": {
+          "type": "string"
+        },
+        "sourceLocator": {
+          "type": "string"
+        },
+        "tenants": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string"
+              },
+              "tenantId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "tenantId",
+              "name",
+              "state"
+            ],
+            "type": "object"
+          },
+          "type": [
+            "null",
+            "array"
+          ]
+        }
+      },
+      "required": [
+        "tenants",
+        "nextCursor",
+        "sourceLocator"
+      ],
+      "type": "object"
+    },
+    "requiredScopes": [
+      "onboarding.helivanta.read"
+    ],
+    "server": "operator-onboarding-mcp",
+    "tags": [
+      "onboarding",
+      "operator",
+      "mcp-tool"
+    ],
+    "version": "1.0.0"
+  }
+}
+---
+{
+  "apiVersion": "registry.agentic.dev/v1alpha1",
+  "kind": "Tool",
+  "metadata": {
+    "annotations": {
+      "mcp.devai.io/wire-name": "request_hospital_onboarding"
+    },
+    "labels": {
+      "devai.io/source": "onboarding-service",
+      "mcp.devai.io/server": "operator-onboarding-mcp",
+      "mcp.tesserix.app/class": "platform",
+      "mcp.tesserix.app/tenant": "onboarding"
+    },
+    "name": "onboarding-request-hospital-onboarding",
+    "namespace": "devai",
+    "visibility": "internal"
+  },
+  "spec": {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false
+    },
+    "description": "Provision a NEW hospital/group identity boundary, initial administrator membership and held archive through the operator. Requires explicit user intent and a stable idempotency key. Returns pending until reconciliation completes.",
+    "displayName": "request_hospital_onboarding",
+    "effects": [
+      "identity.create"
+    ],
+    "idempotency": "caller_key",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "displayName": {
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "description": "16 to 200 characters; retain this exact key and intent across retries",
+          "type": "string"
+        },
+        "initialAdminUserId": {
+          "description": "Existing verified Zitadel user to appoint; do not invent a user ID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "displayName",
+        "initialAdminUserId",
+        "idempotencyKey"
+      ],
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "archiveGeneration": {
+          "type": "string"
+        },
+        "archiveObject": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer"
+        },
+        "observedGeneration": {
+          "type": "integer"
+        },
+        "organizationId": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "sourceLocator": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "tenantId",
+        "displayName",
+        "organizationId",
+        "reason",
+        "generation",
+        "observedGeneration",
+        "archiveObject",
+        "archiveGeneration",
+        "sourceLocator"
+      ],
+      "type": "object"
+    },
+    "requiredScopes": [
+      "onboarding.helivanta.read",
+      "onboarding.helivanta.create"
+    ],
+    "server": "operator-onboarding-mcp",
+    "tags": [
+      "onboarding",
+      "operator",
+      "mcp-tool"
+    ],
+    "version": "1.0.0"
+  }
+}
