@@ -26,9 +26,17 @@ export default function OrgsPage() {
         title="Organizations"
         description="Every customer organization, and which product created it."
         actions={
-          <Link href="/orgs/enrol" className="text-sm font-medium underline underline-offset-4">
-            Enrol existing organisation
-          </Link>
+          <div className="flex gap-4">
+            <Link
+              href="/orgs/hospital"
+              className="text-sm font-medium underline underline-offset-4"
+            >
+              Onboard hospital
+            </Link>
+            <Link href="/orgs/enrol" className="text-sm font-medium underline underline-offset-4">
+              Enrol existing organisation
+            </Link>
+          </div>
         }
       />
       <ErrorNote error={error} />

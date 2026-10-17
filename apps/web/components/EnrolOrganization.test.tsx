@@ -26,6 +26,12 @@ beforeEach(() => {
         return Response.json({
           products: [
             { key: "helivanta", displayName: "Helivanta", identity: "zitadel", state: "active" },
+            {
+              key: "planning-poker",
+              displayName: "Planning Poker",
+              identity: "zitadel",
+              state: "active",
+            },
           ],
         });
       enrolments.push({
@@ -54,7 +60,7 @@ async function renderAndSubmit() {
   for (const [name, value] of Object.entries({
     tenantId: tenant,
     zitadelOrgId: "existing-org",
-    productKey: "helivanta",
+    productKey: "planning-poker",
     name: "TEST Existing Pharmacy",
     reason: "Preserve existing synthetic identity",
   })) {
@@ -77,7 +83,7 @@ it("submits the existing binding and displays its unchanged UUID only after succ
   expect(enrolments[0].body).toEqual({
     tenantId: tenant,
     zitadelOrgId: "existing-org",
-    productKey: "helivanta",
+    productKey: "planning-poker",
     name: "TEST Existing Pharmacy",
     reason: "Preserve existing synthetic identity",
   });
@@ -130,4 +136,10 @@ it("does not accept a response for a different tenant", async () => {
   );
   expect(container.querySelector('[role="alert"]')).not.toBeNull();
   expect(container.textContent).not.toContain("Organisation enrolled");
+});
+
+it("routes Helivanta adoption through the retained hospital workflow", async () => {
+  await act(async () => root.render(<EnrolOrganization />));
+  expect(container.querySelector('option[value="helivanta"]')).toBeNull();
+  expect(container.querySelector('a[href="/orgs/hospital"]')).not.toBeNull();
 });

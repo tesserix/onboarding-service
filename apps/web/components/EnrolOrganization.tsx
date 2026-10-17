@@ -15,7 +15,7 @@ export function EnrolOrganization() {
   const [saving, setSaving] = useState(false);
   const [enrolled, setEnrolled] = useState<Organization | null>(null);
   const grantable = (products.data?.products ?? []).filter(
-    (p) => p.identity === "zitadel" && p.state === "active",
+    (p) => p.key !== "helivanta" && p.identity === "zitadel" && p.state === "active",
   );
 
   async function enrol(event: FormEvent<HTMLFormElement>) {
@@ -67,6 +67,13 @@ export function EnrolOrganization() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
+      <p className="text-sm">
+        For Helivanta, use{" "}
+        <Link href="/orgs/hospital" className="underline underline-offset-4">
+          hospital onboarding and adoption
+        </Link>{" "}
+        to retain the identity configuration and activation receipt.
+      </p>
       <Card
         title="Enrol an existing organisation"
         description="Preserve its tenant identity and verify its existing platform entitlement."

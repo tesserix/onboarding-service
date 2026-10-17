@@ -34,6 +34,9 @@ func (s *Service) EnrolOrganization(ctx context.Context, p authz.Principal, in E
 	if p.Subject == "" || in.TenantID == uuid.Nil || !enrolSourceID.MatchString(in.ZitadelOrgID) || !enrolSourceID.MatchString(in.ProductKey) || len(in.ProductKey) > 64 || strings.TrimSpace(in.Name) == "" || len(in.Name) > 200 || strings.TrimSpace(in.Reason) == "" || len(in.Reason) > 500 {
 		return empty, ErrInvalid
 	}
+	if in.ProductKey == operatorManagedHospitalProduct {
+		return empty, errHospitalWorkflow
+	}
 	product, err := s.store.Product(ctx, in.ProductKey)
 	if errors.Is(err, store.ErrNotFound) {
 		return empty, ErrNotFound

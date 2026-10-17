@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -29,6 +30,10 @@ type HospitalConfig struct {
 }
 
 func WithHospitals(config HospitalConfig) Option { return func(s *Service) { s.hospitals = &config } }
+
+const operatorManagedHospitalProduct = "helivanta"
+
+var errHospitalWorkflow = fmt.Errorf("%w: use /v1/hospital-onboardings for Helivanta", ErrInvalid)
 
 var hospitalSourceID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,200}$`)
 

@@ -62,3 +62,9 @@ completion object's GCS generation. Revisions use conditional creates, holds,
 versioning and no lifecycle expiration. Secrets/clinical payloads are excluded;
 service credentials are stored in OpenBao. Privileged administrators can still
 change retention/IAM, which requires separate organizational governance.
+
+## Platform console
+
+Platform administrators can use `/orgs/hospital` to create a new hospital or adopt an existing one. Adoption requires the exact existing tenant UUID, Zitadel organization ID and existing Helivanta administrator subject. Preserve login policy is selected initially to avoid an unplanned MFA/domain cutover. Keep the resume link to check pending work after navigation. The console displays completion only after the server verifies activation and a retained receipt. A retry with the same unchanged form retains its idempotency key; after an uncertain response, retry in that form rather than starting a second new hospital request.
+
+Legacy organization creation, product grants and generic enrolment reject Helivanta. They remain available for other products. Product registration records reviewed metadata only and does not deploy infrastructure.
