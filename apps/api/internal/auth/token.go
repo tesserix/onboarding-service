@@ -19,6 +19,9 @@ import (
 var ErrInvalidToken = errors.New("invalid token")
 
 type Claims struct {
+	MCPRead       bool
+	MCPCreate     bool
+	MCPAdopt      bool
 	Console       bool
 	HardDelete    bool
 	Subject       string
@@ -31,6 +34,8 @@ type Claims struct {
 }
 
 type Verifier struct {
+	mcpResource   string
+	mcpOrg        string
 	consoleClient string
 	consoleOrg    string
 	issuer        string
@@ -94,6 +99,9 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Claims, error) {
 	}
 
 	claims := Claims{Subject: subject, ExpiresAt: expiry.Time}
+	if v.mcpResource != "" {
+		return v.mcpClaims(mapped, claims)
+	}
 	if v.consoleClient != "" || v.consoleOrg != "" {
 		client, _ := mapped["client_id"].(string)
 		grants, _ := mapped["urn:zitadel:iam:org:project:"+v.audience+":roles"].(map[string]any)

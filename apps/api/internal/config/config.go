@@ -12,6 +12,7 @@ import (
 )
 
 type Config struct {
+	MCPGatewayProjectID  string
 	LegacyConsoleEnabled bool
 	Port                 string
 	DatabaseURL          string
@@ -42,6 +43,7 @@ type Config struct {
 
 func Load() (Config, error) {
 	c := Config{
+		MCPGatewayProjectID:   os.Getenv("MCP_GATEWAY_PROJECT_ID"),
 		LegacyConsoleEnabled:  env("LEGACY_CONSOLE_ENABLED", "true") == "true",
 		Port:                  env("PORT", "8080"),
 		DatabaseURL:           os.Getenv("DATABASE_URL"),
