@@ -15,7 +15,7 @@ type ZitadelIdentity struct {
 var _ Identity = (*ZitadelIdentity)(nil)
 
 func (z ZitadelIdentity) OrgMembers(ctx context.Context, orgID string) ([]Member, error) {
-	found, err := z.Client.ListOrgMembers(ctx, orgID)
+	found, err := z.ListOrgMembers(ctx, orgID)
 	if err != nil {
 		return nil, err
 	}

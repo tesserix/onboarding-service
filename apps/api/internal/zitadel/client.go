@@ -76,7 +76,7 @@ func (c *Client) do(ctx context.Context, method, path, orgID string, in, out any
 	if err != nil {
 		return fmt.Errorf("zitadel: %s %s: %w", method, path, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode >= 400 {

@@ -39,6 +39,7 @@ type Member struct {
 
 // Identity is the slice of Zitadel this service uses.
 type Identity interface {
+	VerifyOrganization(ctx context.Context, orgID, tenantID, projectID string) (zitadel.OrganizationIdentity, error)
 	CreateOrg(ctx context.Context, name string) (string, error)
 	RemoveOrg(ctx context.Context, orgID string) error
 	SetOrgMetadata(ctx context.Context, orgID, key, value string) error

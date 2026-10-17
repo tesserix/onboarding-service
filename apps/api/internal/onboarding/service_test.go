@@ -34,6 +34,10 @@ func newFakeIdentity() *fakeIdentity {
 	return &fakeIdentity{metadata: map[string]string{}, members: map[string][]Member{}}
 }
 
+func (f *fakeIdentity) VerifyOrganization(context.Context, string, string, string) (zitadel.OrganizationIdentity, error) {
+	return zitadel.OrganizationIdentity{}, zitadel.ErrIdentityUnavailable
+}
+
 func (f *fakeIdentity) record(name string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
