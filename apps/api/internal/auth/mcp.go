@@ -27,7 +27,7 @@ func (v *Verifier) mcpClaims(mapped jwt.MapClaims, claims Claims) (Claims, error
 	claims.MCPRead = has("onboarding.helivanta.read")
 	claims.MCPCreate = has("onboarding.helivanta.create")
 	claims.MCPAdopt = has("onboarding.helivanta.adopt")
-	if !has("agentgateway.mcp") || !claims.MCPRead {
+	if !has("agentgateway.onboarding") || !claims.MCPRead {
 		return Claims{}, ErrInvalidToken
 	}
 	return claims, nil
