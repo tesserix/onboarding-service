@@ -573,36 +573,40 @@ const auditLockKey = 8021974
 
 func (s *Store) AppendAudit(ctx context.Context, e audit.Event) error {
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, auditLockKey); err != nil {
-			return fmt.Errorf("audit lock: %w", err)
-		}
-		prev := audit.Genesis
-		err := tx.QueryRow(ctx, `SELECT hash FROM audit_events ORDER BY seq DESC LIMIT 1`).Scan(&prev)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("audit head: %w", err)
-		}
-
-		e.PrevHash = prev
-		if e.OccurredAt.IsZero() {
-			e.OccurredAt = time.Now()
-		}
-		// timestamptz keeps microseconds, so an event hashed with nanoseconds
-		// reads back as a different event and the chain stops verifying.
-		e.OccurredAt = e.OccurredAt.UTC().Truncate(time.Microsecond)
-		if e.Detail == "" {
-			e.Detail = "{}"
-		}
-		_, err = tx.Exec(ctx, `
-			INSERT INTO audit_events (occurred_at, actor_type, actor_id, product_key, org_id,
-				action, target, outcome, request_id, detail, prev_hash, hash)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-			e.OccurredAt, e.ActorType, e.ActorID, nullable(e.ProductKey), nullableUUID(e.OrgID),
-			e.Action, nullable(e.Target), e.Outcome, e.RequestID, e.Detail, e.PrevHash, e.Hash())
-		if err != nil {
-			return fmt.Errorf("append audit: %w", err)
-		}
-		return nil
+		return appendAudit(ctx, tx, e)
 	})
+}
+
+func appendAudit(ctx context.Context, tx pgx.Tx, e audit.Event) error {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, auditLockKey); err != nil {
+		return fmt.Errorf("audit lock: %w", err)
+	}
+	prev := audit.Genesis
+	err := tx.QueryRow(ctx, `SELECT hash FROM audit_events ORDER BY seq DESC LIMIT 1`).Scan(&prev)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("audit head: %w", err)
+	}
+
+	e.PrevHash = prev
+	if e.OccurredAt.IsZero() {
+		e.OccurredAt = time.Now()
+	}
+	// timestamptz keeps microseconds, so an event hashed with nanoseconds
+	// reads back as a different event and the chain stops verifying.
+	e.OccurredAt = e.OccurredAt.UTC().Truncate(time.Microsecond)
+	if e.Detail == "" {
+		e.Detail = "{}"
+	}
+	_, err = tx.Exec(ctx, `
+		INSERT INTO audit_events (occurred_at, actor_type, actor_id, product_key, org_id,
+			action, target, outcome, request_id, detail, prev_hash, hash)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+		e.OccurredAt, e.ActorType, e.ActorID, nullable(e.ProductKey), nullableUUID(e.OrgID),
+		e.Action, nullable(e.Target), e.Outcome, e.RequestID, e.Detail, e.PrevHash, e.Hash())
+	if err != nil {
+		return fmt.Errorf("append audit: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) AuditChain(ctx context.Context) ([]audit.Record, error) {

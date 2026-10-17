@@ -25,6 +25,11 @@ export default function OrgsPage() {
       <PageTitle
         title="Organizations"
         description="Every customer organization, and which product created it."
+        actions={
+          <Link href="/orgs/enrol" className="text-sm font-medium underline underline-offset-4">
+            Enrol existing organisation
+          </Link>
+        }
       />
       <ErrorNote error={error} />
       <Card

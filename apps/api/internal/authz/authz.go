@@ -49,6 +49,7 @@ type Action string
 
 const (
 	ActionOrgCreate               Action = "org.create"
+	ActionOrgEnrol                Action = "org.enrol"
 	ActionOrgRead                 Action = "org.read"
 	ActionOrgWrite                Action = "org.write"
 	ActionOrgDeactivate           Action = "org.deactivate"
@@ -81,6 +82,7 @@ type rule struct {
 // until it is deliberately opened here.
 var policy = map[Action]rule{
 	ActionOrgCreate:               {write: true, product: true},
+	ActionOrgEnrol:                {write: true},
 	ActionOrgRead:                 {orgScope: true, product: true, orgAdmin: true},
 	ActionOrgWrite:                {write: true, orgScope: true, product: true, orgAdmin: true},
 	ActionOrgDeactivate:           {write: true, orgScope: true},

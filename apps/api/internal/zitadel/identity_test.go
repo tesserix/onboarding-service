@@ -18,10 +18,58 @@ const identityTenant = "11111111-1111-4111-8111-111111111111"
 
 func identityResponses() map[string]string {
 	return map[string]string{
-		"/admin/v1/orgs/org-1":                 `{"org":{"id":"org-1","state":"ORG_STATE_ACTIVE","name":"PRIVATE_BUSINESS_NAME","details":{"sequence":"101"}}}`,
-		"/management/v1/metadata/tenant_id":    `{"metadata":{"key":"tenant_id","value":"` + base64.StdEncoding.EncodeToString([]byte(identityTenant)) + `","details":{"sequence":"102"}}}`,
-		"/management/v1/projects/project-1":    `{"project":{"id":"project-1","state":"PROJECT_STATE_ACTIVE","details":{"sequence":"103","resourceOwner":"platform-1"}}}`,
-		"/management/v1/projectgrants/_search": `{"details":{"totalResult":"1"},"result":[{"grantId":"grant-1","grantedOrgId":"org-1","projectId":"project-1","projectOwnerId":"platform-1","state":"PROJECT_GRANT_STATE_ACTIVE","details":{"sequence":"104"}}]}`,
+		"/admin/v1/orgs/org-1":                             `{"org":{"id":"org-1","state":"ORG_STATE_ACTIVE","name":"PRIVATE_BUSINESS_NAME","details":{"sequence":"101"}}}`,
+		"/management/v1/metadata/tenant_id":                `{"metadata":{"key":"tenant_id","value":"` + base64.StdEncoding.EncodeToString([]byte(identityTenant)) + `","details":{"sequence":"102"}}}`,
+		"/management/v1/projects/project-1":                `{"project":{"id":"project-1","state":"PROJECT_STATE_ACTIVE","details":{"sequence":"103","resourceOwner":"platform-1"}}}`,
+		"/management/v1/projectgrants/_search":             `{"details":{"totalResult":"1"},"result":[{"grantId":"grant-1","grantedOrgId":"org-1","projectId":"project-1","projectOwnerId":"platform-1","state":"PROJECT_GRANT_STATE_ACTIVE","details":{"sequence":"104"}}]}`,
+		"/management/v1/projects/project-1/grants/grant-1": `{"projectGrant":{"grantId":"grant-1","grantedOrgId":"org-1","projectId":"project-1","projectOwnerId":"platform-1","state":"PROJECT_GRANT_STATE_ACTIVE","details":{"sequence":"104","resourceOwner":"platform-1"}}}`,
+	}
+}
+
+func TestVerifyOrganizationDoesNotAcceptADeletedGrantFromSearch(t *testing.T) {
+	replies := identityResponses()
+	delete(replies, "/management/v1/projects/project-1/grants/grant-1")
+	client := identityClient(t, replies)
+	proof, err := client.VerifyOrganization(context.Background(), "org-1", identityTenant, "project-1")
+	if !errors.Is(err, ErrIdentityMissing) || proof.State == "active" {
+		t.Fatalf("stale search confirmed a deleted grant: state=%s error=%v", proof.State, err)
+	}
+}
+
+func TestVerifyOrganizationValidatesTheExactGrantLookup(t *testing.T) {
+	path := "/management/v1/projects/project-1/grants/grant-1"
+	for _, tc := range []struct{ name, from, to string }{
+		{"grant ID", `"grantId":"grant-1"`, `"grantId":"other"`},
+		{"target organisation", `"grantedOrgId":"org-1"`, `"grantedOrgId":"other"`},
+		{"project", `"projectId":"project-1"`, `"projectId":"other"`},
+		{"project owner", `"projectOwnerId":"platform-1"`, `"projectOwnerId":"other"`},
+		{"resource owner", `"resourceOwner":"platform-1"`, `"resourceOwner":"other"`},
+		{"older revision", `"sequence":"104"`, `"sequence":"103"`},
+		{"unknown state", `PROJECT_GRANT_STATE_ACTIVE`, `PROJECT_GRANT_STATE_UNSPECIFIED`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			replies := identityResponses()
+			replies[path] = strings.Replace(replies[path], tc.from, tc.to, 1)
+			proof, err := identityClient(t, replies).VerifyOrganization(context.Background(), "org-1", identityTenant, "project-1")
+			if !errors.Is(err, ErrIdentityUnavailable) || proof.State == "active" {
+				t.Fatal("an uncertain exact grant lookup established eligibility")
+			}
+		})
+	}
+}
+
+func TestVerifyOrganizationUsesTheLatestExactGrantRevision(t *testing.T) {
+	replies := identityResponses()
+	path := "/management/v1/projects/project-1/grants/grant-1"
+	replies[path] = strings.ReplaceAll(replies[path], `"sequence":"104"`, `"sequence":"105"`)
+	proof, err := identityClient(t, replies).VerifyOrganization(context.Background(), "org-1", identityTenant, "project-1")
+	if err != nil || proof.SourceRevisions.Grant != "105" || proof.State != "active" {
+		t.Fatal("exact source provenance was replaced with the older search revision")
+	}
+	replies[path] = strings.ReplaceAll(replies[path], "PROJECT_GRANT_STATE_ACTIVE", "PROJECT_GRANT_STATE_INACTIVE")
+	proof, err = identityClient(t, replies).VerifyOrganization(context.Background(), "org-1", identityTenant, "project-1")
+	if err != nil || proof.State != "inactive" || proof.SourceRevisions.Grant != "105" {
+		t.Fatal("a current suspension was hidden by an active search result")
 	}
 }
 

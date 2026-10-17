@@ -53,6 +53,15 @@ type identitySourceObject struct {
 	Details identityDetails `json:"details"`
 }
 
+type identitySourceGrant struct {
+	GrantID        string          `json:"grantId"`
+	GrantedOrgID   string          `json:"grantedOrgId"`
+	ProjectID      string          `json:"projectId"`
+	ProjectOwnerID string          `json:"projectOwnerId"`
+	State          string          `json:"state"`
+	Details        identityDetails `json:"details"`
+}
+
 func (c *Client) VerifyOrganization(ctx context.Context, orgID, tenantID, projectID string) (OrganizationIdentity, error) {
 	empty := OrganizationIdentity{}
 	tenant, err := uuid.Parse(tenantID)
@@ -84,14 +93,7 @@ func (c *Client) VerifyOrganization(ctx context.Context, orgID, tenantID, projec
 		Details struct {
 			TotalResult string `json:"totalResult"`
 		} `json:"details"`
-		Result []struct {
-			GrantID        string          `json:"grantId"`
-			GrantedOrgID   string          `json:"grantedOrgId"`
-			ProjectID      string          `json:"projectId"`
-			ProjectOwnerID string          `json:"projectOwnerId"`
-			State          string          `json:"state"`
-			Details        identityDetails `json:"details"`
-		} `json:"result"`
+		Result []identitySourceGrant `json:"result"`
 	}
 	query := map[string]any{
 		"query": map[string]string{"limit": "2"},
@@ -137,9 +139,27 @@ func (c *Client) VerifyOrganization(ctx context.Context, orgID, tenantID, projec
 		return empty, ErrIdentityUnavailable
 	}
 	grant := grants.Result[0]
+	searchedState := grant.State
 	if org.Org.ID != orgID || project.Project.ID != projectID || project.Project.Details.ResourceOwner != c.adminOrg || grant.GrantedOrgID != orgID || grant.ProjectID != projectID || grant.ProjectOwnerID != c.adminOrg || !identitySourceID.MatchString(grant.GrantID) || metadata.Metadata.Key != "tenant_id" {
 		return empty, ErrIdentityUnavailable
 	}
+	var current struct {
+		Grant identitySourceGrant `json:"projectGrant"`
+	}
+	// Unlike grant search, this source read awaits the grant projection (ADR0003).
+	if err := c.readIdentity(ctx, &client, token, http.MethodGet, "/management/v1/projects/"+projectID+"/grants/"+grant.GrantID, c.adminOrg, nil, &current); err != nil {
+		return empty, err
+	}
+	latest := current.Grant
+	if latest.GrantID != grant.GrantID || latest.GrantedOrgID != orgID || latest.ProjectID != projectID || latest.ProjectOwnerID != c.adminOrg || latest.Details.ResourceOwner != c.adminOrg {
+		return empty, ErrIdentityUnavailable
+	}
+	searchedSequence, searchErr := strconv.ParseUint(grant.Details.Sequence, 10, 64)
+	latestSequence, latestErr := strconv.ParseUint(latest.Details.Sequence, 10, 64)
+	if searchErr != nil || latestErr != nil || searchedSequence == 0 || strconv.FormatUint(searchedSequence, 10) != grant.Details.Sequence || latestSequence < searchedSequence {
+		return empty, ErrIdentityUnavailable
+	}
+	grant = latest
 	decoded, err := base64.StdEncoding.DecodeString(metadata.Metadata.Value)
 	if err != nil {
 		return empty, ErrIdentityUnavailable
@@ -156,7 +176,7 @@ func (c *Client) VerifyOrganization(ctx context.Context, orgID, tenantID, projec
 		}
 	}
 	active := true
-	for _, state := range []struct{ value, prefix string }{{org.Org.State, "ORG_STATE_"}, {project.Project.State, "PROJECT_STATE_"}, {grant.State, "PROJECT_GRANT_STATE_"}} {
+	for _, state := range []struct{ value, prefix string }{{org.Org.State, "ORG_STATE_"}, {project.Project.State, "PROJECT_STATE_"}, {searchedState, "PROJECT_GRANT_STATE_"}, {grant.State, "PROJECT_GRANT_STATE_"}} {
 		switch state.value {
 		case state.prefix + "ACTIVE":
 		case state.prefix + "INACTIVE":
