@@ -6,7 +6,7 @@ Status: proposed implementation. Consumer: `tesserix/helivanta#1136`. This recor
 
 PharmaConnect needs to bind a consenting buyer/seller to the existing platform tenant, without treating a supplier's typed tenant ID or private declaration as canonical identity. `GET /v1/orgs/:id` currently returns the authorized database projection; it does not revalidate the live Zitadel org, tenant metadata or project grant. That projection cannot be used as current trading eligibility.
 
-Planning assumptions: 100 participating organisations / 300 locations, 1,000 orders/day and two identity observations/order = 2,000 reads/day (0.023 average RPS). Allow 20 peak reads/s for bursts and future consumers, each <=1 KiB response and four parallel, bounded source reads. This is >800x the daily average, not a measured limit. Read:write ratio is 100:0 for this endpoint. No new persistent rows or datastore; if consumers retain a 512-byte proof/order, 365,000 orders/year use ~180 MiB/year before indexes, ~1.3 GiB cumulative over three years with 2x annual growth. Target 99.9% availability and p99 300ms; the source deadline is 750ms and timeout denies. These are proposed targets requiring measurement. Reuse the current API/Postgres/Zitadel deployment; no additional fixed infrastructure cost is expected, and existing capacity must be measured before scaling.
+Planning assumptions: 100 participating organisations / 300 locations, 1,000 orders/day and two identity observations/order = 2,000 reads/day (0.023 average RPS). Allow 20 peak reads/s for bursts and future consumers, each <=1 KiB response and four parallel, bounded discovery reads followed by one exact grant read. This is >800x the daily average, not a measured limit. Read:write ratio is 100:0 for this endpoint. No new persistent rows or datastore; if consumers retain a 512-byte proof/order, 365,000 orders/year use ~180 MiB/year before indexes, ~1.3 GiB cumulative over three years with 2x annual growth. Target 99.9% availability and p99 300ms; the source deadline is 750ms and timeout denies. These are proposed targets requiring measurement. Reuse the current API/Postgres/Zitadel deployment; no additional fixed infrastructure cost is expected, and existing capacity must be measured before scaling.
 
 ## Contract and decision
 
@@ -15,6 +15,19 @@ Add **`GET /v1/orgs/:id/identity`**, restricted to an authenticated product mach
 After product/organisation authorization, load the product and tenant projection to resolve source identifiers. Using only the onboarding service's existing identity client, read the current org, its `tenant_id` metadata, the product project and the exact project grant. Use the established management/admin API versions and verified official Zitadel protobuf HTTP paths. All reads share a bounded context, reject redirects, bound response size and never log provider response bodies. No provider I/O or database transaction lock overlaps.
 
 The live metadata UUID must equal the requested internal platform tenant UUID. Source organisation/project/grant identifiers, grant owner and grant target must match the authorized projection. Missing, duplicate, malformed or unknown source facts do not establish identity. Known inactive organisation/project/grant state returns an inactive observation. Missing identity/grant returns 404; source failure, mismatch or unknown state returns generic 503. Scope denial always returns the existing indistinguishable 404 before provider I/O.
+
+Grant search alone is insufficient: a local live test observed an active search
+result immediately after deletion. Resolve the discovered grant through
+`GET /management/v1/projects/{project}/grants/{grant}` before constructing the
+observation. Zitadel v4.15.3's `GetProjectGrantByID` calls
+`ProjectGrantByID(ctx, true, ...)`, which awaits the grant projection; search does
+not. Check the exact owner/project/target/ID again and reject a revision older
+than the search result. Use the exact lookup revision as provenance. Explicit
+inactive state in either read prevents an active observation. All five reads
+share the existing source deadline and response bounds; there is no retry or
+fallback to search. This fixes the observed lag case; the source remains a
+point-in-time authority and does not provide a distributed lock or a guarantee
+against a later revocation. Related defect: #13.
 
 The minimized response contains schema version, canonical tenant UUID, opaque Zitadel org/project/grant IDs, the caller's product key, active/inactive state, verification time and source revision sequences as decimal strings. Names, contacts, billing, domains, labels, roles, credentials and source metadata values are absent. Set `Cache-Control: no-store`; this endpoint has no eligibility cache, fallback projection or automatic approval. A verified identity never overrides the consumer's current OpenFGA membership, explicit organisation/location grants, country policy, licences, bilateral consent, stock or credit.
 

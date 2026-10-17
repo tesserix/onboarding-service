@@ -46,6 +46,15 @@ func TestPlatformOperatorIsReadOnly(t *testing.T) {
 	}
 }
 
+func TestOnlyPlatformAdministratorsMayEnrolExistingOrganisations(t *testing.T) {
+	a := New(apolloUsesHMS)
+	for _, p := range []Principal{platform(RolePlatformOperator), platform(), product("hms"), orgAdmin("apollo"), {Kind: KindUser, Subject: "verified-user", EmailVerified: true}} {
+		if err := a.Authorize(context.Background(), p, ActionOrgEnrol, "apollo"); !errors.Is(err, ErrDenied) {
+			t.Errorf("%s could enrol an existing organisation: %v", p.Kind, err)
+		}
+	}
+}
+
 func TestPlatformPrincipalWithNoRoleIsDenied(t *testing.T) {
 	a := New(apolloUsesHMS)
 	if err := a.Authorize(context.Background(), platform(), ActionOrgRead, "apollo"); !errors.Is(err, ErrDenied) {
