@@ -72,6 +72,7 @@ type Service struct {
 	authz             *authz.Authorizer
 	log               *slog.Logger
 	registryProjectID string
+	hospitals         *HospitalConfig
 }
 
 type Option func(*Service)
