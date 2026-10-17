@@ -23,8 +23,9 @@ type Deps struct {
 	Tokens TokenVerifier
 	// RegistryTokens verifies actor tokens delegated by Agent Registry. Its
 	// audience is the Registry project, distinct from product onboarding tokens.
-	RegistryTokens TokenVerifier
-	ConsoleTokens  TokenVerifier
+	RegistryTokens      TokenVerifier
+	ConsoleAccessTokens TokenVerifier
+	ConsoleTokens       TokenVerifier
 	// Sessions seals the console's cookie; OIDC logs the human in.
 	Sessions *auth.SessionCodec
 	OIDC     *auth.OIDCClient

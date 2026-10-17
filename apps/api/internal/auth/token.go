@@ -19,6 +19,8 @@ import (
 var ErrInvalidToken = errors.New("invalid token")
 
 type Claims struct {
+	Console       bool
+	HardDelete    bool
 	Subject       string
 	Email         string
 	EmailVerified bool
@@ -29,10 +31,19 @@ type Claims struct {
 }
 
 type Verifier struct {
-	issuer   string
-	audience string
-	keyfunc  jwt.Keyfunc
-	parser   *jwt.Parser
+	consoleClient string
+	consoleOrg    string
+	issuer        string
+	audience      string
+	keyfunc       jwt.Keyfunc
+	parser        *jwt.Parser
+}
+
+// ForConsole restricts a separate verifier to the console access-token contract.
+func (v *Verifier) ForConsole(clientID, orgID string) *Verifier {
+	copy := *v
+	copy.consoleClient, copy.consoleOrg = clientID, orgID
+	return &copy
 }
 
 // NewVerifier pins RS256: the algorithm comes from configuration, never from
@@ -83,6 +94,25 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Claims, error) {
 	}
 
 	claims := Claims{Subject: subject, ExpiresAt: expiry.Time}
+	if v.consoleClient != "" || v.consoleOrg != "" {
+		client, _ := mapped["client_id"].(string)
+		grants, _ := mapped["urn:zitadel:iam:org:project:"+v.audience+":roles"].(map[string]any)
+		has := func(role string) bool {
+			orgs, _ := grants[role].(map[string]any)
+			domain, ok := orgs[v.consoleOrg].(string)
+			return ok && domain != "" && v.consoleOrg != ""
+		}
+		if client != v.consoleClient || v.consoleClient == "" || !has("platform") {
+			return Claims{}, ErrInvalidToken
+		}
+		claims.Console, claims.HardDelete = true, has("hard-delete")
+		claims.OrgID = v.consoleOrg
+		claims.Roles = []string{"platform-operator"}
+		if has("rotate-credentials") {
+			claims.Roles = []string{"platform-admin"}
+		}
+		return claims, nil
+	}
 	if email, ok := mapped["email"].(string); ok {
 		claims.Email = email
 	}
