@@ -73,7 +73,7 @@ func TestHospitalCompletionFailsClosedAndPreservesCanonicalBinding(t *testing.T)
 	pending := true
 	backend := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		if r.Header.Get("Authorization") != "Bearer TEST-projected-token" {
+		if r.Header.Get("X-Onboarding-Token") != "Bearer TEST-projected-token" || r.Header.Get("Authorization") != "" {
 			t.Error("missing scoped credential")
 		}
 		if pending {

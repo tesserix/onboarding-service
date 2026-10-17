@@ -189,7 +189,7 @@ func (s *Service) CompleteHospital(ctx context.Context, in CompleteHospitalInput
 		return ErrUnavailable
 	}
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(token)))
+	request.Header.Set("X-Onboarding-Token", "Bearer "+strings.TrimSpace(string(token)))
 	client := &http.Client{Timeout: 10 * time.Second}
 	if s.hospitals.HTTPClient != nil {
 		copy := *s.hospitals.HTTPClient
