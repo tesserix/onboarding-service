@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-
-import { productManifests } from "./manifest";
+import { productManifests, type ManifestInput } from "./manifest";
 
 const base = {
   key: "planning-poker",
@@ -9,46 +8,57 @@ const base = {
   identity: "zitadel" as const,
   tenantSecrets: "openbao" as const,
   roles: ["poker-user", "poker-admin"],
+  zitadelProjectId: "existing-project",
+  machineUserId: "existing-machine",
+  oidcClientId: "existing-client",
 };
+const reviewRecord = (input: ManifestInput = base) =>
+  JSON.parse(productManifests(input)[0].body.split("\n").slice(1).join("\n"));
 
 describe("productManifests", () => {
-  it("names a file path for every snippet so the operator knows where it goes", () => {
-    for (const snippet of productManifests(base)) {
-      expect(snippet.path).toMatch(/^[a-z0-9._/-]+\.ya?ml$/);
-      expect(snippet.body.trim()).not.toBe("");
-    }
+  it("preserves registered IDs and configuration in a review record without deploying identity", () => {
+    const snippets = productManifests(base);
+    expect(snippets).toHaveLength(1);
+    expect(snippets[0].path).toBe("docs/onboarding/planning-poker-integration.yaml");
+    expect(reviewRecord().registry).toEqual(base);
+    expect(reviewRecord().review.join(" ")).toContain("does not deploy");
+    expect(snippets[0].body).not.toContain("apiVersion:");
   });
-
-  it("puts the project, its roles and its hosts in the bootstrap entry", () => {
-    const bootstrap = productManifests(base).find((s) => s.path.includes("zitadel-bootstrap"));
-    expect(bootstrap?.body).toContain("- name: planning-poker");
-    expect(bootstrap?.body).toContain("- poker-admin");
-    expect(bootstrap?.body).toContain("https://poker.tesserix.app/auth/callback");
+  it("never guesses identity contracts or proposes broad secret access", () => {
+    const output = productManifests(base)
+      .map((s) => s.body)
+      .join("\n");
+    for (const unsafe of [
+      "gcp-secret-store",
+      "GCP Secret Manager",
+      "zitadel-bootstrap",
+      "/auth/callback",
+      '"delete"',
+      "kind: RequestAuthentication",
+    ])
+      expect(output).not.toContain(unsafe);
+    expect(output).toContain("OpenBao");
+    expect(output).toContain("exact-path");
+    expect(output).toContain("numeric resource audience");
   });
-
-  it("reads both product secrets from GCP Secret Manager under the prod- prefix", () => {
-    const secret = productManifests(base).find((s) => s.path.startsWith("external-secrets/"));
-    expect(secret?.body).toContain("prod-planning-poker-oidc-client-secret");
-    expect(secret?.body).toContain("prod-planning-poker-machine-key");
-    expect(secret?.body).toContain("gcp-secret-store");
+  it("adds customer secret review only for products holding customer secrets", () => {
+    expect(reviewRecord().review.join(" ")).toContain("Customer secret access");
+    const without = reviewRecord({ ...base, tenantSecrets: "none" });
+    expect(without.review.join(" ")).not.toContain("Customer secret access");
+    expect(without.review.join(" ")).toContain("operational credentials");
   });
-
-  it("pins the authorization policy to the Zitadel issuer and the product audience", () => {
-    const policy = productManifests(base).find((s) => s.path.includes("authorization-policy"));
-    expect(policy?.body).toContain("https://auth.tesserix.app");
-    expect(policy?.body).toContain("planning-poker");
+  it("does not prescribe Zitadel resources for a GIP product", () => {
+    const record = reviewRecord({ ...base, identity: "gip" });
+    expect(record.review.join(" ")).not.toContain("Zitadel operator");
+    expect(record.registry.identity).toBe("gip");
   });
-
-  it("emits an OpenBao policy only when the product holds customer secrets", () => {
-    const withBao = productManifests(base).map((s) => s.path);
-    expect(withBao.some((p) => p.includes("openbao"))).toBe(true);
-
-    const without = productManifests({ ...base, tenantSecrets: "none" }).map((s) => s.path);
-    expect(without.some((p) => p.includes("openbao"))).toBe(false);
+  it("keeps display names as literal data instead of YAML or policy injection", () => {
+    const displayName = 'Hospital\napiVersion: rbac.authorization.k8s.io/v1\n"';
+    expect(reviewRecord({ ...base, displayName }).registry.displayName).toBe(displayName);
   });
-
-  it("does not emit Zitadel objects for a GIP product", () => {
-    const paths = productManifests({ ...base, identity: "gip" }).map((s) => s.path);
-    expect(paths.some((p) => p.includes("zitadel-bootstrap"))).toBe(false);
+  it("directs Helivanta to the private hospital workflow and explicit memberships", () => {
+    const record = reviewRecord({ ...base, key: "helivanta" });
+    expect(record.review.join(" ")).toContain("private hospital onboarding");
+    expect(record.review.join(" ")).toContain("explicit memberships");
   });
 });
