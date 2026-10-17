@@ -22,7 +22,7 @@ func TestConsoleAccessPreservesActorAndSeparatesReadWriteAndDeletion(t *testing.
 	if rec := h.do(t, http.MethodGet, "/v1/products", "console-reader", ""); rec.Code != 200 {
 		t.Fatalf("reader refused: %d", rec.Code)
 	}
-	if rec := h.do(t, http.MethodPost, "/v1/products", "console-reader", `{"key":"test"}`); rec.Code != 400 && rec.Code != 403 {
+	if rec := h.do(t, http.MethodPost, "/v1/products", "console-reader", `{"key":"test","displayName":"Test","zitadelProjectId":"p1","machineUserId":"m1","identity":"zitadel","tenantSecrets":"openbao","tenancy":"org","dataResidency":"in"}`); rec.Code != 403 {
 		t.Fatalf("reader write: %d", rec.Code)
 	}
 	if rec := h.do(t, http.MethodDelete, "/v1/orgs/11111111-1111-4111-8111-111111111111/grants/mark8ly", "console-admin", ""); rec.Code != 403 {
