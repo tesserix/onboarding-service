@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/google/uuid"
 	"github.com/tesserix/onboarding-service/api/internal/auth"
 	"github.com/tesserix/onboarding-service/api/internal/authz"
@@ -73,6 +74,12 @@ func TestHospitalCompletionFailsClosedAndPreservesCanonicalBinding(t *testing.T)
 	pending := true
 	backend := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
+		var payload struct {
+			AllowBootstrap bool `json:"allowBootstrap"`
+		}
+		if json.NewDecoder(r.Body).Decode(&payload) != nil || payload.AllowBootstrap {
+			t.Error("adoption must never bootstrap a missing clinical administrator")
+		}
 		if r.Header.Get("X-Onboarding-Token") != "Bearer TEST-projected-token" || r.Header.Get("Authorization") != "" {
 			t.Error("missing scoped credential")
 		}

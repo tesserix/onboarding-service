@@ -183,7 +183,7 @@ func (s *Service) CompleteHospital(ctx context.Context, in CompleteHospitalInput
 	if e != nil || len(token) > 8192 || strings.TrimSpace(string(token)) == "" {
 		return ErrUnavailable
 	}
-	payload, _ := json.Marshal(map[string]any{"allowBootstrap": !claim.Status.Activated, "tenantId": in.TenantID, "organizationId": in.OrganizationID, "initialAdminUserId": in.InitialAdminUserID})
+	payload, _ := json.Marshal(map[string]any{"allowBootstrap": claim.Spec.OrganizationID == "" && !claim.Status.Activated, "tenantId": in.TenantID, "organizationId": in.OrganizationID, "initialAdminUserId": in.InitialAdminUserID})
 	request, e := http.NewRequestWithContext(ctx, http.MethodPost, s.hospitals.HelivantaURL, bytes.NewReader(payload))
 	if e != nil {
 		return ErrUnavailable
