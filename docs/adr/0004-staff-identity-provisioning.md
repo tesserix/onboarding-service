@@ -117,6 +117,46 @@ Staff links/grants before admitting a legacy identity as a first enrollment.
 
 ## Persistence and release gates
 
+### Provider projection-failure correction — 2026-10-31
+
+A separate local v4.15.3 provider reproduced successful deactivation (sequence
+4) followed by two HTTP 200 active/verified reads at sequence 2, with matching
+nonce metadata at sequence 3. A per-synthetic-user UPDATE trigger failed the
+user projection while permitting SELECT. The actual owner observation method
+returned active/verified with no error in 102 ms. This closes the uncertainty
+about reproducibility; repeated projected reads cannot establish current proof.
+
+Add an exact filtered event-store read after the final projected read, within
+the existing two-second budget. The v4.15.3 admin `ListEvents` implementation
+uses `AwaitOpenTransactions`, exact aggregate/resource-owner filters and event
+types. This requires existing owner `events.read` capability; absence fails
+closed, without requesting credential expansion. Fetch only state, email
+verification/change and metadata mutation events after the lesser observed
+revision, with a 32-event/64-KiB bound. Saturation, malformed/foreign evidence,
+or an unreflected relevant mutation yields unavailable. Inspect metadata keys
+so unrelated metadata does not invalidate a nonce; omit password/login events
+and never disclose event payloads or editor details. Initialization events can
+change state without advancing the user row revision, so compare their final
+state explicitly rather than require an impossible revision catch-up.
+
+This boundary detects committed relevant user events; it is not a lock against
+subsequent changes. Current organisation/registry proof, real recipient setup,
+missing/denied-event-store tests and consumer command-boundary reauthorization
+remain required. The filtered request and behavior must be verified against the
+actual pinned provider before accepting the correction.
+
+Extended real-provider testing reproduced a second failure: after 15 failed
+projection reads, deactivation sequence 14 was skipped. A later unrelated
+profile edit advanced the row to sequence 15 while retaining active state.
+The initial newer-than-row event check incorrectly returned active/verified.
+The handler's `handleFailedStmt` permits continuation at `maxFailureCount`.
+Therefore the final design also reads latest authoritative state/email-change/
+email-verification events with exact filtered limit-one queries and compares
+their facts/order directly. The skipped-deactivation regression failed before
+this correction; the same actual fixture then denied current proof in 135 ms.
+After an explicit synthetic source reactivation at sequence 16, the final owner
+method returned active/verified in 227 ms. These are local observations, not SLOs.
+
 Canonical SQL belongs in `tesserix-k8s`,
 `charts/apps/db-schema-bootstrap/schemas/global/global/onboarding_db.sql`, with
 an append-only upgrade and SQL provenance. Do not change historical command

@@ -72,6 +72,12 @@ func (c *Client) ObserveStaffIdentity(ctx context.Context, in StaffIdentityInput
 	if before != after || ctx.Err() != nil || after.created.After(time.Now().Add(StaffIdentityClockSkew)) {
 		return empty, ErrIdentityUnavailable
 	}
+	if err := c.checkStaffIdentityCurrent(ctx, &client, token, in, after); err != nil {
+		return empty, err
+	}
+	if err := c.checkStaffIdentityEvents(ctx, &client, token, in, after, metadata.Metadata.Details.Sequence); err != nil {
+		return empty, err
+	}
 	return StaffIdentityObservation{UserID: after.id, OrganizationID: after.org,
 		State: after.state, EmailVerified: after.verified, CreatedAt: after.created,
 		ObservedAt: time.Now().UTC(), UserRevision: after.revision,

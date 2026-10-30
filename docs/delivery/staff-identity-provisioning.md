@@ -123,19 +123,90 @@ Additional primary-source review found that v4.15.3
 errors and then executes its SQL read; the user path calls a void trigger helper
 before its query. Matching row versions across reads is therefore not proof that
 projection synchronization succeeded. This is an unclosed provider-failure
-acceptance gate, not a reproduced live exploit. Add the actual local fault test
-and authoritative source revision/watermark proof before using a positive
-observation for enrollment or calling identity eligibility complete. The source
-still returns minimized observations; no membership/permission activation exists
-in these routes.
+acceptance gate at the earlier checkpoint, superseded by the reproduced fault
+and candidate correction below. No membership/permission activation exists in
+these routes.
+
+### Actual projection-failure reproduction and correction — 2026-10-31
+
+A new isolated provider uses the exact v4.15.3 digest
+`2356d646340724b3d843c024d589314adb9b54dbd6452ebc34008b011e023eff`, separate
+PostgreSQL and loopback port 32880. No existing dev/production provider or
+credential was changed. A synthetic active/verified fixture was created using
+an explicit setup override; this is not recipient-verification acceptance.
+
+A user-specific UPDATE trigger raised a database exception while preserving
+SELECT. Provider deactivation committed at sequence 4, but both following user
+reads returned HTTP 200 active at sequence 2 and metadata remained at sequence
+3. The actual owner method returned active/verified without error in 102 ms.
+The automated stale-deactivation regression failed before correction.
+
+The correction adds an exact, 16-type filtered event-store read, with
+`AwaitOpenTransactions` verified in v4.15.3 `admin/event.go`, within the existing
+two-second deadline. It uses existing owner `events.read`; no credential/role
+expansion occurred. The same live fault then returned unavailable in 106 ms.
+After removing the fault and issuing a real synthetic reactivation (sequence
+5), the owner returned active/verified at revision 5 in 86 ms. An unrelated
+metadata update at sequence 6 remained accepted in 79 ms, preserving nonce
+revision 3. A separate metadata UPDATE fault let nonce replacement commit at
+sequence 7 while its projection retained the original nonce/revision 3; the
+corrected owner denied it in 110 ms. Removing that fault and restoring the
+synthetic binding through a provider command (sequence 8) restored successful
+observation in 79 ms. Fault triggers are removed; immutable provider event
+history and private fixture artifacts remain. These timings are individual
+local observations, not p99 or production SLO evidence.
+
+Extended repeated-failure testing then invalidated the first revision-only
+correction. After 15 failing projection reads, deactivation sequence 14 was
+skipped; an unrelated profile edit advanced the user to revision 15 while
+retaining active state. The initial event guard returned active/verified in
+104 ms. This is an actual reproduction, consistent with v4.15.3
+`handler/v2/failed_event.go:handleFailedStmt` continuing at its failure limit.
+The final correction additionally compares latest authoritative state,
+email-change and email-verification events through three exact limit-one
+queries. Its skipped-deactivation regression failed before the correction, and
+the same live source then denied proof in 135 ms. A real synthetic reactivation
+at sequence 16 restored successful observation in 227 ms. No hospital membership
+or employment was activated by these provider-only tests.
+
+Regressions also cover skipped contact changes/verification ordering despite
+later profile revisions, malformed/foreign latest-field proofs, unreflected
+state/email/nonce mutations, unrelated
+metadata, initialization without row-revision advancement, foreign/ambiguous
+event scope, invalid/duplicate/descending sequences, null/duplicate JSON,
+saturation, denied/unavailable event stores, redirect rejection and the exact
+bounded filtered request. Current organisation/registry authority, real
+recipient setup, full creation/recovery and consumer acceptance remain open.
 
 ## Remaining acceptance
 
+Final local correction validation passed: full owner race/coverage suite with
+the actual isolated PostgreSQL fixture (54.6% overall, provider 85.2%), full vet,
+build and golangci-lint (zero issues), diff/format checks and redacted Gitleaks.
+The final Linux/arm64 image build passed as
+`helivanta-staff-onboarding-current-proof:local`. Four Python delivery tests
+also passed. Earlier checkpoint CI 41066660408 passed all applicable gates at
+`e3dc7e5`; this does not establish the new correction's CI.
+
+Commands run from `apps/api/` include:
+
+```sh
+ONBOARDING_TEST_DSN='postgres://postgres@127.0.0.1:32768/postgres?sslmode=disable' \
+  mise exec go@1.27.3 -- go test -race -p 1 -covermode=atomic \
+  -coverprofile=/tmp/onboarding-staff-current-proof-final-coverage.out ./...
+mise exec go@1.27.3 -- go vet ./...
+mise exec go@1.27.3 -- go build ./...
+mise exec -- golangci-lint run ./...
+```
+
+These are owner/provider acceptance checks; no new normal-role UI journey,
+consumer activation, schema deployment or production release is claimed.
+
 - Creation submission with duplicate/contact reservation, current source and
   actor boundaries, at-most-once dispatch and full uncertain-outcome handling.
-- Reproduced provider projection-failure behavior and authoritative
-  synchronization/revision proof for positive eligibility; do not substitute
-  repeated stable query reads for that evidence.
+- Final review/CI and consumer acceptance of the event-store-backed provider
+  freshness correction, including the configured provider version/capability
+  and current organisation/registry proof; projected rows alone are insufficient.
 - Current human authority in Helivanta before and after owner requests, its
   canonical client/Global API contracts and exact account/tenant UI binding.
 - Protected bounded command history and attributable operator recovery,

@@ -85,13 +85,34 @@ inactive, locked, initial, unverified, malformed or unavailable evidence never
 becomes current membership eligibility. Do not expose private source bodies.
 
 Both user reads and the exact metadata lookup use v4.15.3 paths whose handlers
-request projection triggering/awaiting (`true`). The query helpers can log
-trigger errors and proceed to SQL reads. Therefore stable matching versions do
-not independently establish that projections caught up. A real projection
-failure test and an authoritative synchronization/revision boundary remain
-required before enrollment consumes positive observations. No such failure has
-yet been demonstrated in a running provider by this checkpoint. These three
-reads are not a distributed transaction. Reject a creation time
+request projection triggering/awaiting (`true`), but can proceed to stale SQL
+after a trigger failure. Separate actual-provider fault tests reproduced both
+active state after committed deactivation and an unchanged nonce after a
+committed replacement. Stable matching versions alone are insufficient.
+
+After the final user read, the owner requests
+`POST /admin/v1/events/_search` under its existing `events.read` capability.
+Three exact descending limit-one queries establish the latest state mutation,
+latest email change and latest email verification independently of the user row
+revision. A skipped mutation followed by an unrelated profile update can advance
+that row without repairing state/contact. Compare authoritative state, latest
+contact and verification ordering directly; a higher row revision cannot replace
+those checks. No state mutation means the v4.15.3 new-human active baseline;
+the command binds its original email, and no later verification means unverified.
+The exact account, organisation and user aggregate are filtered, together with
+the 16 v4.15.3 state/initialization/email/metadata mutation types. Ascending
+events after the lesser observed revision are bounded to 32 events and 64 KiB;
+the pinned implementation awaits open event-store transactions. Unreflected
+relevant mutations, foreign/malformed evidence, saturation, denied/unavailable
+event reads and redirects fail unavailable. Metadata keys distinguish unrelated
+updates from binding changes. Initialization state changes need explicit state
+comparison because their projection does not advance the user's row revision.
+Password/login events are excluded, and raw event payloads/editor data never
+leave the owner. Missing capability must not be bypassed or silently expanded.
+This detects committed relevant mutations at those read boundaries; it does not
+lock future changes or establish current organisation/registry authority.
+
+These reads are not a distributed transaction. Reject a creation time
 older than the dispatch claim beyond a one-minute provider-clock allowance, or
 one more than a minute in the future; a retained creation time must match
 exactly. Observation timestamps must fall inside the actual observation call.

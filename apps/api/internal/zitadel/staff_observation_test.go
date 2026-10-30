@@ -1,10 +1,12 @@
 package zitadel
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,7 +18,11 @@ import (
 
 func staffObservationReplies() map[string]string {
 	return map[string]string{
-		"/v2/users/TEST-staff-account": `{"user":{"userId":"TEST-staff-account","state":"USER_STATE_ACTIVE","details":{"sequence":"101","resourceOwner":"org-1","creationDate":"2026-10-30T10:00:00.123456789Z"},"human":{"email":{"email":"synthetic@example.invalid","isVerified":true}}}}`,
+		"/admin/v1/events/_search#state":                                            `{}`,
+		"/admin/v1/events/_search#email-change":                                     `{}`,
+		"/admin/v1/events/_search#email-verified":                                   `{"events":[{"sequence":"100","aggregate":{"id":"TEST-staff-account","type":{"type":"user"},"resourceOwner":"org-1"},"type":{"type":"user.human.email.verified"}}]}`,
+		"/admin/v1/events/_search":                                                  `{"events":[]}`,
+		"/v2/users/TEST-staff-account":                                              `{"user":{"userId":"TEST-staff-account","state":"USER_STATE_ACTIVE","details":{"sequence":"101","resourceOwner":"org-1","creationDate":"2026-10-30T10:00:00.123456789Z"},"human":{"email":{"email":"synthetic@example.invalid","isVerified":true}}}}`,
 		"/management/v1/users/TEST-staff-account/metadata/onboarding_staff_command": `{"metadata":{"key":"onboarding_staff_command","value":"` + base64.StdEncoding.EncodeToString([]byte("TEST-binding-nonce")) + `","details":{"sequence":"102","resourceOwner":"org-1"}}}`,
 	}
 }
@@ -29,14 +35,41 @@ func observationClient(t *testing.T, replies map[string]string, visit func(*http
 	t.Helper()
 	var mu sync.Mutex
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.Header.Get("Authorization") != "Bearer TEST-source-token" || r.Header.Get("x-zitadel-orgid") != "org-1" || r.Header.Get("Cookie") != "" || r.URL.RawQuery != "" {
+		method := http.MethodGet
+		path := r.URL.Path
+		if r.URL.Path == "/admin/v1/events/_search" {
+			method = http.MethodPost
+			raw, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Error(err)
+			}
+			r.Body = io.NopCloser(bytes.NewReader(raw))
+			var query struct {
+				Limit      int
+				EventTypes []string
+			}
+			if json.Unmarshal(raw, &query) != nil {
+				t.Error("invalid event query")
+			}
+			if query.Limit == 1 && len(query.EventTypes) > 0 {
+				switch query.EventTypes[0] {
+				case "user.locked":
+					path += "#state"
+				case "user.human.email.changed":
+					path += "#email-change"
+				case "user.human.email.verified":
+					path += "#email-verified"
+				}
+			}
+		}
+		if r.Method != method || r.Header.Get("Authorization") != "Bearer TEST-source-token" || r.Header.Get("x-zitadel-orgid") != "org-1" || r.Header.Get("Cookie") != "" || r.URL.RawQuery != "" {
 			t.Error("observation was not an exact scoped read")
 		}
 		mu.Lock()
 		if visit != nil {
 			visit(r)
 		}
-		body, ok := replies[r.URL.Path]
+		body, ok := replies[path]
 		mu.Unlock()
 		if !ok {
 			http.NotFound(w, r)
@@ -98,6 +131,15 @@ func TestObserveStaffIdentityDoesNotPromoteUnverifiedOrInactiveAccounts(t *testi
 			replies := staffObservationReplies()
 			path := "/v2/users/TEST-staff-account"
 			replies[path] = strings.ReplaceAll(strings.ReplaceAll(replies[path], "USER_STATE_ACTIVE", tc.source), `"isVerified":true`, `"isVerified":false`)
+			replies["/admin/v1/events/_search#email-verified"] = `{}`
+			stateEvent := map[string]string{"inactive": "user.deactivated", "locked": "user.locked", "initial": "user.human.initialization.code.added"}[tc.want]
+			if stateEvent != "" {
+				raw, err := json.Marshal(map[string]any{"events": []any{staffObservationEvent("100", stateEvent, "")}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				replies["/admin/v1/events/_search#state"] = string(raw)
+			}
 			got, err := observationClient(t, replies, nil).ObserveStaffIdentity(context.Background(), observationInput(), time.Time{})
 			if err != nil || got.State != tc.want || got.EmailVerified {
 				t.Fatalf("ineligible account was promoted: state=%q verified=%t err=%v", got.State, got.EmailVerified, err)
@@ -184,7 +226,7 @@ func TestObserveStaffIdentityBindsCurrentHumanAndMetadataWithoutDisclosingContac
 	client := observationClient(t, staffObservationReplies(), func(r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/v2/users/") {
 			reads.Add(1)
-		} else {
+		} else if strings.Contains(r.URL.Path, "/metadata/") {
 			metadataReads.Add(1)
 		}
 	})
@@ -197,5 +239,14 @@ func TestObserveStaffIdentityBindsCurrentHumanAndMetadataWithoutDisclosingContac
 	raw, err := json.Marshal(got)
 	if err != nil || strings.Contains(string(raw), "example.invalid") || strings.Contains(string(raw), "TEST-binding-nonce") || strings.Contains(string(raw), "TEST-source-token") {
 		t.Fatal("observation disclosed private source evidence")
+	}
+}
+
+func TestObserveStaffIdentityRejectsCommittedDeactivationBehindStableProjection(t *testing.T) {
+	replies := staffObservationReplies()
+	replies["/admin/v1/events/_search"] = `{"events":[{"sequence":"103","aggregate":{"id":"TEST-staff-account","type":{"type":"user"},"resourceOwner":"org-1"},"type":{"type":"user.deactivated"}}]}`
+	got, err := observationClient(t, replies, nil).ObserveStaffIdentity(context.Background(), observationInput(), time.Time{})
+	if !errors.Is(err, ErrIdentityUnavailable) || got.UserID != "" || got.EmailVerified {
+		t.Fatal("committed deactivation behind stable user projections established active verified proof")
 	}
 }
