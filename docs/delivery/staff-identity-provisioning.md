@@ -8,6 +8,53 @@ routes, creation PUT and bounded command activity are implemented in the current
 authorization in Helivanta, recipient verification, membership and employment
 activation are not implemented by these endpoints.
 
+## Atomic decisions, lineage and stale-authority denial — 2026-10-31
+
+Owner storage now commits an independent decision, prepared successor, permanent
+root/parent lineage and disclosure audit atomically. There is no provider dispatch
+inside approval. A rejected request remains final. Exact retry returns frozen
+reviewer/reason/successor ID and original server-selected provider ID/nonce;
+regenerated server candidates cannot change the retained identity. Competing
+replacement transactions have one winner. Bare approved rows cannot materialize
+an unrecorded successor. Actual application-role decision and exact retry passed;
+lineage UPDATE/DELETE/TRUNCATE are denied.
+
+Schema-owner `9dc4638b7a043c5509eb59d1893545a36b2d64ed`, chart 0.3.61, SHA-256
+`cbed5780340d67424cb7779cd76479e5bb9786192170b668cc0ab5e8c35f1ee1`,
+is published and hash-verified in the owner CI pin. Exact-scope composite FKs,
+parent/request/successor uniqueness and a predecessor-generation self-FK preserve
+one non-branching root lineage without recursive reads or UUID-clock assumptions.
+Indexes on existing ledgers are concurrent/autocommit. The bootstrap runner uses
+ON_ERROR_STOP=0: actual index/FK/privilege checks are a release gate, not Job status.
+
+The normal product creation path now admits the exact reviewed successor and
+blocks an approved closed/superseded parent. Protected receipts preserve historical
+creation facts and add minimized recovery_state/successor_command_id annotations.
+Creation and observation reject closed authority, including closure during source
+I/O, while retaining late creation receipts for reconciliation. Parent receipts
+expose no operator reason/identity, child provider ID or binding nonce.
+
+Fourteen added checks passed (ten store transaction/lineage and four API scenarios),
+in addition to the prior fourteen recovery checks. Tests cover exact retry,
+independent/final rejection, ten competing approval transactions, atomic audit
+rollback, bare approval, second-generation lineage, actual application privileges,
+normal successor preparation/creation/replay and before/during-source closure.
+API cases inject source callbacks; they are contract/race evidence, not normal
+human UI or real-provider end-to-end acceptance. Full actual-PostgreSQL owner
+race/coverage passed: 55.0% overall, API 63.8%, store 64.6%, decision 84.8%,
+successor preparation 81.8%, shared recovery scope 100%. Vet/build/lint (zero issues),
+four delivery checks, redacted secrets and shell/diff checks passed. Schema local
+Helm lint/template and seven selected repository tests passed.
+
+Remaining release work: verified operator authorization and source conflict/orphan
+proof; authenticated operator endpoints and minimized recovery activity; prepared
+commands stranded by machine-account replacement and legitimate profile correction;
+normal operator/HMS Admin/recipient/independent reviewer UI; recipient authenticator
+setup/sign-in; canonical production product registration (owner #12); legacy
+staff/link/grant classification; remaining A01–A12 lifecycle/cross-module cutoff.
+No operator write endpoint was exposed, no production migration/rollout occurred,
+and no full provisioning, Access/RBAC or normal UI acceptance is claimed.
+
 ## Recovery record implementation — 2026-10-31
 
 [ADR-0005](../adr/0005-staff-identity-recovery.md) defines recovery without erasing

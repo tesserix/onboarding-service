@@ -26,15 +26,17 @@ func WithStaffIdentity(product string, source StaffIdentitySource) Option {
 }
 
 type StaffIdentityReceipt struct {
-	SchemaVersion int        `json:"schema_version"`
-	CommandID     uuid.UUID  `json:"command_id"`
-	TenantID      uuid.UUID  `json:"tenant_id"`
-	ProductKey    string     `json:"product_key"`
-	ActorSubject  string     `json:"actor_subject"`
-	CommandState  string     `json:"command_state"`
-	PreparedAt    time.Time  `json:"prepared_at"`
-	UserID        string     `json:"user_id,omitempty"`
-	CreatedAt     *time.Time `json:"created_at,omitempty"`
+	SchemaVersion      int        `json:"schema_version"`
+	CommandID          uuid.UUID  `json:"command_id"`
+	TenantID           uuid.UUID  `json:"tenant_id"`
+	ProductKey         string     `json:"product_key"`
+	ActorSubject       string     `json:"actor_subject"`
+	CommandState       string     `json:"command_state"`
+	PreparedAt         time.Time  `json:"prepared_at"`
+	UserID             string     `json:"user_id,omitempty"`
+	CreatedAt          *time.Time `json:"created_at,omitempty"`
+	RecoveryState      string     `json:"recovery_state,omitempty"`
+	SuccessorCommandID *uuid.UUID `json:"successor_command_id,omitempty"`
 }
 
 func staffIdentityReceipt(op store.StaffIdentityOperation) StaffIdentityReceipt {
@@ -44,7 +46,8 @@ func staffIdentityReceipt(op store.StaffIdentityOperation) StaffIdentityReceipt 
 	}
 	result := StaffIdentityReceipt{SchemaVersion: 1, CommandID: op.Command.ID,
 		TenantID: op.Command.OrgID, ProductKey: op.Command.ProductKey,
-		ActorSubject: op.Command.ActorSubject, CommandState: state, PreparedAt: op.Command.CreatedAt}
+		ActorSubject: op.Command.ActorSubject, CommandState: state, PreparedAt: op.Command.CreatedAt,
+		RecoveryState: op.RecoveryState, SuccessorCommandID: op.SuccessorCommandID}
 	if op.Creation != nil {
 		result.CommandState = "created"
 		result.UserID = op.Creation.ProviderUserID
@@ -150,7 +153,7 @@ func (s *Service) ObserveStaffIdentity(ctx context.Context, p authz.Principal, t
 	if err != nil {
 		return empty, err
 	}
-	if op.DispatchedAt == nil {
+	if op.DispatchedAt == nil || op.RecoveryState != "" {
 		return empty, ErrConflict
 	}
 	c := op.Command
@@ -190,6 +193,9 @@ func (s *Service) ObserveStaffIdentity(ctx context.Context, p authz.Principal, t
 	final, err := s.readStaffIdentity(ctx, p, current, "staff.identity.observe", &observation)
 	if err != nil {
 		return empty, err
+	}
+	if final.RecoveryState != "" {
+		return empty, ErrConflict
 	}
 	return StaffIdentityObservationReceipt{Receipt: staffIdentityReceipt(final), Observation: observation}, nil
 }

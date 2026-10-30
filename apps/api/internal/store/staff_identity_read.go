@@ -23,9 +23,11 @@ type StaffIdentityScope struct {
 
 // StaffIdentityOperation distinguishes retained dispatch from confirmed creation.
 type StaffIdentityOperation struct {
-	Command      StaffIdentityCommand
-	DispatchedAt *time.Time
-	Creation     *StaffIdentityCreation
+	Command            StaffIdentityCommand
+	DispatchedAt       *time.Time
+	Creation           *StaffIdentityCreation
+	RecoveryState      string
+	SuccessorCommandID *uuid.UUID
 }
 
 func (StaffIdentityOperation) String() string { return "[redacted staff identity operation]" }
@@ -63,6 +65,25 @@ func (s *Store) ReadStaffIdentity(ctx context.Context, scope StaffIdentityScope,
 				result.Creation = &StaffIdentityCreation{CommandID: scope.CommandID,
 					ProviderUserID: *providerID, ProviderCreatedAt: created, RecordedAt: *recordedAt}
 			}
+		}
+		var replaced, closed bool
+		err = tx.QueryRow(ctx, `SELECT
+          EXISTS(SELECT 1 FROM staff_identity_recovery_decisions WHERE command_id=$1 AND decision='approved' AND requested_action='replace'),
+          (SELECT successor_command_id FROM staff_identity_replacements WHERE parent_command_id=$1),
+          EXISTS(SELECT 1 FROM staff_identity_recovery_decisions WHERE command_id=$1 AND decision='approved' AND requested_action='close_unresolved')`, scope.CommandID).
+			Scan(&replaced, &result.SuccessorCommandID, &closed)
+		if err != nil {
+			return err
+		}
+		if replaced {
+			if result.SuccessorCommandID == nil {
+				return ErrConflict
+			}
+			result.RecoveryState = "superseded"
+		} else if result.SuccessorCommandID != nil {
+			return ErrConflict
+		} else if closed {
+			result.RecoveryState = "closed_unresolved"
 		}
 		return appendAudit(ctx, tx, event)
 	})

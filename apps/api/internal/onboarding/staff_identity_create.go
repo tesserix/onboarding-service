@@ -101,6 +101,9 @@ func (s *Service) CreateStaffIdentity(ctx context.Context, p authz.Principal, te
 	if err != nil {
 		return empty, err
 	}
+	if op.RecoveryState != "" {
+		return empty, ErrConflict
+	}
 	return staffIdentityReceipt(op), nil
 }
 

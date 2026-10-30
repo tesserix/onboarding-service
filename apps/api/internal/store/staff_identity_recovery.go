@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -42,11 +41,7 @@ func (StaffIdentityRecoveryRequest) String() string {
 func (s *Store) ProposeStaffIdentityRecovery(ctx context.Context, scope StaffIdentityRecoveryScope, in StaffIdentityRecoveryRequest, event audit.Event) (StaffIdentityRecoveryRequest, error) {
 	var result StaffIdentityRecoveryRequest
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		if err := lockStaffIdentityScope(ctx, tx, StaffIdentityCommand{OrgID: scope.OrgID, ProductKey: scope.ProductKey, MachineSubject: scope.MachineSubject, ProviderOrgID: scope.ProviderOrgID, ProviderProjectID: scope.ProviderProjectID}); err != nil {
-			return err
-		}
-		command, err := scanStaffIdentityCommand(tx.QueryRow(ctx, `SELECT `+staffIdentityColumns+` FROM staff_identity_commands
- WHERE id=$1 AND org_id=$2 AND product_key=$3 AND provider_org_id=$4 AND provider_project_id=$5`, scope.CommandID, scope.OrgID, scope.ProductKey, scope.ProviderOrgID, scope.ProviderProjectID))
+		command, err := readStaffIdentityRecoveryTarget(ctx, tx, scope)
 		if err != nil {
 			return err
 		}
@@ -60,13 +55,7 @@ func (s *Store) ProposeStaffIdentityRecovery(ctx context.Context, scope StaffIde
  VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(id) DO NOTHING`, in.ID, command.ID, command.ActorSubject, command.ProviderUserID, in.RequestedBy, in.Action, in.ReplacementActorSubject, in.Reason, in.EvidenceReference); err != nil {
 			return err
 		}
-		err = tx.QueryRow(ctx, `SELECT id,command_id,original_actor_subject,original_user_id,requested_by,
- requested_action,replacement_actor_subject,reason,evidence_reference,created_at
- FROM staff_identity_recovery_requests WHERE id=$1 AND command_id=$2`, in.ID, command.ID).
-			Scan(&result.ID, &result.CommandID, &result.OriginalActorSubject, &result.OriginalUserID, &result.RequestedBy, &result.Action, &result.ReplacementActorSubject, &result.Reason, &result.EvidenceReference, &result.CreatedAt)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrNotFound
-		}
+		result, err = scanStaffIdentityRecoveryRequest(tx.QueryRow(ctx, `SELECT `+staffRecoveryRequestColumns+` FROM staff_identity_recovery_requests WHERE id=$1 AND command_id=$2`, in.ID, command.ID))
 		if err != nil {
 			return err
 		}
@@ -80,4 +69,12 @@ func (s *Store) ProposeStaffIdentityRecovery(ctx context.Context, scope StaffIde
 	}
 	result.CreatedAt = result.CreatedAt.UTC()
 	return result, nil
+}
+
+func readStaffIdentityRecoveryTarget(ctx context.Context, tx pgx.Tx, scope StaffIdentityRecoveryScope) (StaffIdentityCommand, error) {
+	if err := lockStaffIdentityScope(ctx, tx, StaffIdentityCommand{OrgID: scope.OrgID, ProductKey: scope.ProductKey, MachineSubject: scope.MachineSubject, ProviderOrgID: scope.ProviderOrgID, ProviderProjectID: scope.ProviderProjectID}); err != nil {
+		return StaffIdentityCommand{}, err
+	}
+	return scanStaffIdentityCommand(tx.QueryRow(ctx, `SELECT `+staffIdentityColumns+` FROM staff_identity_commands
+ WHERE id=$1 AND org_id=$2 AND product_key=$3 AND provider_org_id=$4 AND provider_project_id=$5`, scope.CommandID, scope.OrgID, scope.ProductKey, scope.ProviderOrgID, scope.ProviderProjectID))
 }

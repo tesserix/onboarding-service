@@ -158,6 +158,33 @@ best-effort audit attempts now have a separate two-second budget, so a blocked
 denial audit cannot hold a cancelled request indefinitely. A failed mandatory
 Staff disclosure audit releases no private receipt.
 
+## Reviewed recovery annotations and eligibility
+
+The protected receipt adds optional `recovery_state` and `successor_command_id`.
+`closed_unresolved` retains an independently closed investigation without claiming
+that the original source creation was unsent. `superseded` includes only the exact
+reviewed successor command UUID. `command_state`, `user_id` and `created_at` remain
+historical creation facts; these annotations are current recovery state. No raw
+operator identity, reason/evidence, successor provider ID or binding nonce is
+returned to the product. A bare approved replacement without complete lineage is
+unavailable, not a fabricated ready successor.
+
+PUT creation and POST observation return 409 for approved closed/superseded
+commands. Observation checks before source I/O and again at final disclosure.
+Closure during source I/O retains a valid late creation receipt for reconciliation
+but denies creation/observation authority. GET receipt remains an attributable
+historical read under its existing exact-current scope and mandatory audit.
+Creation receipts alone never authorize Staff/login linking or membership.
+
+Atomic reviewed replacement commits decision, fresh prepared command, permanent
+root/parent lineage and audit together. It does not dispatch a provider account.
+Only the exact successor can subsequently use normal creation; exact retries do
+not redispatch it. The original dispatch and contact root stay retained. Products
+cannot bypass uncertainty with arbitrary new command IDs. Explicit replacement
+requires the platform operator workflow in ADR-0005; its authenticated endpoints,
+source conflict/orphan checks and UI are still pending. This is an additive draft
+v1 annotation, not approval to activate a new consumer or production policy.
+
 ## Bounded private command activity
 
 `GET /v1/orgs/{tenant}/staff-identities/{command}/history?actor_subject={initiator}`

@@ -159,8 +159,12 @@ func (s *Store) ClaimStaffIdentityDispatch(ctx context.Context, c StaffIdentityC
 
 func requireStaffIdentityContact(ctx context.Context, tx pgx.Tx, c StaffIdentityCommand) error {
 	var claimed bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM staff_identity_contact_claims
- WHERE root_command_id=$1 AND provider_org_id=$2 AND email=$3 AND email_key=$4)`,
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM staff_identity_contact_claims roots
+ WHERE roots.provider_org_id=$2 AND roots.email=$3 AND roots.email_key=$4
+ AND (roots.root_command_id=$1 OR EXISTS(SELECT 1 FROM staff_identity_replacements lineage
+      WHERE lineage.successor_command_id=$1 AND lineage.root_command_id=roots.root_command_id)))
+ AND NOT EXISTS(SELECT 1 FROM staff_identity_recovery_decisions
+      WHERE command_id=$1 AND decision='approved')`,
 		c.ID, c.ProviderOrgID, c.Email, strings.ToLower(c.Email)).Scan(&claimed); err != nil {
 		return err
 	}

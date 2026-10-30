@@ -72,9 +72,9 @@ changed input conflicts. Do not delete history to retry an operation.
 
 The schema owner is tesserix-k8s onboarding_db.sql, additive only; application
 CI must pin its immutable commit/hash. Tests exercise actual PostgreSQL constraints,
-application-role write denial, concurrent decisions and audit rollback. Current
-work starts with the durable request/decision constraints, then implements atomic
-successor lineage, owner endpoints and consumer/operator UI. None of those later
+application-role write denial, concurrent decisions and audit rollback. Durable request/decision constraints and atomic successor lineage/store execution
+are implemented. Verified operator/source authority, owner endpoints and
+consumer/operator UI remain required. None of those later
 gates is implied by the existence of these tables. Existing binaries ignore new
 tables; rollback retains their facts and never drops them. Deployment/migration
 requires named approval and full compatibility/normal-role acceptance.
@@ -82,3 +82,31 @@ requires named approval and full compatibility/normal-role acceptance.
 Single-table mutable status was rejected because correcting or replacing it would
 lose the accountable request/decision history. Automatic redispatch was rejected
 because a timeout/404 cannot prove whether the original account was created.
+
+## Implemented transaction and disclosure behavior
+
+An immutable lineage row binds the exact approved request, parent, successor and
+original contact root under one tenant/product/source project/contact. Unique
+parent/successor/request and an exact predecessor-generation self-FK prevent
+branching/cycles without trusting UUID timestamp ordering. Indexed root/parent
+point queries avoid recursive scans. Decision, successor and lineage roll back
+with mandatory audit failure; no provider dispatch occurs in the transaction.
+Actual application-role tests cover decision/retry plus UPDATE/DELETE/TRUNCATE
+denial. Exact retry retains reviewer/reason and successor ID; server-generated
+provider ID/nonce remain frozen despite regenerated retry candidates.
+
+Receipt annotations preserve immutable creation facts while marking independent
+closure or supersession. Creation and observation recheck current recovery state
+before final disclosure, deny closed/superseded authority and retain late source
+creation facts for reconciliation. A bare approved row cannot manufacture a
+successor. This is not the verified operator authorization/source quarantine
+protocol or the full HMS Admin/recipient/reviewer acceptance. Those gates stay
+open before exposing operator writes. Platform recovery events also need a
+minimized authorized activity projection for their operator/product consumers.
+
+Concurrent indexes require autocommit canonical SQL execution. Release must
+inspect actual indexes/FKs/privileges; bootstrap ON_ERROR_STOP=0 means a green Job
+is not migration proof. Prepared commands stranded by canonical machine-account
+replacement, legitimate profile correction, and late source-orphan reconciliation
+need explicit operator acceptance; do not infer those cases from dispatched-parent
+fixtures or a store-only approval.
