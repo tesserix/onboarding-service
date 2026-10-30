@@ -435,3 +435,14 @@ never-sent from created-then-deleted. Explicit accountable operator resolution,
 replacement/conflict/orphan handling and operator-scoped history remain
 required before this contract can be accepted as full provisioning. No
 credential rotation, live schema change or rollout follows from this draft.
+
+## Canonical console receipt models
+
+`apps/api/cmd/staff-contracts` generates `contracts/staff-recovery.ts` directly
+from the exported Go JSON receipt definitions. From `apps/api/`, run
+`go run ./cmd/staff-contracts` and `go run ./cmd/staff-contracts -check`.
+The retained-artifact test runs in the normal Go suite. Consumers vendor the
+exact generated file with owner revision and SHA-256 provenance; they must not
+edit it or maintain independent wire-model copies. This artifact describes
+receipt shapes, not additional permissions or a release approval. Runtime
+scope/identity and source-proof validation remain authoritative.
