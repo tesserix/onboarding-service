@@ -54,4 +54,3 @@ export type StaffIdentityRecoveryDecisionReceipt = {
   recorded_at: string;
   successor_command_id?: string;
 };
-

@@ -62,7 +62,7 @@ func generate() ([]byte, error) {
 		}
 		b.WriteString("};\n\n")
 	}
-	return []byte(b.String()), nil
+	return []byte(strings.TrimRight(b.String(), "\n") + "\n"), nil
 }
 
 func typescriptType(typ reflect.Type) (string, error) {
