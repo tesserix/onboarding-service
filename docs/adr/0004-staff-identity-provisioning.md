@@ -1,7 +1,8 @@
 # ADR 0004: Durable role-free Staff identity provisioning
 
-Status: design under implementation; no published endpoint, migration or live
-provisioning authority is established by this document. Consumer:
+Status: implementation in progress. The provider protocol and durable ledger
+have local tests; the endpoint, reconciliation/operator recovery and consumer UI
+remain open. No live provisioning authority is established by this document. Consumer:
 `tesserix/helivanta#417`, `#1053` and the A01–A12 Staff acceptance plan.
 
 ## Ownership, scope and budget
