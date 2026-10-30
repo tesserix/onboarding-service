@@ -247,7 +247,10 @@ func principalOf(c *gin.Context) authz.Principal {
 func (d Deps) idempotency() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Staff commands use durable claims and current authorization, never replay-cache authority.
-		if c.FullPath() == "/v1/orgs/:id/staff-identities/:commandId/observations" || c.FullPath() == "/v1/orgs/:id/staff-identities/:commandId" {
+		switch c.FullPath() {
+		case "/v1/orgs/:id/staff-identities/:commandId/observations",
+			"/v1/orgs/:id/staff-identities/:commandId",
+			"/v1/orgs/:id/staff-identities/:commandId/recovery/requests/:requestId":
 			c.Next()
 			return
 		}

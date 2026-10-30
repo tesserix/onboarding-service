@@ -33,7 +33,42 @@ The principal preserves verified console access-token origin. Recovery-specific
 policy actions reject legacy cookies, product machines, customer admins and
 ordinary users; platform operators can only read. This policy is an initial
 check, not a replacement for the live source proof or target-scope/store checks.
-The source adapter and policy are not yet connected to operator endpoints.
+The source adapter and policy now guard the unreleased operator receipt read and
+proposal endpoints. They are not yet connected to an independent decision
+endpoint; conflict/orphan verification and complete reviewer UI remain required.
+
+## Audited operator read/proposal service boundary — local candidate
+
+The service retains the real `KindPlatform` principal and verified console-token
+origin; it never invokes product-only identity verification under a fabricated
+machine identity. It independently verifies the exact canonical tenant/source
+organization, active configured product/source project and current entitlement.
+Store scope follows the current canonical machine while command facts remain
+bound to the original initiator, machine and provider user.
+
+Receipt reads perform live authority/source verification, mandatory audited
+inspection, a fresh authority/source proof and a final transactional audited read.
+Proposals derive the maker from that principal, require immutable reason/evidence,
+recheck authority/source before the proposal transaction and again afterwards,
+and perform a final audited transactional scope check before returning a minimized
+recording receipt. Only a previously dispatched command can be proposed. No
+provider write or recovery decision occurs. The shared operation reader preserves
+original-actor behavior and closed/superseded receipt annotations.
+
+Proposal request IDs own durable retry semantics. A regression reproduced the
+generic replay cache returning a success after maker revocation; explicit route
+exclusion now requires fresh authority on every retry and retains no generic
+cached response. If authority is withdrawn after proposal commit, no recording
+receipt is released, while the immutable proposal/audit remain. Restored authority
+can recover the same proposal through an exact retry. Independent decision state
+must not be inferred from this immutable recording receipt.
+
+Each private store read locks/rechecks canonical scope, requires exact human
+platform audit binding and rolls back on audit failure. The full service budget
+is 25 seconds; read performs two source/operator proofs and proposal up to three.
+Operational latency and normal-role UI are not yet accepted. Database/HTTP
+integration tests use callback source proofs; real provider adapter proof is
+separate evidence. No normal HMS Admin/recipient/reviewer UI is inferred.
 
 TLS protocol tests cover withdrawals, foreign scope, stale projection, role
 definition deletion, malformed/ambiguous proof and source churn/saturation.

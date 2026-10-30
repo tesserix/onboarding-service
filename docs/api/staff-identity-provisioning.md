@@ -2,7 +2,8 @@
 
 Status: PUT command creation, GET receipt and POST observation candidates are
 implemented and locally tested, together with bounded private command activity.
-Operator recovery/replacement and consumer UI remain in development.
+Current-human recovery read/proposal candidates are also implemented; independent
+decision service/API, conflict/orphan verification and consumer UI remain in development.
 Not accepted or deployed. Implements only
 the identity-owner part of Helivanta A01; membership, Staff/person review,
 employment and scoped operational access remain separate owner decisions.
@@ -10,7 +11,8 @@ See ADR-0004 and the Staff delivery checkpoint for remaining recovery/UI gates.
 
 ## Authorization and privacy
 
-Only the current registered product machine matching the owner's explicit Staff
+Creation, original-actor receipt, observation and history require the current
+registered product machine matching the owner's explicit Staff
 identity product configuration can use these operations, for its currently
 entitled canonical tenant UUID and an active source organisation. No product key
 is inferred by default: `hms` is a fixture key, and production registration is
@@ -22,6 +24,8 @@ for that machine boundary. The product is accountable for the human actor it
 supplies: Helivanta must authorize its current Admin before the request, bind the
 command to that account/workspace, and recheck before accepting/disclosing the
 result. The owner does not infer a human authorization decision from a field.
+The separate operator recovery operations below require current verified human
+console authority and do not fabricate or impersonate a product principal.
 
 Commands bind product machine, tenant and initiating human. Exact reads/retries
 must retain that actor; another actor needs the separately authorized recovery
@@ -30,6 +34,70 @@ owner verification, never from request fields. No lookup by email, foreign
 account enumeration, credentials or private contact response is provided.
 All responses are `Cache-Control: no-store`; the expiring generic HTTP replay
 cache cannot bypass current authorization on these routes.
+
+## Operator recovery read and proposal — unreleased candidates
+
+`GET /v1/orgs/{tenant}/staff-identities/{command}/recovery` accepts no query or
+request body. It returns the same minimized retained command receipt as the
+original-actor read, under current platform human authority. It can inspect an
+old command after the canonical product machine changes; original initiator,
+source account, profile, dispatch and creation facts remain immutable. It does
+not disclose email, profile, nonce, source configuration, reasons or evidence.
+
+`PUT /v1/orgs/{tenant}/staff-identities/{command}/recovery/requests/{uuidv7-request}`
+records an immutable proposal. The complete JSON body is at most 4 KiB and has
+exactly these nonempty string fields for closure:
+
+```json
+{
+  "requested_action": "close_unresolved",
+  "reason": "Investigated the retained uncertain dispatch",
+  "evidence_reference": "QA:RECOVERY/CASE-1"
+}
+```
+
+`requested_action: replace` additionally requires `replacement_actor_subject`,
+an opaque proposed successor initiator. Closure must omit it. This is a request
+fact, not proof of that person's eligibility or authority. Reason must be nonblank,
+control-free and at most 2,000 Unicode characters. Evidence reference is 1–200
+ASCII characters matching `[A-Za-z0-9][A-Za-z0-9._:/-]*`; no evidence content is
+accepted or fetched. Query parameters, duplicate/unknown/case-variant keys, nulls,
+credentials, requested maker/reviewer identities and unsupported actions are
+invalid. Maker is exclusively the current verified operator subject.
+
+Both operations require a verified console access-token origin, active/verified
+human, exact configured platform organization and direct console-project grant.
+Read needs current `platform`; proposal additionally needs `rotate-credentials`.
+Legacy cookies, ordinary platform-role tokens, products and customer admins cannot
+substitute. Live proof is repeated around inspection and writes. Tenant/source
+organization binding, active product/project and current entitlement are checked
+under the actual operator principal; transactional store reads/writes recheck the
+current canonical registry. Independent scope changes fail closed.
+
+`STAFF_IDENTITY_PRODUCT_KEY` and the existing explicit `ZITADEL_CONSOLE_PROJECT_ID`
+must both be configured with the current authority source. Nothing defaults to a
+production product/project. The full request budget is 25 seconds; source proof
+has its own four-second bound. Actual deployed latency/SLO is unproven.
+
+Proposal HTTP 200 returns only schema version, tenant, command/request IDs,
+`requested_action` and immutable `recorded_at`. It proves recording, not pending
+decision state, approval, source absence, eligibility or access. Exact retries
+preserve the frozen proposal/time; changed maker/input conflicts. A command
+without a dispatch claim conflicts. Original historical actor/machine/user facts
+are derived from the retained command, not the current console identity.
+Generic response caching is explicitly excluded: supplying `Idempotency-Key`
+never skips current authorization. No role, user, successor, dispatch, closure or
+decision is created by this operation.
+
+Every private inspection and successful proposal has mandatory atomic audit.
+Final disclosure rechecks live source/operator and transactional target scope.
+If authority is withdrawn after commit, the operation retains the proposal but
+returns no receipt; after authority is restored, retry the same ID/input. This
+must not be interpreted as permission to create another command/request.
+Invalid input is 400; unavailable/invalid proof is 503; withdrawn or unauthorized
+scope is a nonenumerating 404; frozen-input/scope change is 409. Successes are
+`Cache-Control: no-store`. Independent decision endpoints, minimized request
+detail/activity, source conflict/orphan proof and normal-role UI remain required.
 
 ## Create or replay
 
@@ -187,16 +255,17 @@ platform operator workflow in ADR-0005; its authenticated endpoints,
 source conflict/orphan checks and UI are still pending. This is an additive draft
 v1 annotation, not approval to activate a new consumer or production policy.
 
-The current local recovery-authority adapter verifies the configured platform
+The current recovery-authority adapter verifies the configured platform
 organization, active/verified human and exact direct console-project grant.
 Current authoritative events must also retain the organization/project, required
 role definitions and grant roles/state. Source churn or bounded-history
 saturation is unavailable; absent/withdrawn authority denies. Read requires
 `platform`; write also requires `rotate-credentials`. Recovery-specific policy
 retains verified console access-token origin and rejects product machines,
-legacy cookies and customer admin credentials. No HTTP recovery route currently
-consumes that adapter; target/source conflict checks, audited service integration
-and complete consumer UI remain required before exposing recovery operations.
+legacy cookies and customer admin credentials. The recovery read/proposal routes
+now consume it with source/registry rechecks and mandatory audits. Independent
+decision service/API, target/source conflict checks, request detail/activity and
+complete consumer UI remain required before approving recovery operations.
 See ADR-0005 for the four-second proof budget and local provider evidence.
 
 ## Bounded private command activity

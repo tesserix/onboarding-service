@@ -79,6 +79,9 @@ func run(log *slog.Logger) error {
 	serviceOptions := []onboarding.Option{onboarding.WithRegistryProjectID(cfg.RegistryProjectID)}
 	if cfg.StaffIdentityProductKey != "" {
 		serviceOptions = append(serviceOptions, onboarding.WithStaffIdentity(cfg.StaffIdentityProductKey, client))
+		if cfg.ConsoleProjectID != "" {
+			serviceOptions = append(serviceOptions, onboarding.WithStaffRecovery(cfg.ConsoleProjectID, client))
+		}
 	}
 	svc := onboarding.New(st, identity, authz.New(st), log, serviceOptions...)
 

@@ -68,14 +68,16 @@ type Identity interface {
 }
 
 type Service struct {
-	store             *store.Store
-	idp               Identity
-	authz             *authz.Authorizer
-	log               *slog.Logger
-	registryProjectID string
-	hospitals         *HospitalConfig
-	staffProduct      string
-	staffSource       StaffIdentitySource
+	store                *store.Store
+	idp                  Identity
+	authz                *authz.Authorizer
+	log                  *slog.Logger
+	registryProjectID    string
+	hospitals            *HospitalConfig
+	staffProduct         string
+	staffSource          StaffIdentitySource
+	staffRecoveryProject string
+	staffRecoverySource  StaffRecoveryOperatorSource
 }
 
 type Option func(*Service)

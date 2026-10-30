@@ -41,54 +41,64 @@ func (s *Store) ReadStaffIdentity(ctx context.Context, scope StaffIdentityScope,
 		if err != nil {
 			return err
 		}
-		var sourceTime, providerID *string
-		var recordedAt *time.Time
-		err = tx.QueryRow(ctx, `SELECT d.created_at,r.provider_user_id,r.source_creation_time,r.created_at
- FROM staff_identity_dispatches d LEFT JOIN staff_identity_creations r ON r.command_id=d.command_id
- WHERE d.command_id=$1`, scope.CommandID).
-			Scan(&result.DispatchedAt, &providerID, &sourceTime, &recordedAt)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return err
-		}
-		if err == nil {
-			if result.DispatchedAt == nil || (recordedAt == nil && (sourceTime != nil || providerID != nil)) {
-				return ErrConflict
-			}
-			if recordedAt != nil {
-				if sourceTime == nil || providerID == nil || *providerID != result.Command.ProviderUserID {
-					return ErrConflict
-				}
-				created, err := time.Parse(time.RFC3339Nano, *sourceTime)
-				if err != nil {
-					return ErrConflict
-				}
-				result.Creation = &StaffIdentityCreation{CommandID: scope.CommandID,
-					ProviderUserID: *providerID, ProviderCreatedAt: created, RecordedAt: *recordedAt}
-			}
-		}
-		var replaced, closed bool
-		err = tx.QueryRow(ctx, `SELECT
-          EXISTS(SELECT 1 FROM staff_identity_recovery_decisions WHERE command_id=$1 AND decision='approved' AND requested_action='replace'),
-          (SELECT successor_command_id FROM staff_identity_replacements WHERE parent_command_id=$1),
-          EXISTS(SELECT 1 FROM staff_identity_recovery_decisions WHERE command_id=$1 AND decision='approved' AND requested_action='close_unresolved')`, scope.CommandID).
-			Scan(&replaced, &result.SuccessorCommandID, &closed)
+		result, err = readStaffIdentityOperation(ctx, tx, result.Command)
 		if err != nil {
 			return err
-		}
-		if replaced {
-			if result.SuccessorCommandID == nil {
-				return ErrConflict
-			}
-			result.RecoveryState = "superseded"
-		} else if result.SuccessorCommandID != nil {
-			return ErrConflict
-		} else if closed {
-			result.RecoveryState = "closed_unresolved"
 		}
 		return appendAudit(ctx, tx, event)
 	})
 	if err != nil {
 		return StaffIdentityOperation{}, err
+	}
+	return result, nil
+}
+
+func readStaffIdentityOperation(ctx context.Context, tx pgx.Tx, command StaffIdentityCommand) (StaffIdentityOperation, error) {
+	result := StaffIdentityOperation{Command: command}
+	var err error
+	var sourceTime, providerID *string
+	var recordedAt *time.Time
+	err = tx.QueryRow(ctx, `SELECT d.created_at,r.provider_user_id,r.source_creation_time,r.created_at
+ FROM staff_identity_dispatches d LEFT JOIN staff_identity_creations r ON r.command_id=d.command_id
+ WHERE d.command_id=$1`, command.ID).
+		Scan(&result.DispatchedAt, &providerID, &sourceTime, &recordedAt)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return StaffIdentityOperation{}, err
+	}
+	if err == nil {
+		if result.DispatchedAt == nil || (recordedAt == nil && (sourceTime != nil || providerID != nil)) {
+			return StaffIdentityOperation{}, ErrConflict
+		}
+		if recordedAt != nil {
+			if sourceTime == nil || providerID == nil || *providerID != result.Command.ProviderUserID {
+				return StaffIdentityOperation{}, ErrConflict
+			}
+			created, err := time.Parse(time.RFC3339Nano, *sourceTime)
+			if err != nil {
+				return StaffIdentityOperation{}, ErrConflict
+			}
+			result.Creation = &StaffIdentityCreation{CommandID: command.ID,
+				ProviderUserID: *providerID, ProviderCreatedAt: created, RecordedAt: *recordedAt}
+		}
+	}
+	var replaced, closed bool
+	err = tx.QueryRow(ctx, `SELECT
+          EXISTS(SELECT 1 FROM staff_identity_recovery_decisions WHERE command_id=$1 AND decision='approved' AND requested_action='replace'),
+          (SELECT successor_command_id FROM staff_identity_replacements WHERE parent_command_id=$1),
+          EXISTS(SELECT 1 FROM staff_identity_recovery_decisions WHERE command_id=$1 AND decision='approved' AND requested_action='close_unresolved')`, command.ID).
+		Scan(&replaced, &result.SuccessorCommandID, &closed)
+	if err != nil {
+		return StaffIdentityOperation{}, err
+	}
+	if replaced {
+		if result.SuccessorCommandID == nil {
+			return StaffIdentityOperation{}, ErrConflict
+		}
+		result.RecoveryState = "superseded"
+	} else if result.SuccessorCommandID != nil {
+		return StaffIdentityOperation{}, ErrConflict
+	} else if closed {
+		result.RecoveryState = "closed_unresolved"
 	}
 	return result, nil
 }

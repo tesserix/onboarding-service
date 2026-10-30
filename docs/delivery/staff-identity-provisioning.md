@@ -8,7 +8,52 @@ routes, creation PUT and bounded command activity are implemented in the current
 authorization in Helivanta, recipient verification, membership and employment
 activation are not implemented by these endpoints.
 
-## Current recovery-operator authority — local candidate, 2026-10-31
+## Recovery read/proposal service and HTTP boundary — local candidate, 2026-10-31
+
+The source authority adapter now guards two unreleased operator routes: exact
+command recovery receipt GET and immutable proposal PUT by UUIDv7 request ID.
+The real platform-human principal is retained throughout; no product principal
+is fabricated. Canonical active tenant/product/entitlement and exact source
+organization/project binding are verified independently, while original command
+actor/machine/provider facts remain frozen across canonical machine replacement.
+
+Private inspection and final reads require an exact human-platform disclosure
+audit in the same store transaction. The shared operation reader preserves the
+original-actor receipt and closed/superseded annotations. Proposal derives maker
+from verified identity, requires reason/evidence, and records only an immutable
+request for an already-dispatched command. It creates no decision, successor,
+user, membership, closure or dispatch. Source authority is rechecked around reads
+and writes, with a final transactional target check before disclosure. The API
+contract documents input/output, errors, configuration and the 25-second budget.
+
+A regression reproduced a successful proposal replay after maker revocation from
+the generic idempotency cache. Explicit exclusion fixed it; every retry now
+reauthorizes against the live source and the durable ledger owns exact retries.
+Tests also cover forged maker/reviewer/credentials, duplicate/case-variant keys,
+invalid UTF-8, missing/invalid evidence, controls and wire bounds; roleless,
+legacy/product/customer/user denial before source I/O; wrong/stale/future proof;
+scope or entitlement changes during final source I/O; original fact retention;
+mandatory audit binding/rollback; and proposal commit followed by authority
+withdrawal with no receipt, then successful exact recovery after restoration.
+
+Full actual-PostgreSQL owner race/coverage passed: 55.4% overall, API 64.8%, store
+65.6%, provider 86.7%. Vet/build and lint (zero issues), four delivery tests,
+redacted secret scan and diff checks passed. The separate cross-package race
+integration run measures actual service execution: recovery receipt 94.1%, scope
+79.5%, proposal 80.6%, input validation 100%; audited recovery store read 92.9%
+in the full suite. Coverage is test evidence, not feature-completion percentage.
+
+Source/registry callbacks drive these new database/HTTP integration tests. The
+actual isolated v4.15.3 source-adapter test at parent 2e68596 is separate protocol
+evidence. Normal HMS Admin/recipient/independent-reviewer UI and a real-source
+full HTTP journey remain unproven. No schema or production change, migration,
+merge, release or completion tag occurred. Remaining: minimized request detail/
+activity, source conflict/orphan verification, independent decision service/API,
+prepared-command/profile correction, consumer integration, recipient setup/sign-in,
+canonical registration (#12), legacy grants and all remaining A01–A12 lifecycle/
+cross-module cutoff acceptance. Full Access/RBAC remains open.
+
+## Recovery-operator authority checkpoint at 2e68596 — 2026-10-31
 
 The new source verifier checks an active/verified human, exact platform owner,
 direct console-project grant, authoritative org/project/grant state and current
