@@ -67,7 +67,7 @@ Run the regular suite with `ONBOARDING_TEST_DSN` pointing to an isolated local
 PostgreSQL database, never production:
 
 ```sh
-GOTOOLCHAIN=go1.27.2 GOFLAGS=-p=1 go -C apps/api test -race -coverprofile=coverage.out ./...
+GOTOOLCHAIN=go1.27.3 GOFLAGS=-p=1 go -C apps/api test -race -coverprofile=coverage.out ./...
 python3 -m unittest discover -s tests -v
 ```
 
@@ -77,7 +77,7 @@ and a credential file supplied outside Git:
 ```sh
 ONBOARDING_LIVE_IDENTITY_URL=http://auth.tesserix.localhost:20080 \
 ONBOARDING_LIVE_IDENTITY_PAT_FILE=/path/outside/git/local-seed.pat \
-GOTOOLCHAIN=go1.27.2 GOFLAGS=-p=1 \
+GOTOOLCHAIN=go1.27.3 GOFLAGS=-p=1 \
 go -C apps/api test -race -tags=identityintegration ./internal/zitadel \
   -run TestLiveOrganizationIdentity -count=1 -v -timeout=2m
 ```

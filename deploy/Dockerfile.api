@@ -2,10 +2,10 @@
 
 # Base images are pinned by digest: the :latest tags are mutable, so an
 # unpinned build is not reproducible.
-FROM --platform=$BUILDPLATFORM ghcr.io/tesserix/base-go-builder:latest@sha256:03f7dc939802b567835fce13a09edb89bb9904918dd5edd0025022f1976f4c89 AS build
+FROM --platform=$BUILDPLATFORM ghcr.io/tesserix/base-go-builder:latest@sha256:3e00161f419a8fd7abe3144ad46d08ef809126294d785bcdd6b4b16137070a70 AS build
 USER 0:0
 WORKDIR /src
-ENV GOTOOLCHAIN=go1.27.2
+ENV GOTOOLCHAIN=go1.27.3
 COPY apps/api/go.mod apps/api/go.sum ./
 RUN go mod download
 COPY apps/api/ ./
@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags "-s -w" -t
 RUN addgroup -g 1000 onboarding \
     && adduser -u 1000 -G onboarding -D -H onboarding
 
-FROM ghcr.io/tesserix/base-distroless-static:latest@sha256:489f033f622bfac077447cfe7e8d9dbec9678429fa717e1bb74bfe770f9e61ba AS runtime
+FROM ghcr.io/tesserix/base-distroless-static:latest@sha256:a0ada4bf3d50447e7bbc3bf95f872ade97dd85feba81e7b4facf8e9fab665594 AS runtime
 WORKDIR /app
 COPY --from=build /etc/passwd /etc/group /etc/
 COPY --from=build --chown=onboarding:onboarding /out/onboarding-api /app/onboarding-api

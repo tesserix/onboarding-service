@@ -16,7 +16,7 @@ private Kubernetes service and audience-bound activation contracts.
 
 ## Layout and ownership
 
-- `apps/api`: Go 1.27.2, Gin and pgx; Zitadel reconciliation and authorization.
+- `apps/api`: Go 1.27.3, Gin and pgx; Zitadel reconciliation and authorization.
 - `deploy/Dockerfile.api`: digest-pinned builder and non-root runtime.
 - `tests`: API-only delivery contracts; product/database behavior tests live in Go.
 - Database schema: `tesserix-k8s/charts/apps/db-schema-bootstrap/schemas/global/global/onboarding_db.sql`.
