@@ -17,6 +17,29 @@ func setRequired(t *testing.T) {
 	t.Setenv("PLATFORM_ADMIN_EMAILS", "first@example.test")
 	t.Setenv("REGISTRY_TOKEN_AUDIENCE", "386930054896026901")
 	t.Setenv("REGISTRY_PROJECT_ID", "386930054896026901")
+	t.Setenv("STAFF_IDENTITY_PRODUCT_KEY", "")
+}
+
+func TestStaffIdentityProductMustBeExplicitAndHasNoFixtureDefault(t *testing.T) {
+	for _, value := range []string{"", "registered-hospital-product"} {
+		t.Run(value, func(t *testing.T) {
+			setRequired(t)
+			t.Setenv("STAFF_IDENTITY_PRODUCT_KEY", value)
+			cfg, err := Load()
+			if err != nil || cfg.StaffIdentityProductKey != value {
+				t.Fatalf("explicit product configuration was inferred or changed: %v", err)
+			}
+		})
+	}
+	for _, value := range []string{" hms", "hms ", "../other", "अ", strings.Repeat("a", 65)} {
+		t.Run(value, func(t *testing.T) {
+			setRequired(t)
+			t.Setenv("STAFF_IDENTITY_PRODUCT_KEY", value)
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), "STAFF_IDENTITY_PRODUCT_KEY") {
+				t.Fatal("invalid product configuration did not fail startup validation")
+			}
+		})
+	}
 }
 
 func TestLoadDerivesJWKSAndRedirectFromDefaults(t *testing.T) {

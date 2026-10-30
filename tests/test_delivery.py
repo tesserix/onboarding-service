@@ -21,7 +21,7 @@ class DeliveryTests(unittest.TestCase):
         self.assertNotIn('continue-on-error', workflow)
 
     def test_api_toolchain_matches_required_go_version(self):
-        expected = '1.27.2'
+        expected = '1.27.3'
         module = (ROOT / 'apps/api/go.mod').read_text()
         self.assertEqual(re.search(r'^go (\S+)$', module, re.M).group(1), expected)
         self.assertEqual(re.search(r'^go (\S+)$', (ROOT / 'go.work').read_text(), re.M).group(1), expected)

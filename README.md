@@ -16,7 +16,7 @@ private Kubernetes service and audience-bound activation contracts.
 
 ## Layout and ownership
 
-- `apps/api`: Go 1.27.2, Gin and pgx; Zitadel reconciliation and authorization.
+- `apps/api`: Go 1.27.3, Gin and pgx; Zitadel reconciliation and authorization.
 - `deploy/Dockerfile.api`: digest-pinned builder and non-root runtime.
 - `tests`: API-only delivery contracts; product/database behavior tests live in Go.
 - Database schema: `tesserix-k8s/charts/apps/db-schema-bootstrap/schemas/global/global/onboarding_db.sql`.
@@ -55,6 +55,7 @@ navigation, session/BFF and browser tests run in `tesserix-home`.
 | `CONSOLE_PROJECT_ID` / `CONSOLE_CLIENT_ID` | Exact platform console project and OAuth client; both required at cutover. |
 | `LEGACY_CONSOLE_ENABLED` | Set `false` in production: reject old sealed cookies and remove Google login/callback routes. Compatibility default remains `true` for an explicitly reviewed recovery rollout. |
 | `HOSPITAL_PROVISIONING_ENABLED` | Enables private operator-backed hospital claims/activation. |
+| `STAFF_IDENTITY_PRODUCT_KEY` | Explicit canonical registered product for protected Staff identity creation/receipts/observations/history. Empty disables these operations and cursor cleanup; no `hms` or branding default is inferred. Registration under issue #12 remains required before activation. |
 | `HELIVANTA_PROVISIONING_URL` | Reviewed Helivanta workload endpoint. |
 | `DB_MAX_CONNS` / `PORT` | Pool sizing / API listener. |
 

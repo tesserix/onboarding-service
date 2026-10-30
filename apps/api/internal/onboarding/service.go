@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -67,12 +68,16 @@ type Identity interface {
 }
 
 type Service struct {
-	store             *store.Store
-	idp               Identity
-	authz             *authz.Authorizer
-	log               *slog.Logger
-	registryProjectID string
-	hospitals         *HospitalConfig
+	store                *store.Store
+	idp                  Identity
+	authz                *authz.Authorizer
+	log                  *slog.Logger
+	registryProjectID    string
+	hospitals            *HospitalConfig
+	staffProduct         string
+	staffSource          StaffIdentitySource
+	staffRecoveryProject string
+	staffRecoverySource  StaffRecoveryOperatorSource
 }
 
 type Option func(*Service)
@@ -128,9 +133,10 @@ func (s *Service) auditTarget(ctx context.Context, p authz.Principal, action, or
 		RequestID:  RequestIDFrom(ctx),
 		Detail:     encodeDetail(detail),
 	}
-	// The ledger must not be droppable by cancelling the request that caused
-	// the event, so the append outlives the request context.
-	if err := s.store.AppendAudit(context.WithoutCancel(ctx), event); err != nil {
+	// Preserve cancellation-independent audit attempts without unbounded lock waits.
+	auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
+	if err := s.store.AppendAudit(auditCtx, event); err != nil {
 		s.log.Error("audit append failed", "action", action, "org", orgID, "error", err)
 	}
 }

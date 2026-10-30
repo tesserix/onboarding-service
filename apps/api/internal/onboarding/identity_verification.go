@@ -76,10 +76,14 @@ func currentIdentityProof(proof zitadel.OrganizationIdentity, org store.Organiza
 		return false
 	}
 	for _, seq := range []string{proof.SourceRevisions.Organization, proof.SourceRevisions.Metadata, proof.SourceRevisions.Project, proof.SourceRevisions.Grant} {
-		n, err := strconv.ParseUint(seq, 10, 64)
-		if err != nil || n == 0 || strconv.FormatUint(n, 10) != seq {
+		if !positiveRevision(seq) {
 			return false
 		}
 	}
 	return true
+}
+
+func positiveRevision(value string) bool {
+	n, err := strconv.ParseUint(value, 10, 64)
+	return err == nil && n > 0 && strconv.FormatUint(n, 10) == value
 }

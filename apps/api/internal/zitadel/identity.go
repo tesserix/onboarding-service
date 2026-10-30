@@ -170,8 +170,7 @@ func (c *Client) VerifyOrganization(ctx context.Context, orgID, tenantID, projec
 	}
 	revisions := IdentityRevisions{Organization: org.Org.Details.Sequence, Metadata: metadata.Metadata.Details.Sequence, Project: project.Project.Details.Sequence, Grant: grant.Details.Sequence}
 	for _, seq := range []string{revisions.Organization, revisions.Metadata, revisions.Project, revisions.Grant} {
-		v, e := strconv.ParseUint(seq, 10, 64)
-		if e != nil || v == 0 || strconv.FormatUint(v, 10) != seq {
+		if !validIdentityRevision(seq) {
 			return empty, ErrIdentityUnavailable
 		}
 	}
@@ -190,6 +189,11 @@ func (c *Client) VerifyOrganization(ctx context.Context, orgID, tenantID, projec
 		state = "active"
 	}
 	return OrganizationIdentity{SchemaVersion: 1, TenantID: tenant.String(), OrganizationID: orgID, ProjectID: projectID, GrantID: grant.GrantID, State: state, VerifiedAt: time.Now().UTC(), SourceRevisions: revisions}, nil
+}
+
+func validIdentityRevision(value string) bool {
+	n, err := strconv.ParseUint(value, 10, 64)
+	return err == nil && n > 0 && strconv.FormatUint(n, 10) == value
 }
 
 func (c *Client) readIdentity(ctx context.Context, client *http.Client, token, method, path, org string, in, out any) error {
@@ -226,7 +230,7 @@ func (c *Client) readIdentity(ctx context.Context, client *http.Client, token, m
 	if err != nil || len(raw) > identityReadLimit || len(raw) == 0 {
 		return ErrIdentityUnavailable
 	}
-	if json.Unmarshal(raw, out) != nil {
+	if decodeIdentityJSON(raw, out) != nil {
 		return ErrIdentityUnavailable
 	}
 	return nil

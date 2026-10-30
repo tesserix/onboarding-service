@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -22,13 +23,14 @@ type Config struct {
 	ZitadelMachineKey    string
 	// PlatformOrgID is optional: an empty value is resolved from
 	// PlatformOrgName at boot.
-	PlatformOrgID         string
-	PlatformOrgName       string
-	Audience              string
-	ConsoleProjectID      string
-	ConsoleClientID       string
-	RegistryTokenAudience string
-	RegistryProjectID     string
+	PlatformOrgID           string
+	PlatformOrgName         string
+	Audience                string
+	ConsoleProjectID        string
+	ConsoleClientID         string
+	RegistryTokenAudience   string
+	RegistryProjectID       string
+	StaffIdentityProductKey string
 	// Console humans sign in with Google; PlatformAdminEmails is the
 	// comma-separated list of who may hold a session, set from the chart.
 	GoogleClientID      string
@@ -43,29 +45,33 @@ type Config struct {
 
 func Load() (Config, error) {
 	c := Config{
-		MCPGatewayProjectID:   os.Getenv("MCP_GATEWAY_PROJECT_ID"),
-		LegacyConsoleEnabled:  env("LEGACY_CONSOLE_ENABLED", "true") == "true",
-		Port:                  env("PORT", "8080"),
-		DatabaseURL:           os.Getenv("DATABASE_URL"),
-		ZitadelIssuer:         env("ZITADEL_ISSUER", "https://auth.tesserix.app"),
-		ZitadelPAT:            os.Getenv("ZITADEL_PAT"),
-		ZitadelMachineKey:     os.Getenv("ZITADEL_MACHINE_KEY"),
-		PlatformOrgID:         os.Getenv("PLATFORM_ORG_ID"),
-		PlatformOrgName:       env("PLATFORM_ORG_NAME", "TESSERIX"),
-		Audience:              env("TOKEN_AUDIENCE", "onboarding-api"),
-		ConsoleProjectID:      os.Getenv("CONSOLE_PROJECT_ID"),
-		ConsoleClientID:       os.Getenv("CONSOLE_CLIENT_ID"),
-		RegistryTokenAudience: os.Getenv("REGISTRY_TOKEN_AUDIENCE"),
-		RegistryProjectID:     os.Getenv("REGISTRY_PROJECT_ID"),
-		GoogleClientID:        os.Getenv("GOOGLE_CLIENT_ID"),
-		GoogleClientSecret:    os.Getenv("GOOGLE_CLIENT_SECRET"),
-		PlatformAdminEmails:   os.Getenv("PLATFORM_ADMIN_EMAILS"),
-		ConsoleURL:            env("CONSOLE_URL", "https://onboard.tesserix.app"),
-		SecureCookies:         env("SECURE_COOKIES", "true") == "true",
-		ShutdownGrace:         20 * time.Second,
+		MCPGatewayProjectID:     os.Getenv("MCP_GATEWAY_PROJECT_ID"),
+		LegacyConsoleEnabled:    env("LEGACY_CONSOLE_ENABLED", "true") == "true",
+		Port:                    env("PORT", "8080"),
+		DatabaseURL:             os.Getenv("DATABASE_URL"),
+		ZitadelIssuer:           env("ZITADEL_ISSUER", "https://auth.tesserix.app"),
+		ZitadelPAT:              os.Getenv("ZITADEL_PAT"),
+		ZitadelMachineKey:       os.Getenv("ZITADEL_MACHINE_KEY"),
+		PlatformOrgID:           os.Getenv("PLATFORM_ORG_ID"),
+		PlatformOrgName:         env("PLATFORM_ORG_NAME", "TESSERIX"),
+		Audience:                env("TOKEN_AUDIENCE", "onboarding-api"),
+		ConsoleProjectID:        os.Getenv("CONSOLE_PROJECT_ID"),
+		ConsoleClientID:         os.Getenv("CONSOLE_CLIENT_ID"),
+		RegistryTokenAudience:   os.Getenv("REGISTRY_TOKEN_AUDIENCE"),
+		RegistryProjectID:       os.Getenv("REGISTRY_PROJECT_ID"),
+		StaffIdentityProductKey: os.Getenv("STAFF_IDENTITY_PRODUCT_KEY"),
+		GoogleClientID:          os.Getenv("GOOGLE_CLIENT_ID"),
+		GoogleClientSecret:      os.Getenv("GOOGLE_CLIENT_SECRET"),
+		PlatformAdminEmails:     os.Getenv("PLATFORM_ADMIN_EMAILS"),
+		ConsoleURL:              env("CONSOLE_URL", "https://onboard.tesserix.app"),
+		SecureCookies:           env("SECURE_COOKIES", "true") == "true",
+		ShutdownGrace:           20 * time.Second,
 	}
 	c.ZitadelJWKSURL = env("ZITADEL_JWKS_URL", strings.TrimSuffix(c.ZitadelIssuer, "/")+"/oauth/v2/keys")
 	c.RedirectURI = env("OIDC_REDIRECT_URI", strings.TrimSuffix(c.ConsoleURL, "/")+"/api/auth/callback")
+	if c.StaffIdentityProductKey != "" && !regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`).MatchString(c.StaffIdentityProductKey) {
+		return Config{}, fmt.Errorf("STAFF_IDENTITY_PRODUCT_KEY must be a registered product identifier")
+	}
 	if (c.ConsoleProjectID == "") != (c.ConsoleClientID == "") {
 		return Config{}, fmt.Errorf("CONSOLE_PROJECT_ID and CONSOLE_CLIENT_ID must be configured together")
 	}
