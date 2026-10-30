@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tesserix/onboarding-service/api/internal/authz"
+	"github.com/tesserix/onboarding-service/api/internal/store"
 )
 
 // StaffIdentityRecoveryRequestReceipt exposes review evidence without private source bindings.
@@ -73,6 +74,10 @@ func (s *Service) StaffIdentityRecoveryRequest(ctx context.Context, p authz.Prin
 	if err != nil {
 		return empty, recoveryStoreError(err)
 	}
+	return staffRecoveryRequestReceipt(tenant, review), nil
+}
+
+func staffRecoveryRequestReceipt(tenant uuid.UUID, review store.StaffIdentityRecoveryReview) StaffIdentityRecoveryRequestReceipt {
 	r := review.Request
 	result := StaffIdentityRecoveryRequestReceipt{SchemaVersion: 1, RequestID: r.ID, CommandID: r.CommandID, TenantID: tenant,
 		RequestedBy: r.RequestedBy, Action: r.Action, ReplacementActorSubject: r.ReplacementActorSubject,
@@ -80,5 +85,5 @@ func (s *Service) StaffIdentityRecoveryRequest(ctx context.Context, p authz.Prin
 	if d := review.Decision; d != nil {
 		result.Decision = &StaffIdentityRecoveryDecisionReceipt{Decision: d.Decision, ReviewedBy: d.ReviewedBy, Reason: d.Reason, RecordedAt: d.CreatedAt, SuccessorCommandID: review.SuccessorCommandID}
 	}
-	return result, nil
+	return result
 }

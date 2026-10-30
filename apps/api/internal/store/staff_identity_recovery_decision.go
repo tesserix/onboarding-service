@@ -45,11 +45,14 @@ func (StaffIdentityRecoveryResult) String() string {
 }
 
 // DecideStaffIdentityRecovery commits an independent decision with its mandatory audit.
-func (s *Store) DecideStaffIdentityRecovery(ctx context.Context, scope StaffIdentityRecoveryScope, in StaffIdentityRecoveryDecision, successor *StaffIdentitySuccessor, event audit.Event) (StaffIdentityRecoveryResult, error) {
+func (s *Store) DecideStaffIdentityRecovery(ctx context.Context, scope StaffIdentityRecoveryScope, in StaffIdentityRecoveryDecision, successor *StaffIdentitySuccessor, event audit.Event, expectedCreation *time.Time) (StaffIdentityRecoveryResult, error) {
 	var result StaffIdentityRecoveryResult
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		command, err := readStaffIdentityRecoveryTarget(ctx, tx, scope)
 		if err != nil {
+			return err
+		}
+		if err := lockStaffIdentityCommand(ctx, tx, command.ID); err != nil {
 			return err
 		}
 		request, err := scanStaffIdentityRecoveryRequest(tx.QueryRow(ctx, `SELECT `+staffRecoveryRequestColumns+` FROM staff_identity_recovery_requests WHERE id=$1 AND command_id=$2`, in.RequestID, command.ID))
@@ -86,6 +89,29 @@ func (s *Store) DecideStaffIdentityRecovery(ctx context.Context, scope StaffIden
  VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(request_id) DO NOTHING`, in.RequestID, command.ID, request.RequestedBy, request.OriginalActorSubject, request.OriginalUserID, request.Action, request.ReplacementActorSubject, in.ReviewedBy, in.Decision, in.Reason)
 		if err != nil {
 			return err
+		}
+		if inserted.RowsAffected() == 1 && in.Decision == "approved" {
+			var user, sourceTime string
+			err := tx.QueryRow(ctx, `SELECT provider_user_id,source_creation_time FROM staff_identity_creations WHERE command_id=$1`, command.ID).Scan(&user, &sourceTime)
+			if expectedCreation == nil {
+				if !errors.Is(err, pgx.ErrNoRows) {
+					if err != nil {
+						return err
+					}
+					return ErrConflict
+				}
+			} else {
+				if err != nil {
+					if errors.Is(err, pgx.ErrNoRows) {
+						return ErrConflict
+					}
+					return err
+				}
+				born, err := time.Parse(time.RFC3339Nano, sourceTime)
+				if err != nil || expectedCreation.IsZero() || user != command.ProviderUserID || !born.Equal(*expectedCreation) {
+					return ErrConflict
+				}
+			}
 		}
 		err = tx.QueryRow(ctx, `SELECT request_id,reviewed_by,decision,reason,created_at FROM staff_identity_recovery_decisions WHERE request_id=$1 AND command_id=$2`, in.RequestID, command.ID).Scan(&result.Decision.RequestID, &result.Decision.ReviewedBy, &result.Decision.Decision, &result.Decision.Reason, &result.Decision.CreatedAt)
 		if errors.Is(err, pgx.ErrNoRows) {

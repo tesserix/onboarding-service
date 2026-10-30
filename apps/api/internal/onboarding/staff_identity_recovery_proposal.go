@@ -33,7 +33,7 @@ type StaffIdentityRecoveryProposalReceipt struct {
 }
 
 func (in StaffIdentityRecoveryProposal) valid() bool {
-	if !utf8.ValidString(in.Reason) || strings.TrimSpace(in.Reason) == "" || utf8.RuneCountInString(in.Reason) > 2000 || strings.ContainsFunc(in.Reason, unicode.IsControl) || !staffRecoveryEvidence.MatchString(in.EvidenceReference) {
+	if !validStaffRecoveryReason(in.Reason) || !staffRecoveryEvidence.MatchString(in.EvidenceReference) {
 		return false
 	}
 	return (in.Action == "close_unresolved" && in.ReplacementActorSubject == "") || (in.Action == "replace" && enrolSourceID.MatchString(in.ReplacementActorSubject))
@@ -85,4 +85,8 @@ func (s *Service) ProposeStaffIdentityRecovery(ctx context.Context, p authz.Prin
 		return empty, recoveryStoreError(err)
 	}
 	return StaffIdentityRecoveryProposalReceipt{SchemaVersion: 1, RequestID: result.ID, CommandID: result.CommandID, TenantID: tenant, Action: result.Action, RecordedAt: result.CreatedAt}, nil
+}
+
+func validStaffRecoveryReason(reason string) bool {
+	return utf8.ValidString(reason) && strings.TrimSpace(reason) != "" && utf8.RuneCountInString(reason) <= 2000 && !strings.ContainsFunc(reason, unicode.IsControl)
 }

@@ -21,7 +21,7 @@ func platform(roles ...string) Principal {
 
 func TestStaffRecoveryRequiresVerifiedConsoleOriginAndIndependentWriteRole(t *testing.T) {
 	a := New(apolloUsesHMS)
-	for _, action := range []Action{"staff.identity.recovery.read", "staff.identity.recovery.propose", "staff.identity.recovery.decide"} {
+	for _, action := range []Action{"staff.identity.recovery.read", "staff.identity.recovery.propose", "staff.identity.recovery.decide", "staff.identity.recovery.reconcile"} {
 		for _, tc := range []struct {
 			name      string
 			principal Principal

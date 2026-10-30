@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tesserix/onboarding-service/api/internal/authz"
+	"github.com/tesserix/onboarding-service/api/internal/store"
 	"github.com/tesserix/onboarding-service/api/internal/zitadel"
 )
 
@@ -42,32 +43,14 @@ func (s *Service) ObserveStaffIdentityRecovery(ctx context.Context, p authz.Prin
 	if op.DispatchedAt == nil {
 		return empty, ErrConflict
 	}
-	inspector, ok := s.staffSource.(StaffRecoverySubjectSource)
-	if !ok {
-		return empty, ErrUnavailable
-	}
-	c := op.Command
-	started := time.Now().UTC()
-	proof, err := inspector.InspectStaffRecoverySubject(ctx, zitadel.StaffIdentityInput{OrganizationID: c.ProviderOrgID, UserID: c.ProviderUserID,
-		Email: c.Email, GivenName: c.GivenName, FamilyName: c.FamilyName, BindingNonce: c.BindingNonce}, c.CreatedAt)
-	if err != nil || proof.UserID != c.ProviderUserID || proof.OrganizationID != c.ProviderOrgID || proof.VerifiedAt.Before(started) || proof.VerifiedAt.After(time.Now().UTC()) {
-		return empty, ErrUnavailable
+	proof, err := s.inspectStaffRecoverySubject(ctx, op.Command)
+	if err != nil {
+		return empty, err
 	}
 	var born *time.Time
-	switch proof.Disposition {
-	case "absent":
-		if !proof.CreatedAt.IsZero() || proof.ObjectRevision != "" {
-			return empty, ErrUnavailable
-		}
-	case "matching", "removed":
-		revision, err := strconv.ParseUint(proof.ObjectRevision, 10, 64)
-		if err != nil || revision == 0 || strconv.FormatUint(revision, 10) != proof.ObjectRevision || proof.CreatedAt.IsZero() || proof.CreatedAt.Before(c.CreatedAt.Add(-zitadel.StaffIdentityClockSkew)) || proof.CreatedAt.After(time.Now().Add(zitadel.StaffIdentityClockSkew)) {
-			return empty, ErrUnavailable
-		}
+	if proof.Disposition != "absent" {
 		at := proof.CreatedAt.UTC()
 		born = &at
-	default:
-		return empty, ErrUnavailable
 	}
 	current, err := s.staffRecoveryScope(ctx, p, tenant, command, authz.ActionStaffRecoveryRead)
 	if err != nil {
@@ -87,4 +70,34 @@ func (s *Service) ObserveStaffIdentityRecovery(ctx context.Context, p authz.Prin
 	}
 	return StaffIdentityRecoverySourceReceipt{SchemaVersion: 1, CommandID: command, TenantID: tenant, Disposition: proof.Disposition,
 		ObservedAt: proof.VerifiedAt, SourceCreatedAt: born}, nil
+}
+
+func (s *Service) inspectStaffRecoverySubject(ctx context.Context, c store.StaffIdentityCommand) (zitadel.StaffRecoverySubjectProof, error) {
+	empty := zitadel.StaffRecoverySubjectProof{}
+	inspector, ok := s.staffSource.(StaffRecoverySubjectSource)
+	if !ok {
+		return empty, ErrUnavailable
+	}
+	started := time.Now().UTC()
+	proof, err := inspector.InspectStaffRecoverySubject(ctx, zitadel.StaffIdentityInput{OrganizationID: c.ProviderOrgID, UserID: c.ProviderUserID,
+		Email: c.Email, GivenName: c.GivenName, FamilyName: c.FamilyName, BindingNonce: c.BindingNonce}, c.CreatedAt)
+	if err != nil || proof.UserID != c.ProviderUserID || proof.OrganizationID != c.ProviderOrgID || proof.VerifiedAt.Before(started) || proof.VerifiedAt.After(time.Now().UTC()) {
+		return empty, ErrUnavailable
+	}
+	switch proof.Disposition {
+	case "absent":
+		if !proof.CreatedAt.IsZero() || proof.ObjectRevision != "" {
+			return empty, ErrUnavailable
+		}
+	case "matching", "removed":
+		revision, err := strconv.ParseUint(proof.ObjectRevision, 10, 64)
+		if err != nil || revision == 0 || strconv.FormatUint(revision, 10) != proof.ObjectRevision || proof.CreatedAt.IsZero() || proof.CreatedAt.Before(c.CreatedAt.Add(-zitadel.StaffIdentityClockSkew)) || proof.CreatedAt.After(time.Now().Add(zitadel.StaffIdentityClockSkew)) {
+			return empty, ErrUnavailable
+		}
+	default:
+		return empty, ErrUnavailable
+	}
+	proof.CreatedAt = proof.CreatedAt.UTC()
+	proof.VerifiedAt = proof.VerifiedAt.UTC()
+	return proof, nil
 }

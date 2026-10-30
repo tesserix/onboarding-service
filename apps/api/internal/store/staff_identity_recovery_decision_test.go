@@ -20,7 +20,7 @@ func TestStaffRecoveryApprovedClosureRetainsDecisionAndOriginalDispatch(t *testi
 	scope := StaffIdentityRecoveryScope{CommandID: c.ID, OrgID: c.OrgID, ProductKey: c.ProductKey, MachineSubject: c.MachineSubject, ProviderOrgID: c.ProviderOrgID, ProviderProjectID: c.ProviderProjectID}
 	in := StaffIdentityRecoveryDecision{RequestID: id, ReviewedBy: "TEST-independent-reviewer", Decision: "approved", Reason: "Source investigation remains unresolved"}
 	event := audit.Event{ActorType: audit.ActorPlatform, ActorID: in.ReviewedBy, ProductKey: c.ProductKey, OrgID: c.OrgID.String(), Action: "staff.identity.recovery.decide", Target: c.ID.String(), Outcome: audit.OutcomeSuccess, RequestID: id.String()}
-	got, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, nil, event)
+	got, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, nil, event, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestStaffRecoveryReplacementPreparesExactSuccessorWithoutDispatch(t *testin
 	in := StaffIdentityRecoveryDecision{RequestID: requestID, ReviewedBy: "TEST-independent-reviewer", Decision: "approved", Reason: "Reviewed source conflict evidence"}
 	candidate := &StaffIdentitySuccessor{ID: nextID, ProviderUserID: "TEST-replacement-" + nextID.String(), BindingNonce: "replacement-nonce-" + nextID.String()}
 	event := audit.Event{ActorType: audit.ActorPlatform, ActorID: in.ReviewedBy, ProductKey: c.ProductKey, OrgID: c.OrgID.String(), Action: "staff.identity.recovery.decide", Target: c.ID.String(), Outcome: audit.OutcomeSuccess, RequestID: requestID.String()}
-	got, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event)
+	got, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func staffRecoveryDecisionFixture(t *testing.T, action string) (*Store, StaffIde
 
 func TestStaffRecoverySuccessorDispatchRequiresExactApprovedLineage(t *testing.T) {
 	s, parent, scope, in, candidate, event := staffRecoveryDecisionFixture(t, "replace")
-	got, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event)
+	got, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,36 +156,36 @@ func TestStaffRecoverySuccessorDispatchRequiresExactApprovedLineage(t *testing.T
 
 func TestStaffRecoveryReplacementRetryFreezesDecisionAndSuccessor(t *testing.T) {
 	s, _, scope, in, candidate, event := staffRecoveryDecisionFixture(t, "replace")
-	first, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event)
+	first, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	regenerated := *candidate
 	regenerated.ProviderUserID = "TEST-fresh-server-user"
 	regenerated.BindingNonce = "TEST-fresh-server-nonce"
-	replay, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, &regenerated, event)
+	replay, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, &regenerated, event, nil)
 	if err != nil || replay.Decision != first.Decision || replay.Successor == nil || *replay.Successor != *first.Successor {
 		t.Fatalf("exact retry changed frozen decision/successor: %v", err)
 	}
 	changed := in
 	changed.Reason = "Different decision reason"
-	if got, err := s.DecideStaffIdentityRecovery(t.Context(), scope, changed, candidate, event); !errors.Is(err, ErrIdempotencyConflict) || got.Successor != nil {
+	if got, err := s.DecideStaffIdentityRecovery(t.Context(), scope, changed, candidate, event, nil); !errors.Is(err, ErrIdempotencyConflict) || got.Successor != nil {
 		t.Fatalf("changed reason accepted: %v", err)
 	}
 	changed = in
 	changed.ReviewedBy = "TEST-other-reviewer"
 	changedEvent := event
 	changedEvent.ActorID = changed.ReviewedBy
-	if _, err := s.DecideStaffIdentityRecovery(t.Context(), scope, changed, candidate, changedEvent); !errors.Is(err, ErrIdempotencyConflict) {
+	if _, err := s.DecideStaffIdentityRecovery(t.Context(), scope, changed, candidate, changedEvent, nil); !errors.Is(err, ErrIdempotencyConflict) {
 		t.Fatalf("changed reviewer accepted: %v", err)
 	}
 	wrongChild := *candidate
 	wrongChild.ID = uuid.New()
-	if _, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, &wrongChild, event); !errors.Is(err, ErrIdempotencyConflict) {
+	if _, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, &wrongChild, event, nil); !errors.Is(err, ErrIdempotencyConflict) {
 		t.Fatalf("changed successor accepted: %v", err)
 	}
 	event.Outcome = "INVALID"
-	got, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event)
+	got, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event, nil)
 	if err == nil || got.Successor != nil || got.Decision.RequestID != uuid.Nil {
 		t.Fatal("failed replay audit disclosed private recovery result")
 	}
@@ -194,7 +194,7 @@ func TestStaffRecoveryReplacementRetryFreezesDecisionAndSuccessor(t *testing.T) 
 func TestStaffRecoveryDecisionAuditFailureRollsBackAllReplacementFacts(t *testing.T) {
 	s, _, scope, in, candidate, event := staffRecoveryDecisionFixture(t, "replace")
 	event.Outcome = "INVALID"
-	got, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event)
+	got, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event, nil)
 	if err == nil || got.Successor != nil || got.Decision.RequestID != uuid.Nil {
 		t.Fatal("failed audit released replacement")
 	}
@@ -212,7 +212,7 @@ func TestStaffRecoveryDecisionAuditFailureRollsBackAllReplacementFacts(t *testin
 		t.Fatalf("partial recovery persisted: decisions=%d commands=%d lineage=%d", decisions, children, lineage)
 	}
 	event.Outcome = audit.OutcomeSuccess
-	if _, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event); err != nil {
+	if _, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event, nil); err != nil {
 		t.Fatalf("rolled-back decision cannot retry: %v", err)
 	}
 }
@@ -224,17 +224,17 @@ func TestStaffRecoveryRejectsInterestedReviewersAndFinalRejection(t *testing.T) 
 		bad.ReviewedBy = reviewer
 		badEvent := event
 		badEvent.ActorID = reviewer
-		if got, err := s.DecideStaffIdentityRecovery(t.Context(), scope, bad, candidate, badEvent); !errors.Is(err, ErrConflict) || got.Successor != nil {
+		if got, err := s.DecideStaffIdentityRecovery(t.Context(), scope, bad, candidate, badEvent, nil); !errors.Is(err, ErrConflict) || got.Successor != nil {
 			t.Fatalf("interested reviewer accepted: %v", err)
 		}
 	}
 	in.Decision = "rejected"
-	rejected, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, nil, event)
+	rejected, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, nil, event, nil)
 	if err != nil || rejected.Successor != nil {
 		t.Fatalf("rejection prepared successor: %v", err)
 	}
 	in.Decision = "approved"
-	if _, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event); !errors.Is(err, ErrIdempotencyConflict) {
+	if _, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event, nil); !errors.Is(err, ErrIdempotencyConflict) {
 		t.Fatalf("rejected request approved: %v", err)
 	}
 }
@@ -245,14 +245,14 @@ func TestStaffRecoveryBareApprovalDoesNotAuthorizeReplacement(t *testing.T) {
 	if err := recoveryDecision(t.Context(), s, c, in.RequestID, "replace", "TEST-replacement-initiator", in.ReviewedBy, "approved"); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event); !errors.Is(err, ErrConflict) || got.Successor != nil {
+	if got, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event, nil); !errors.Is(err, ErrConflict) || got.Successor != nil {
 		t.Fatalf("non-atomic approval materialized successor: %v", err)
 	}
 }
 
 func TestStaffRecoveryReplacementLineageSupportsSecondGeneration(t *testing.T) {
 	s, root, scope, in, candidate, event := staffRecoveryDecisionFixture(t, "replace")
-	first, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event)
+	first, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +271,7 @@ func TestStaffRecoveryReplacementLineageSupportsSecondGeneration(t *testing.T) {
 	in.RequestID = recoveryRequest(t, s, child, "replace", "TEST-second-initiator")
 	event.Target = child.ID.String()
 	event.RequestID = in.RequestID.String()
-	if _, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, next, event); err != nil {
+	if _, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, next, event, nil); err != nil {
 		t.Fatal(err)
 	}
 	var retainedRoot, parent uuid.UUID
@@ -300,7 +300,7 @@ func TestStaffRecoveryConcurrentDecisionTransactionsHaveOneSuccessor(t *testing.
 			in := StaffIdentityRecoveryDecision{RequestID: request, ReviewedBy: "TEST-independent-reviewer", Decision: "approved", Reason: "Reviewed independently"}
 			localEvent := event
 			localEvent.RequestID = request.String()
-			_, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, localEvent)
+			_, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, localEvent, nil)
 			if err == nil {
 				wins.Add(1)
 			} else if errors.Is(err, ErrConflict) {
@@ -339,11 +339,11 @@ func TestStaffRecoveryDecisionRunsWithApplicationPrivileges(t *testing.T) {
 	}
 	defer pool.Close()
 	restricted := &Store{pool: pool}
-	got, err := restricted.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event)
+	got, err := restricted.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event, nil)
 	if err != nil || got.Successor == nil {
 		t.Fatalf("application-role decision failed: %v", err)
 	}
-	replay, err := restricted.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event)
+	replay, err := restricted.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event, nil)
 	if err != nil || replay.Successor == nil || replay.Successor.ID != got.Successor.ID {
 		t.Fatalf("application-role decision retry failed: %v", err)
 	}
@@ -359,7 +359,7 @@ func TestStaffRecoveryLaterGenerationRejectsHistoricalCreatorsAndAccounts(t *tes
 			s, root, scope, in, candidate, event := staffRecoveryDecisionFixture(t, "replace")
 			history := []StaffIdentityCommand{root}
 			for generation := 1; generation <= depth; generation++ {
-				got, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event)
+				got, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event, nil)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -384,7 +384,7 @@ func TestStaffRecoveryLaterGenerationRejectsHistoricalCreatorsAndAccounts(t *tes
 			for _, reviewer := range []string{prior.ActorSubject, prior.ProviderUserID} {
 				in.ReviewedBy = reviewer
 				event.ActorID = reviewer
-				got, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event)
+				got, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event, nil)
 				if !errors.Is(err, ErrConflict) || got.Successor != nil {
 					t.Fatalf("historical creator/account approved a later generation: %v", err)
 				}

@@ -8,7 +8,54 @@ routes, creation PUT and bounded command activity are implemented in the current
 authorization in Helivanta, recipient verification, membership and employment
 activation are not implemented by these endpoints.
 
-## Exact-account classification and fresh reviewer source view — local candidate
+## Independent decisions and orphan reconciliation — local candidate, 2026-10-31
+
+Implemented fresh write-authorized reconciliation and independent decision HTTP
+candidates. A maker cannot review; exact retries recover immutable history without
+repeating subject preconditions. Matching source accounts retain original creation
+facts and block replacement. Removed accounts retain confirmed historical birth;
+absence approval atomically requires no intervening receipt. Server-generated
+provider IDs/nonces belong only to an atomically prepared successor; approval does
+not dispatch it or grant membership. Entire recovery route family bypasses replay
+cache, including on revoked-operator retries.
+
+PostgreSQL/HTTP targeted race tests pass for closure, rejection, approved replacement
+from absent/removed proof, matching-account conflict/reconciliation, unavailable
+source, invalid/asserted input, foreign tenant and revoked retry. New store tests
+also verify exact birth/absence preconditions and twelve concurrent receipt versus
+approval races. These HTTP tests use callback source proofs; normal Admin/recipient/
+reviewer UI and full real-source owner HTTP are still unproven. Final validation for
+this candidate passed: full PostgreSQL Go race/coverage suite (55.0% overall,
+API 67.0%, store 67.9%, provider 87.8%); vet/build; default and provider-fixture
+lint (zero issues); four Python delivery tests; redacted Gitleaks and diff checks.
+Separate cross-package API tests exercised decision service at 83.6%, final
+decision disclosure at 83.3% and reconciliation service at 70.3%. These are test
+coverage figures, not completion percentages. Authority-withdrawal tests verify
+no decision before commit, retained history without disclosure after commit, and
+authorized exact recovery without repeating source approval checks. No new migration, merge or
+production rollout occurred. Remaining full Access/RBAC scope is unchanged.
+
+The checkpoints below retain evidence from earlier candidates; their remaining-work
+lists describe those checkpoints. The independent-decision section above is current.
+
+Commands run from `apps/api/` for this candidate:
+
+```sh
+ONBOARDING_TEST_DSN='postgres://postgres@127.0.0.1:32768/staff_recovery_20261031?sslmode=disable' \
+  mise exec go@1.27.3 -- go test -race -p 1 -covermode=atomic \
+  -coverprofile=/tmp/staff-recovery-decisions-20261031.cover ./...
+mise exec go@1.27.3 -- go vet ./...
+mise exec go@1.27.3 -- go build ./...
+mise exec -- golangci-lint run ./...
+mise exec -- golangci-lint run --build-tags staff_provider_fixture ./internal/zitadel
+```
+
+From the owner root: `python3 -m unittest discover -s tests -v`,
+`gitleaks dir --redact --no-banner .` and `git diff --check` passed.
+No provider implementation changed in this candidate; actual-provider evidence
+below belongs to the previous classifier candidate, not a new end-to-end UI run.
+
+## Exact-account classification and fresh reviewer source view — earlier candidate
 
 The new source verifier classifies only the frozen account: absent after two
 actual missing reads and stable empty authoritative history; matching after

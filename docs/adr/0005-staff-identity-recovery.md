@@ -5,6 +5,27 @@ ADR-0004; source creation, contact verification and operational membership remai
 separate decisions. This protocol is needed by Helivanta A01/A02/A11; no current
 clinical, financial or employment authority is conferred.
 
+## Reconciliation and approval admission — local candidate, 2026-10-31
+
+The API contract now includes fresh write-authorized creation reconciliation and
+independent immutable decisions. See the [owner contract](../api/staff-identity-provisioning.md#creation-reconciliation-and-independent-decisions--unreleased-candidates)
+for dispositions, exact retries and disclosure rules. Matching accounts retain
+original facts and prevent replacement; removed accounts retain historical birth.
+Approval uses fresh source proof, not a prior observation response.
+
+Receipt admission and new approval share a PostgreSQL transaction advisory lock
+keyed by the original command. Append-only business ledgers retain SELECT/INSERT
+privileges; row locks would require expanding them to UPDATE. Lock order is current
+registry scope, command advisory lock, audit. No provider I/O occurs inside the
+transaction. The new-decision precondition requires exact retained birth or absence;
+frozen retries/rejections do not rerun it. Twelve concurrent PostgreSQL receipt/
+approval races verify either approval precedes the late receipt or approval rolls
+back. Late facts after an already-approved decision remain historical.
+
+No new schema or migration is required by this step. Existing receipt and decision
+constraints remain canonical in the separately pinned schema-owner candidate.
+Normal-role UI, real-source full HTTP and operational latency remain release gates.
+
 ## Current operator source proof — local candidate, 2026-10-31
 
 The provider adapter now verifies an active, verified human in its configured
@@ -34,8 +55,8 @@ policy actions reject legacy cookies, product machines, customer admins and
 ordinary users; platform operators can only read. This policy is an initial
 check, not a replacement for the live source proof or target-scope/store checks.
 The source adapter and policy now guard the unreleased operator receipt read,
-exact request-detail read and proposal endpoints. They are not yet connected to an independent decision
-endpoint; conflict/orphan verification and complete reviewer UI remain required.
+exact request-detail read and proposal endpoints. They also guard the independent decision and creation-reconciliation candidates;
+full real-source HTTP and complete reviewer UI remain required.
 
 ## Audited operator read/proposal service boundary — local candidate
 

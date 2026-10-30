@@ -208,31 +208,12 @@ func (s *Store) RecordStaffIdentityCreation(ctx context.Context, c StaffIdentity
 		if !sameStaffIdentityCommand(original, c) {
 			return ErrConflict
 		}
-		inserted, err := tx.Exec(ctx, `INSERT INTO staff_identity_creations
- (command_id,provider_user_id,source_creation_time)
- SELECT command_id,$2,$3 FROM staff_identity_dispatches WHERE command_id=$1
- ON CONFLICT(command_id) DO NOTHING`, c.ID, c.ProviderUserID, created.UTC().Format(time.RFC3339Nano))
+		var inserted bool
+		result, inserted, err = recordStaffIdentityCreation(ctx, tx, original, created)
 		if err != nil {
 			return err
 		}
-		var sourceTime string
-		err = tx.QueryRow(ctx, `SELECT command_id,provider_user_id,source_creation_time,created_at
- FROM staff_identity_creations WHERE command_id=$1`, c.ID).
-			Scan(&result.CommandID, &result.ProviderUserID, &sourceTime, &result.RecordedAt)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrConflict
-		}
-		if err != nil {
-			return err
-		}
-		result.ProviderCreatedAt, err = time.Parse(time.RFC3339Nano, sourceTime)
-		if err != nil {
-			return err
-		}
-		if result.ProviderUserID != c.ProviderUserID || !result.ProviderCreatedAt.Equal(created) {
-			return ErrIdempotencyConflict
-		}
-		if inserted.RowsAffected() == 0 {
+		if !inserted {
 			return nil
 		}
 		return appendAudit(ctx, tx, event)
@@ -241,4 +222,42 @@ func (s *Store) RecordStaffIdentityCreation(ctx context.Context, c StaffIdentity
 		return StaffIdentityCreation{}, err
 	}
 	return result, nil
+}
+
+func recordStaffIdentityCreation(ctx context.Context, tx pgx.Tx, c StaffIdentityCommand, created time.Time) (StaffIdentityCreation, bool, error) {
+	var result StaffIdentityCreation
+	if err := lockStaffIdentityCommand(ctx, tx, c.ID); err != nil {
+		return result, false, err
+	}
+	inserted, err := tx.Exec(ctx, `INSERT INTO staff_identity_creations
+ (command_id,provider_user_id,source_creation_time)
+ SELECT command_id,$2,$3 FROM staff_identity_dispatches WHERE command_id=$1
+ ON CONFLICT(command_id) DO NOTHING`, c.ID, c.ProviderUserID, created.UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return StaffIdentityCreation{}, false, err
+	}
+	var sourceTime string
+	err = tx.QueryRow(ctx, `SELECT command_id,provider_user_id,source_creation_time,created_at
+ FROM staff_identity_creations WHERE command_id=$1`, c.ID).
+		Scan(&result.CommandID, &result.ProviderUserID, &sourceTime, &result.RecordedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return StaffIdentityCreation{}, false, ErrConflict
+	}
+	if err != nil {
+		return StaffIdentityCreation{}, false, err
+	}
+	result.ProviderCreatedAt, err = time.Parse(time.RFC3339Nano, sourceTime)
+	if err != nil {
+		return StaffIdentityCreation{}, false, err
+	}
+	if result.ProviderUserID != c.ProviderUserID || !result.ProviderCreatedAt.Equal(created) {
+		return StaffIdentityCreation{}, false, ErrIdempotencyConflict
+	}
+	return result, inserted.RowsAffected() == 1, nil
+}
+
+func lockStaffIdentityCommand(ctx context.Context, tx pgx.Tx, id uuid.UUID) error {
+	// Append-only command ledgers do not grant the UPDATE privilege row locks require.
+	_, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('onboarding.staff_identity:' || $1::text,0))`, id.String())
+	return err
 }

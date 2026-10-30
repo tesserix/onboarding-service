@@ -85,7 +85,7 @@ func TestStaffRecoveryHTTPReviewShowsRetainedRequestAndDecisionWithoutSourceBind
 	decide := audit.Event{ActorType: audit.ActorPlatform, ProductKey: c.ProductKey, OrgID: c.OrgID.String(), Target: c.ID.String(), Outcome: audit.OutcomeSuccess}
 	decide.ActorID = decision.ReviewedBy
 	decide.Action = "staff.identity.recovery.decide"
-	retained, err := h.store.DecideStaffIdentityRecovery(t.Context(), scope, decision, nil, decide)
+	retained, err := h.store.DecideStaffIdentityRecovery(t.Context(), scope, decision, nil, decide, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestStaffRecoveryReviewReturnsDecisionCommittedDuringReverification(t *test
 		if calls == 2 {
 			decision := store.StaffIdentityRecoveryDecision{RequestID: request.ID, ReviewedBy: "TEST-independent-reviewer", Decision: "rejected", Reason: "Final reviewed source investigation"}
 			event := audit.Event{ActorType: audit.ActorPlatform, ActorID: decision.ReviewedBy, ProductKey: c.ProductKey, OrgID: c.OrgID.String(), Target: c.ID.String(), Action: "staff.identity.recovery.decide", Outcome: audit.OutcomeSuccess}
-			if _, err := h.store.DecideStaffIdentityRecovery(t.Context(), scope, decision, nil, event); err != nil {
+			if _, err := h.store.DecideStaffIdentityRecovery(t.Context(), scope, decision, nil, event, nil); err != nil {
 				t.Fatal(err)
 			}
 		}

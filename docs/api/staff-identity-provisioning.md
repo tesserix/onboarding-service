@@ -2,8 +2,9 @@
 
 Status: PUT command creation, GET receipt and POST observation candidates are
 implemented and locally tested, together with bounded private command activity.
-Current-human recovery receipt, request-detail, fresh source-view and proposal candidates are also implemented; independent
-decision service/API, conflict/orphan verification and consumer UI remain in development.
+Current-human recovery receipt, request-detail, fresh source-view, proposal,
+creation reconciliation and independent decision candidates are implemented.
+Consumer UI, full real-source HTTP acceptance and recovery activity remain open.
 Not accepted or deployed. Implements only
 the identity-owner part of Helivanta A01; membership, Staff/person review,
 employment and scoped operational access remain separate owner decisions.
@@ -97,8 +98,50 @@ returns no receipt; after authority is restored, retry the same ID/input. This
 must not be interpreted as permission to create another command/request.
 Invalid input is 400; unavailable/invalid proof is 503; withdrawn or unauthorized
 scope is a nonenumerating 404; frozen-input/scope change is 409. Successes are
-`Cache-Control: no-store`. Independent decision endpoints, request activity,
-source conflict/orphan proof and normal-role UI remain required.
+`Cache-Control: no-store`. Request activity, full real-source HTTP acceptance
+and normal-role UI remain required.
+
+### Creation reconciliation and independent decisions — unreleased candidates
+
+`POST /v1/orgs/{tenant}/staff-identities/{command}/recovery/reconciliations`
+accepts no body/query. It requires current console write authority and a fresh
+`matching` proof for the exact immutable dispatched account. It retains that
+account's original birth under the original command/actor/machine, audits every
+retry, reauthorizes and returns the minimized command receipt. It does not create
+an account or confer membership. Closed/superseded commands retain late creation
+facts without reopening dispatch or eligibility.
+
+`PUT /v1/orgs/{tenant}/staff-identities/{command}/recovery/requests/{uuidv7-request}/decision`
+requires exactly string `decision` (`approved` or `rejected`) and nonblank `reason`
+(up to 2,000 Unicode characters, no controls). Approved `replace` additionally
+requires a client-owned UUIDv7 `successor_command_id`; other decisions forbid it.
+Queries, duplicate/unknown fields and client assertions of reviewer/source facts
+are rejected. The reviewer is the live verified console principal; makers,
+original account/initiator, replacement initiator and historical lineage parties
+cannot review. The store repeats independence at commit.
+
+New approval reclassifies the frozen account. Matching proof reconciles the
+original birth; replacement then conflicts (409) rather than preparing a duplicate.
+Matching closure may close the investigation. Removed proof retains the historical
+birth before decision; absence expects no retained creation. A transaction-scoped
+command advisory lock serializes receipt admission with the decision's exact
+birth/absence precondition. An intervening receipt therefore rejects stale absence.
+An original creation arriving after an approved decision remains historical and
+cannot reactivate the old command. None of these proofs assert contact availability.
+
+Approved replacement atomically retains decision, successor and lineage. Provider
+ID and 32-byte random binding nonce are server-owned; no provider creation is
+performed. Rejection does not require subject classification. Exact retries return
+the immutable decision/successor after current write authorization and audited
+request reads, without reexecuting source approval preconditions. Changed reviewer,
+decision, reason or successor conflicts. Authority withdrawn after commit releases
+no receipt; an authorized exact retry recovers retained history. The entire recovery
+route family bypasses generic response caching.
+
+Local PostgreSQL/HTTP tests exercise these paths with callback operator/subject
+proofs. Actual provider adapter proof is separate evidence; normal HMS Admin,
+recipient and independent-reviewer UI and full real-source HTTP remain unproven.
+No schema change, migration or production release is implied.
 
 ### Exact request review
 
@@ -320,7 +363,8 @@ cannot bypass uncertainty with arbitrary new command IDs. Explicit replacement
 requires an independent operator: original-root and all prior successor creators/
 provider-user subjects remain excluded across new command IDs. It requires the
 platform operator workflow in ADR-0005; its authenticated endpoints,
-source conflict/orphan checks and UI are still pending. This is an additive draft
+source proof and reconciliation candidates are described above; UI remains pending.
+This is an additive draft
 v1 annotation, not approval to activate a new consumer or production policy.
 
 The current recovery-authority adapter verifies the configured platform
@@ -331,9 +375,10 @@ saturation is unavailable; absent/withdrawn authority denies. Read requires
 `platform`; write also requires `rotate-credentials`. Recovery-specific policy
 retains verified console access-token origin and rejects product machines,
 legacy cookies and customer admin credentials. The recovery read/proposal routes
-now consume it with source/registry rechecks and mandatory audits. Independent
-decision service/API, target/source conflict checks, request activity and
-complete consumer UI remain required before approving recovery operations.
+now consume it with source/registry rechecks and mandatory audits. Reconciliation
+and independent decision candidates use the same live write boundary. Request
+activity, full real-source HTTP and complete consumer UI remain required before
+release acceptance.
 See ADR-0005 for the four-second proof budget and local provider evidence.
 
 ## Bounded private command activity

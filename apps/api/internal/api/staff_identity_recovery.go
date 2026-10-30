@@ -57,6 +57,26 @@ func (d Deps) observeStaffIdentityRecovery(c *gin.Context) {
 	c.JSON(http.StatusOK, receipt)
 }
 
+func (d Deps) reconcileStaffIdentityCreation(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	tenant, command, ok := staffIdentityIDs(c)
+	if !ok {
+		return
+	}
+	body, _ := c.Get(bodyKey)
+	raw, _ := body.([]byte)
+	if c.Request.URL.RawQuery != "" || c.Request.URL.ForceQuery || len(raw) != 0 {
+		abort(c, http.StatusBadRequest, "reconciliation does not accept query parameters or a request body")
+		return
+	}
+	receipt, err := d.Service.ReconcileStaffIdentityCreation(c.Request.Context(), principalOf(c), tenant, command)
+	if err != nil {
+		d.respondStaffIdentityErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, receipt)
+}
+
 func (d Deps) getStaffIdentityRecoveryRequest(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	tenant, command, ok := staffIdentityIDs(c)
@@ -102,6 +122,42 @@ func (d Deps) proposeStaffIdentityRecovery(c *gin.Context) {
 		return
 	}
 	receipt, err := d.Service.ProposeStaffIdentityRecovery(c.Request.Context(), principalOf(c), tenant, command, request, onboarding.StaffIdentityRecoveryProposal{Action: fields["requested_action"], Reason: fields["reason"], EvidenceReference: fields["evidence_reference"], ReplacementActorSubject: fields["replacement_actor_subject"]})
+	if err != nil {
+		d.respondStaffIdentityErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, receipt)
+}
+
+func (d Deps) decideStaffIdentityRecovery(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	tenant, command, ok := staffIdentityIDs(c)
+	if !ok {
+		return
+	}
+	request, ok := staffRecoveryRequestID(c)
+	if !ok {
+		return
+	}
+	body, _ := c.Get(bodyKey)
+	raw, _ := body.([]byte)
+	fields, err := staffIdentityFields(raw, "decision", "reason")
+	if err != nil {
+		fields, err = staffIdentityFields(raw, "decision", "reason", "successor_command_id")
+	}
+	if err != nil || c.Request.URL.RawQuery != "" || c.Request.URL.ForceQuery {
+		abort(c, http.StatusBadRequest, "decision requires decision and reason; approved replacement also requires successor_command_id; no query is allowed")
+		return
+	}
+	in := onboarding.StaffIdentityRecoveryDecisionInput{Decision: fields["decision"], Reason: fields["reason"]}
+	if id, present := fields["successor_command_id"]; present {
+		in.SuccessorCommandID, err = uuid.Parse(id)
+		if err != nil || in.SuccessorCommandID.Version() != 7 || in.SuccessorCommandID.Variant() != uuid.RFC4122 {
+			abort(c, http.StatusBadRequest, "successor_command_id must be a UUIDv7")
+			return
+		}
+	}
+	receipt, err := d.Service.DecideStaffIdentityRecovery(c.Request.Context(), principalOf(c), tenant, command, request, in)
 	if err != nil {
 		d.respondStaffIdentityErr(c, err)
 		return

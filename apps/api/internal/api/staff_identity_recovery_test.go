@@ -38,7 +38,7 @@ func closeStaffIdentityFixture(t *testing.T, h *harness, c store.StaffIdentityCo
 	decision := store.StaffIdentityRecoveryDecision{RequestID: id, ReviewedBy: "TEST-platform-reviewer", Decision: "approved", Reason: "Independent investigation closure"}
 	event.ActorID = decision.ReviewedBy
 	event.Action = "staff.identity.recovery.decide"
-	if _, err := h.store.DecideStaffIdentityRecovery(t.Context(), scope, decision, nil, event); err != nil {
+	if _, err := h.store.DecideStaffIdentityRecovery(t.Context(), scope, decision, nil, event, nil); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -148,7 +148,7 @@ func TestStaffIdentitySupersededReceiptDeniesParentAndCreatesReviewedSuccessor(t
 	event.ActorID = decision.ReviewedBy
 	event.Action = "staff.identity.recovery.decide"
 	candidate := &store.StaffIdentitySuccessor{ID: childID, ProviderUserID: "TEST-source-successor", BindingNonce: "TEST-source-successor-binding"}
-	approved, err := h.store.DecideStaffIdentityRecovery(t.Context(), scope, decision, candidate, event)
+	approved, err := h.store.DecideStaffIdentityRecovery(t.Context(), scope, decision, candidate, event, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

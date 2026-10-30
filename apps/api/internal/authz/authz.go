@@ -69,6 +69,7 @@ const (
 	ActionStaffRecoveryRead       Action = "staff.identity.recovery.read"
 	ActionStaffRecoveryPropose    Action = "staff.identity.recovery.propose"
 	ActionStaffRecoveryDecide     Action = "staff.identity.recovery.decide"
+	ActionStaffRecoveryReconcile  Action = "staff.identity.recovery.reconcile"
 	ActionProductRead             Action = "product.read"
 	ActionProductWrite            Action = "product.write"
 	ActionAuditRead               Action = "audit.read"
@@ -110,6 +111,7 @@ var policy = map[Action]rule{
 	ActionStaffRecoveryRead:       {orgScope: true, console: true},
 	ActionStaffRecoveryPropose:    {write: true, orgScope: true, console: true},
 	ActionStaffRecoveryDecide:     {write: true, orgScope: true, console: true},
+	ActionStaffRecoveryReconcile:  {write: true, orgScope: true, console: true},
 	ActionProductRead:             {product: true},
 	ActionProductWrite:            {write: true},
 	ActionAuditRead:               {orgScope: true, product: true, orgAdmin: true},

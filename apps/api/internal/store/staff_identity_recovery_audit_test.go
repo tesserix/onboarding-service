@@ -22,7 +22,7 @@ func TestStaffRecoveryCommandsRejectNonSuccessAuditOutcome(t *testing.T) {
 				id = recoveryRequest(t, s, c, "close_unresolved", "")
 				event.ActorID = "TEST-independent-reviewer"
 				event.Action = "staff.identity.recovery.decide"
-				_, err = s.DecideStaffIdentityRecovery(t.Context(), scope, StaffIdentityRecoveryDecision{RequestID: id, ReviewedBy: event.ActorID, Decision: "approved", Reason: "Investigated uncertain source"}, nil, event)
+				_, err = s.DecideStaffIdentityRecovery(t.Context(), scope, StaffIdentityRecoveryDecision{RequestID: id, ReviewedBy: event.ActorID, Decision: "approved", Reason: "Investigated uncertain source"}, nil, event, nil)
 			}
 			if !errors.Is(err, ErrConflict) {
 				t.Fatalf("command committed with denied audit outcome: %v", err)

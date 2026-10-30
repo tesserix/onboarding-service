@@ -27,7 +27,7 @@ func TestStaffRecoveryReviewRetainsRequestAndCurrentImmutableDecision(t *testing
 	decideEvent.ActorID = decision.ReviewedBy
 	decideEvent.Target = c.ID.String()
 	decideEvent.Action = "staff.identity.recovery.decide"
-	result, err := s.DecideStaffIdentityRecovery(t.Context(), scope, decision, nil, decideEvent)
+	result, err := s.DecideStaffIdentityRecovery(t.Context(), scope, decision, nil, decideEvent, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestStaffRecoveryReviewRequiresCompleteApprovedReplacementLineage(t *testin
 				decide.ActorID = "TEST-independent-reviewer"
 				decide.Target = c.ID.String()
 				decide.Action = "staff.identity.recovery.decide"
-				if _, err := s.DecideStaffIdentityRecovery(t.Context(), scope, StaffIdentityRecoveryDecision{RequestID: id, ReviewedBy: decide.ActorID, Decision: "approved", Reason: "Investigated source absence"}, &StaffIdentitySuccessor{ID: child, ProviderUserID: "TEST-next-" + child.String(), BindingNonce: "next-nonce-" + child.String()}, decide); err != nil {
+				if _, err := s.DecideStaffIdentityRecovery(t.Context(), scope, StaffIdentityRecoveryDecision{RequestID: id, ReviewedBy: decide.ActorID, Decision: "approved", Reason: "Investigated source absence"}, &StaffIdentitySuccessor{ID: child, ProviderUserID: "TEST-next-" + child.String(), BindingNonce: "next-nonce-" + child.String()}, decide, nil); err != nil {
 					t.Fatal(err)
 				}
 			}
