@@ -2,7 +2,7 @@
 
 Status: PUT command creation, GET receipt and POST observation candidates are
 implemented and locally tested, together with bounded private command activity.
-Current-human recovery read/proposal candidates are also implemented; independent
+Current-human recovery receipt, request-detail and proposal candidates are also implemented; independent
 decision service/API, conflict/orphan verification and consumer UI remain in development.
 Not accepted or deployed. Implements only
 the identity-owner part of Helivanta A01; membership, Staff/person review,
@@ -96,8 +96,35 @@ returns no receipt; after authority is restored, retry the same ID/input. This
 must not be interpreted as permission to create another command/request.
 Invalid input is 400; unavailable/invalid proof is 503; withdrawn or unauthorized
 scope is a nonenumerating 404; frozen-input/scope change is 409. Successes are
-`Cache-Control: no-store`. Independent decision endpoints, minimized request
-detail/activity, source conflict/orphan proof and normal-role UI remain required.
+`Cache-Control: no-store`. Independent decision endpoints, request activity,
+source conflict/orphan proof and normal-role UI remain required.
+
+### Exact request review
+
+`GET /v1/orgs/{tenant}/staff-identities/{command}/recovery/requests/{uuidv7-request}`
+accepts no query or request body. It uses the same current human console-reader
+boundary and repeats live operator/source scope checks around mandatory audited
+inspection. The final transactional read checks canonical scope again and reads
+request, decision and successor lineage in one statement snapshot. A decision
+committed during reverification appears in that final read.
+
+HTTP 200 exposes schema version, tenant/command/request IDs, maker
+`requested_by`, `requested_action`, optional proposed `replacement_actor_subject`,
+`reason`, `evidence_reference` and immutable `recorded_at`. Optional `decision`
+contains the retained `decision`, `reviewed_by`, `reason`, `recorded_at` and, for
+approved replacement only, `successor_command_id`. An absent decision means no
+decision was visible in that snapshot, not that the reader has approval authority.
+These private reasons/evidence references are solely for authorized review;
+evidence is not fetched. The response omits original source account/owner/project,
+nonce, contact/profile and machine bindings. No `can_approve` or eligibility flag
+is inferred from the read.
+
+Disclosure audit targets the exact request ID and is committed atomically; a
+failed audit releases no facts. Foreign/missing requests are nonenumerating 404.
+Invalid UUID/body/query is 400; unavailable proof is 503; changed or incomplete
+retained lineage is 409. Approval without required successor lineage fails closed.
+Authority/entitlement withdrawal before final disclosure returns no reason,
+evidence or decision. Normal-role reviewer UI remains unproven.
 
 ## Create or replay
 
@@ -264,7 +291,7 @@ saturation is unavailable; absent/withdrawn authority denies. Read requires
 retains verified console access-token origin and rejects product machines,
 legacy cookies and customer admin credentials. The recovery read/proposal routes
 now consume it with source/registry rechecks and mandatory audits. Independent
-decision service/API, target/source conflict checks, request detail/activity and
+decision service/API, target/source conflict checks, request activity and
 complete consumer UI remain required before approving recovery operations.
 See ADR-0005 for the four-second proof budget and local provider evidence.
 

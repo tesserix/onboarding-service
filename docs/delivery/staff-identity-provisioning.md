@@ -8,6 +8,50 @@ routes, creation PUT and bounded command activity are implemented in the current
 authorization in Helivanta, recipient verification, membership and employment
 activation are not implemented by these endpoints.
 
+## Exact recovery request review — local candidate, 2026-10-31
+
+The new current-human GET by exact tenant/command/request returns immutable maker,
+requested action, reason/evidence reference, optional proposed successor initiator
+and any retained independent decision/successor command ID. It omits original
+provider account/owner/project, nonce, contact/profile and machine bindings. The
+same verified-console reader boundary, two live operator/source proofs and final
+transactional target check apply. Request/decision/lineage use one statement
+snapshot; an independent decision committed during reverification is reflected
+in the final read. No approval authority or eligibility is inferred.
+
+Mandatory disclosure audit targets the exact request. Tests pass for undecided,
+rejected and complete approved-replacement snapshots; a bare approved replacement
+without lineage fails closed. Foreign scope, missing requests, withdrawn
+entitlement, malformed IDs/body/query, source outage, operator revocation,
+canonical rotation and audit failure release no private request evidence. The
+proposal/decision audit-outcome regression first committed business actions with
+`denied` audit outcomes; both store commands now require matching success audit
+and the regression verifies no retained command on rejection.
+
+The [source-proof research](../research/staff-identity-recovery-source-proof.md)
+was verified against pinned v4.15.3 via `git show`, not the unrelated modified
+source checkout. User search reads rows and projection checkpoint separately;
+neither empty search nor checkpoint proves authoritative absence. Replacement
+preparation must not be confused with contact availability or operational access.
+Next source work must classify the exact frozen account, reconcile matching
+orphans and fail closed on contradictory/missing/ambiguous source proof.
+
+The final full actual-PostgreSQL race suite, vet, build and lint (zero issues)
+passed after the audit-outcome fix: API 65.6%, store 66.7%, provider 86.7%.
+Cross-package integration
+measured actual request-review service execution at 89.7%; audited request store
+read 90.0% and HTTP handler 94.1% in the full suite. These are coverage figures,
+not completion. Four delivery tests and redacted secret/diff checks passed.
+New HTTP/database tests use callback source proofs; normal HMS Admin/recipient/
+independent-reviewer UI and a real-source full HTTP journey remain unproven.
+
+Parent 74abd3d exact CI 41111788806 passed; that is historical for this candidate.
+No schema/production change, migration, merge, release or completion tag occurred.
+Remaining: source conflict/orphan verification, independent decision service/API,
+request activity, prepared-command/profile correction, consumer UI, recipient
+setup/sign-in, canonical registration (#12), legacy grants and all remaining
+A01–A12 lifecycle/cross-module cutoff acceptance. Full Access/RBAC stays open.
+
 ## Recovery read/proposal service and HTTP boundary — local candidate, 2026-10-31
 
 The source authority adapter now guards two unreleased operator routes: exact

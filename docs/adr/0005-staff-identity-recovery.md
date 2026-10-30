@@ -33,11 +33,27 @@ The principal preserves verified console access-token origin. Recovery-specific
 policy actions reject legacy cookies, product machines, customer admins and
 ordinary users; platform operators can only read. This policy is an initial
 check, not a replacement for the live source proof or target-scope/store checks.
-The source adapter and policy now guard the unreleased operator receipt read and
-proposal endpoints. They are not yet connected to an independent decision
+The source adapter and policy now guard the unreleased operator receipt read,
+exact request-detail read and proposal endpoints. They are not yet connected to an independent decision
 endpoint; conflict/orphan verification and complete reviewer UI remain required.
 
 ## Audited operator read/proposal service boundary — local candidate
+
+Exact request detail now uses the same current-human boundary with two live
+source/operator proofs and a final audited store read. Its request/decision/
+successor projection uses one statement snapshot, exposes only the evidence
+needed for review and omits original contact/profile/source bindings. A committed
+decision that appears during reverification is included in the final snapshot;
+authority or scope withdrawal returns no private evidence. Store lineage
+inconsistency, including bare approved replacement, fails closed. Request read
+does not assert approval authority or current eligibility.
+
+The [pinned-provider source-proof research](../research/staff-identity-recovery-source-proof.md)
+records the next approval gate. User search reads projection rows and its
+checkpoint separately; an empty result/checkpoint is not authoritative absence.
+Exact frozen object history, matching orphan reconciliation and conflict handling
+must be implemented/tested before independent approval is exposed. A prepared
+replacement must never be described as contact availability or operational access.
 
 The service retains the real `KindPlatform` principal and verified console-token
 origin; it never invokes product-only identity verification under a fabricated

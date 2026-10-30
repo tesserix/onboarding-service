@@ -56,7 +56,7 @@ func (s *Store) DecideStaffIdentityRecovery(ctx context.Context, scope StaffIden
 		if err != nil {
 			return err
 		}
-		if event.ActorType != audit.ActorPlatform || event.ActorID != in.ReviewedBy || event.ProductKey != scope.ProductKey || event.OrgID != scope.OrgID.String() || event.Target != scope.CommandID.String() || event.Action != "staff.identity.recovery.decide" {
+		if event.ActorType != audit.ActorPlatform || event.ActorID != in.ReviewedBy || event.ProductKey != scope.ProductKey || event.OrgID != scope.OrgID.String() || event.Target != scope.CommandID.String() || event.Action != "staff.identity.recovery.decide" || event.Outcome != audit.OutcomeSuccess {
 			return ErrConflict
 		}
 		if in.ReviewedBy == request.RequestedBy || in.ReviewedBy == request.OriginalActorSubject || in.ReviewedBy == request.OriginalUserID || in.ReviewedBy == request.ReplacementActorSubject {

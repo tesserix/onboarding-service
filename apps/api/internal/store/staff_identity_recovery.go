@@ -47,7 +47,7 @@ func (s *Store) ProposeStaffIdentityRecovery(ctx context.Context, scope StaffIde
 		}
 		if event.ActorType != audit.ActorPlatform || event.ActorID != in.RequestedBy ||
 			event.ProductKey != scope.ProductKey || event.OrgID != scope.OrgID.String() ||
-			event.Target != scope.CommandID.String() || event.Action != "staff.identity.recovery.propose" {
+			event.Target != scope.CommandID.String() || event.Action != "staff.identity.recovery.propose" || event.Outcome != audit.OutcomeSuccess {
 			return ErrConflict
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO staff_identity_recovery_requests
