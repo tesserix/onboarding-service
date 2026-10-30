@@ -179,6 +179,7 @@ func (d Deps) principalFromClaims(c *gin.Context, claims auth.Claims) (authz.Pri
 		return authz.Principal{
 			Kind: authz.KindPlatform, Subject: claims.Subject, Email: claims.Email,
 			EmailVerified: claims.EmailVerified, ExternalOrgID: claims.OrgID, Roles: claims.Roles,
+			ConsoleAccess: claims.Console,
 		}, nil
 	}
 	if claims.OrgID == d.PlatformOrgID && claims.EmailVerified {

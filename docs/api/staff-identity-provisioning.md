@@ -187,6 +187,18 @@ platform operator workflow in ADR-0005; its authenticated endpoints,
 source conflict/orphan checks and UI are still pending. This is an additive draft
 v1 annotation, not approval to activate a new consumer or production policy.
 
+The current local recovery-authority adapter verifies the configured platform
+organization, active/verified human and exact direct console-project grant.
+Current authoritative events must also retain the organization/project, required
+role definitions and grant roles/state. Source churn or bounded-history
+saturation is unavailable; absent/withdrawn authority denies. Read requires
+`platform`; write also requires `rotate-credentials`. Recovery-specific policy
+retains verified console access-token origin and rejects product machines,
+legacy cookies and customer admin credentials. No HTTP recovery route currently
+consumes that adapter; target/source conflict checks, audited service integration
+and complete consumer UI remain required before exposing recovery operations.
+See ADR-0005 for the four-second proof budget and local provider evidence.
+
 ## Bounded private command activity
 
 `GET /v1/orgs/{tenant}/staff-identities/{command}/history?actor_subject={initiator}`

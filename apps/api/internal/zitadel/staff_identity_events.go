@@ -24,7 +24,10 @@ type staffIdentityEvent struct {
 		Type              struct{ Type string }
 	}
 	Type    struct{ Type string }
-	Payload struct{ Key, Email string }
+	Payload struct {
+		Key, Email, UserID, ProjectID, GrantID string
+		RoleKeys                               []string
+	}
 }
 
 func (c *Client) checkStaffIdentityEvents(ctx context.Context, client *http.Client, token string, in StaffIdentityInput, proof staffUserProof, metadataRevision string) error {

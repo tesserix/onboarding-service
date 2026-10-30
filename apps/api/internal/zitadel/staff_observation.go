@@ -85,6 +85,17 @@ func (c *Client) ObserveStaffIdentity(ctx context.Context, in StaffIdentityInput
 }
 
 func (c *Client) readStaffUser(ctx context.Context, client *http.Client, token string, in StaffIdentityInput) (staffUserProof, error) {
+	proof, err := c.readIdentityUser(ctx, client, token, in.OrganizationID, in.UserID)
+	if err != nil {
+		return staffUserProof{}, err
+	}
+	if proof.email != in.Email {
+		return staffUserProof{}, ErrIdentityUnavailable
+	}
+	return proof, nil
+}
+
+func (c *Client) readIdentityUser(ctx context.Context, client *http.Client, token, org, subject string) (staffUserProof, error) {
 	empty := staffUserProof{}
 	var body struct {
 		User struct {
@@ -102,11 +113,11 @@ func (c *Client) readStaffUser(ctx context.Context, client *http.Client, token s
 			Machine json.RawMessage
 		}
 	}
-	if err := c.readIdentity(ctx, client, token, http.MethodGet, "/v2/users/"+in.UserID, in.OrganizationID, nil, &body); err != nil {
+	if err := c.readIdentity(ctx, client, token, http.MethodGet, "/v2/users/"+subject, org, nil, &body); err != nil {
 		return empty, err
 	}
 	u := body.User
-	if u.UserID != in.UserID || u.Details.ResourceOwner != in.OrganizationID || !validIdentityRevision(u.Details.Sequence) {
+	if u.UserID != subject || u.Details.ResourceOwner != org || !validIdentityRevision(u.Details.Sequence) {
 		return empty, ErrIdentityUnavailable
 	}
 	if u.State == "USER_STATE_DELETED" {
@@ -125,7 +136,7 @@ func (c *Client) readStaffUser(ctx context.Context, client *http.Client, token s
 	default:
 		return empty, ErrIdentityUnavailable
 	}
-	if u.Human == nil || u.Human.Email == nil || len(u.Machine) != 0 || u.Human.Email.Email != in.Email || (u.Human.UserID != "" && u.Human.UserID != in.UserID) || (u.Human.State != "" && u.Human.State != u.State) {
+	if u.Human == nil || u.Human.Email == nil || len(u.Machine) != 0 || u.Human.Email.Email == "" || (u.Human.UserID != "" && u.Human.UserID != subject) || (u.Human.State != "" && u.Human.State != u.State) {
 		return empty, ErrIdentityUnavailable
 	}
 	created, err := time.Parse(time.RFC3339Nano, u.Details.CreationDate)

@@ -5,6 +5,43 @@ ADR-0004; source creation, contact verification and operational membership remai
 separate decisions. This protocol is needed by Helivanta A01/A02/A11; no current
 clinical, financial or employment authority is conferred.
 
+## Current operator source proof — local candidate, 2026-10-31
+
+The provider adapter now verifies an active, verified human in its configured
+platform organization and one exact direct grant for the configured console
+project. Read needs the current `platform` role; writes additionally need
+`rotate-credentials`. Grant discovery is exact user/project, limited to two rows;
+missing authority denies, ambiguous/invalid proof is unavailable. No grant,
+membership, password or contact verification is changed by this adapter.
+
+Grant projections and token-time roles alone are insufficient. The v4.15.3
+authoritative org/project/usergrant events establish current state and roles;
+project role definitions are checked independently because cascade failure may
+leave removed roles in a grant projection. Source object heads are captured
+before bounded fact reads at one sequence upper bound and must remain identical
+afterwards. The user projection is reread exactly and compared with authoritative
+state/contact/verification events. Wrong object/owner, source churn, malformed
+JSON, redirects, unavailable source and saturated history release no proof.
+
+Each source proof has a four-second budget and at most 64 returned historical
+events per object. Saturation is an explicit availability failure, never an
+authorization fallback. Long grant/project histories require a separately
+reviewed bounded-history continuation before deployment; no pruning or automatic
+role recreation is authorized. Actual p99 latency remains unmeasured.
+
+The principal preserves verified console access-token origin. Recovery-specific
+policy actions reject legacy cookies, product machines, customer admins and
+ordinary users; platform operators can only read. This policy is an initial
+check, not a replacement for the live source proof or target-scope/store checks.
+The source adapter and policy are not yet connected to operator endpoints.
+
+TLS protocol tests cover withdrawals, foreign scope, stale projection, role
+definition deletion, malformed/ambiguous proof and source churn/saturation.
+An explicitly selected isolated actual v4.15.3 provider test verified grant
+deactivation/reactivation, definition-removal write denial with read preservation,
+and disabled-human denial. Its backend-created synthetic authority fixtures do
+not establish normal human login or HMS Admin/recipient/reviewer UI acceptance.
+
 ## Capacity and boundaries
 
 Design envelope, not production measurements: at most 2 recovery commands/second

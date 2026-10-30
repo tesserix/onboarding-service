@@ -30,6 +30,7 @@ type Principal struct {
 	Subject       string
 	Email         string
 	EmailVerified bool
+	ConsoleAccess bool // set only from the verified console access-token contract
 	ProductKey    string
 	OrgID         string // internal platform tenant UUID
 	ExternalOrgID string // signed Zitadel organization id
@@ -65,6 +66,9 @@ const (
 	ActionStaffIdentityHistory    Action = "staff.identity.history"
 	ActionStaffIdentityCreate     Action = "staff.identity.create"
 	ActionStaffIdentityObserve    Action = "staff.identity.observe"
+	ActionStaffRecoveryRead       Action = "staff.identity.recovery.read"
+	ActionStaffRecoveryPropose    Action = "staff.identity.recovery.propose"
+	ActionStaffRecoveryDecide     Action = "staff.identity.recovery.decide"
 	ActionProductRead             Action = "product.read"
 	ActionProductWrite            Action = "product.write"
 	ActionAuditRead               Action = "audit.read"
@@ -80,6 +84,7 @@ type rule struct {
 	product  bool // a product machine token may perform it
 	orgAdmin bool // a customer's org admin may perform it
 	user     bool // a verified signed-in human without a tenant
+	console  bool // requires verified console access-token origin
 }
 
 // The policy table. A missing entry is a denial, so a new action is closed
@@ -102,6 +107,9 @@ var policy = map[Action]rule{
 	ActionStaffIdentityHistory:    {orgScope: true, product: true},
 	ActionStaffIdentityCreate:     {write: true, orgScope: true, product: true},
 	ActionStaffIdentityObserve:    {write: true, orgScope: true, product: true},
+	ActionStaffRecoveryRead:       {orgScope: true, console: true},
+	ActionStaffRecoveryPropose:    {write: true, orgScope: true, console: true},
+	ActionStaffRecoveryDecide:     {write: true, orgScope: true, console: true},
 	ActionProductRead:             {product: true},
 	ActionProductWrite:            {write: true},
 	ActionAuditRead:               {orgScope: true, product: true, orgAdmin: true},
@@ -139,6 +147,9 @@ func (a *Authorizer) Authorize(ctx context.Context, p Principal, action Action, 
 	}
 	if r.orgScope && orgID == "" {
 		return fmt.Errorf("%w: %s requires an organization", ErrDenied, action)
+	}
+	if r.console && (p.Kind != KindPlatform || !p.ConsoleAccess || p.Subject == "") {
+		return fmt.Errorf("%w: %s requires verified console access", ErrDenied, action)
 	}
 
 	switch p.Kind {

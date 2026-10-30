@@ -16,7 +16,35 @@ func (e entitlements) Entitled(_ context.Context, orgID, productKey string) (boo
 var apolloUsesHMS = entitlements{"apollo": {"hms": true}, "acme": {"mark8ly": true}}
 
 func platform(roles ...string) Principal {
-	return Principal{Kind: KindPlatform, Subject: "sam@tesserix.app", Roles: roles}
+	return Principal{Kind: KindPlatform, Subject: "sam@tesserix.app", Roles: roles, ConsoleAccess: true}
+}
+
+func TestStaffRecoveryRequiresVerifiedConsoleOriginAndIndependentWriteRole(t *testing.T) {
+	a := New(apolloUsesHMS)
+	for _, action := range []Action{"staff.identity.recovery.read", "staff.identity.recovery.propose", "staff.identity.recovery.decide"} {
+		for _, tc := range []struct {
+			name      string
+			principal Principal
+			allow     bool
+		}{
+			{"console administrator", platform(RolePlatformAdmin), true},
+			{"console reader", platform(RolePlatformOperator), action == "staff.identity.recovery.read"},
+			{"legacy administrator", Principal{Kind: KindPlatform, Subject: "legacy-human", Roles: []string{RolePlatformAdmin}}, false},
+			{"product machine", product("hms"), false},
+			{"tenant administrator", orgAdmin("apollo"), false},
+			{"verified user", Principal{Kind: KindUser, Subject: "human", EmailVerified: true}, false},
+		} {
+			t.Run(string(action)+"/"+tc.name, func(t *testing.T) {
+				err := a.Authorize(t.Context(), tc.principal, action, "apollo")
+				if tc.allow && err != nil {
+					t.Fatalf("authorized console denied: %v", err)
+				}
+				if !tc.allow && !errors.Is(err, ErrDenied) {
+					t.Fatalf("untrusted recovery authority accepted: %v", err)
+				}
+			})
+		}
+	}
 }
 
 func product(key string) Principal {

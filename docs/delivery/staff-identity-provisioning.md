@@ -8,6 +8,42 @@ routes, creation PUT and bounded command activity are implemented in the current
 authorization in Helivanta, recipient verification, membership and employment
 activation are not implemented by these endpoints.
 
+## Current recovery-operator authority — local candidate, 2026-10-31
+
+The new source verifier checks an active/verified human, exact platform owner,
+direct console-project grant, authoritative org/project/grant state and current
+role definitions/keys. It compares exact relevant event heads before/after
+bounded snapshot reads and rechecks the human projection against authoritative
+state/contact events. No source role or membership is changed by verification.
+Withdrawn/foreign authority denies; stale/malformed/ambiguous/changing/saturated
+proof releases no result. See ADR-0005 for bounds and remaining availability work.
+
+HTTP authentication now preserves verified console-token origin on platform
+principals while registered machines remain product principals. The regression
+first returned console=false for a verified console token, then passed after the
+correction. Recovery policy distinguishes reader/proposer/reviewer actions,
+denies legacy-origin administrators and product/customer/user credentials, and
+requires the write role for proposal/decision. These policy actions and source
+proof are not yet integrated into service endpoints.
+
+TLS fixture cases cover current/read authority, withdrawn grants and
+roles, removed definitions, foreign scope, stale user/contact proof, missing or
+malformed history, source churn/saturation, redirect/cookie isolation and provider
+failures. An explicit actual v4.15.3 local
+provider test passed current proof, grant deactivation denial/reactivation,
+role-definition removal write denial/read preservation and disabled-human denial.
+Synthetic operator authority was created through the local provider backend;
+this is not human-login or normal Admin/recipient/independent-reviewer UI proof.
+
+Full owner actual-PostgreSQL race/coverage passed: 56.4% overall; API 63.8%,
+authz 95.2%, store 64.9%, provider 86.7%, operator verifier 94.0%. Vet, build,
+lint (zero issues), four delivery tests and the redacted secret scan passed. No schema or
+production permission changed, and no merge/migration/rollout occurred. Remaining:
+service pre/post authority checks and source/registry scope, conflict/orphan proof,
+authenticated audited endpoints/activity, prepared-command/profile correction,
+canonical registration, recipient authenticator setup and all remaining A01–A12
+normal-role UI/lifecycle/cross-module acceptance. Full Access/RBAC remains open.
+
 ## Historical self-review guard — 2026-10-31
 
 A review of later-generation recovery identified an independence bypass: the
