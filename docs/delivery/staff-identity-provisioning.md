@@ -8,6 +8,45 @@ routes, creation PUT and bounded command activity are implemented in the current
 authorization in Helivanta, recipient verification, membership and employment
 activation are not implemented by these endpoints.
 
+## Recovery record implementation — 2026-10-31
+
+[ADR-0005](../adr/0005-staff-identity-recovery.md) defines recovery without erasing
+uncertain creation or granting implicit membership. The new store operation
+retains exact proposal facts and its audit atomically; it checks the current
+canonical product machine/entitlement/source scope and retains the original
+command/initiator/source-user binding across product-machine rotation. Exact
+retries recover frozen facts; changed actor/action/reason/evidence conflicts.
+A matching platform-operator audit is mandatory, including on replay. A failed
+audit releases no private result and persists no new proposal. This is a store
+operation, not yet an authenticated operator endpoint.
+
+Canonical SQL is pinned to tesserix-k8s
+`8fa241651362392d8c90322e97947066688bb832`, chart 0.3.60, SHA-256
+`b9bfb2a34e7e8ff0708ce4bccaf52121e8a64557c7ff21a160189332e4a0b14c`;
+the published immutable source was fetched and its hash verified. Two new
+SELECT/INSERT-only ledgers retain exact dispatched-command requests and decisions.
+Composite FKs plus checks reject review by maker, original initiator, original
+source account and replacement initiator, including NULL/forged binding attempts.
+A rejection is final for its request. One competing replacement approval wins;
+closure of an unresolved investigation allows later reviewed replacement and
+preserves the original dispatch/contact root.
+
+Thirteen added actual-PostgreSQL tests passed, including twelve concurrent
+replacement decisions, real application-role mutation denial, machine rotation,
+withdrawal, scope drift, exact retries, audit binding and audit rollback. The full
+owner race/coverage suite passed (54.5% overall, store 62.7%, proposal operation
+87.0%), plus vet/build/lint (zero issues), four delivery checks, redacted secret
+scan and shell/diff checks. Schema-owner local tests passed (seven selected
+repository tests, Helm lint/template and canonical SQL application).
+
+Atomic decision execution/successor preparation and permanent root lineage,
+current verified operator authorization, source conflict/orphan handling,
+operator/product endpoints and UI, normal HMS Admin/recipient/reviewer acceptance,
+production product registration and full A01–A12 lifecycle/cutoff remain required.
+Neither a proposal nor the schema's approved decision row alone grants dispatch,
+source-verification, linking or membership authority. No production migration,
+merge, rollout or release occurred.
+
 ## Actual recipient contact UI — 2026-10-31
 
 An isolated actual v4.15.3 provider redirected to an absent Login V2 service.
