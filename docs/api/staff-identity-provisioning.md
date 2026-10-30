@@ -139,8 +139,12 @@ no receipt; an authorized exact retry recovers retained history. The entire reco
 route family bypasses generic response caching.
 
 Local PostgreSQL/HTTP tests exercise these paths with callback operator/subject
-proofs. Actual provider adapter proof is separate evidence; normal HMS Admin,
-recipient and independent-reviewer UI and full real-source HTTP remain unproven.
+proofs. A tagged actual-provider HTTP fixture additionally proves real organization,
+operator and subject proof through proposal, independent absence approval, late
+orphan reconciliation, frozen retry and grant withdrawal/restoration. It asserts
+console tokens and does not prove browser authentication. Normal HMS Admin,
+recipient and independent-reviewer UI and full real-source route/disposition
+acceptance remain unproven.
 No schema change, migration or production release is implied.
 
 ### Exact request review

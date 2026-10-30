@@ -8,6 +8,39 @@ routes, creation PUT and bounded command activity are implemented in the current
 authorization in Helivanta, recipient verification, membership and employment
 activation are not implemented by these endpoints.
 
+### Source-integrated recovery HTTP fixture — 2026-10-31
+
+`TestStaffRecoveryHTTPActualProvider` now passes with the actual isolated Zitadel
+4.15.3 provider and PostgreSQL ledgers. It creates a separate synthetic tenant,
+product/console projects, verified fixture operators and direct grants. Organization
+proof reads real tenant metadata, project ownership and project-grant authority;
+operator/subject proof uses the real provider adapter. Console tokens are asserted
+by the test harness: this is not browser/token-verifier or recipient setup acceptance.
+
+The normal recovery HTTP routes demonstrate proposal, maker self-review denial,
+independent absent-account approval, one late original account creation, matching
+orphan reconciliation, unchanged frozen decision despite changed source, no
+successor dispatch, no reopening of original dispatch, actual reviewer-grant
+withdrawal denial and restored-grant exact recovery. All created provider records
+are local synthetic fixtures retained with private mode-0600 recreation captures;
+ledger fixture rows are removed by test cleanup. No production source is used.
+
+Command from `apps/api/` (set the explicit private local fixture path):
+
+```sh
+ONBOARDING_TEST_DSN='postgres://postgres@127.0.0.1:32768/staff_recovery_20261031?sslmode=disable' \
+STAFF_PROVIDER_FIXTURE_PATH='<absolute-private-local-fixture>' \
+  mise exec go@1.27.3 -- go test -race -tags staff_provider_fixture \
+  ./internal/api -run TestStaffRecoveryHTTPActualProvider -count=1
+mise exec go@1.27.3 -- go vet -tags staff_provider_fixture ./internal/api
+mise exec -- golangci-lint run --build-tags staff_provider_fixture ./internal/api ./internal/zitadel
+```
+
+Tagged race test, vet and lint passed, as did redacted Gitleaks and diff checks.
+CI for the preceding implementation head `293aa35` completed successfully
+(run 41125307163). Full real-source route/disposition acceptance, real console
+login and Admin → recipient → independent reviewer UI still remain required.
+
 ## Independent decisions and orphan reconciliation — local candidate, 2026-10-31
 
 Implemented fresh write-authorized reconciliation and independent decision HTTP
