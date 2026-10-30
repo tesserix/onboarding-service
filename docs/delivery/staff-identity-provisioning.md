@@ -4,7 +4,7 @@ Updated: 2026-10-31. Status: draft, incomplete; do not merge or deploy as comple
 provisioning. Owner [PR #22](https://github.com/tesserix/onboarding-service/pull/22)
 and canonical SQL [PR #1616](https://github.com/tesserix/tesserix-k8s/pull/1616)
 are coordinated with Helivanta A01–A12. Exact protected receipt and observation
-routes and creation PUT are implemented in the current candidate. Human
+routes, creation PUT and bounded command activity are implemented in the current candidate. Human
 authorization in Helivanta, recipient verification, membership and employment
 activation are not implemented by these endpoints.
 
@@ -44,13 +44,49 @@ POST reports current state separately and does not verify email or authenticate
 the recipient. Current-state observations bypass the HTTP replay cache.
 
 Canonical SQL is pinned to `tesserix-k8s` revision
-`2214e7a7d6730570447bbe1f0ad8e341c5026c3b`; SHA-256
-`676f5c8676e48d9647b3d08e37a6e82ca84c91d22d8d4d343ee9bc9e03fafb63`.
+`1acc9d687cd161bf77689424fdbb3a1716decd9c`; SHA-256
+`8e2f89da8e6f4771a7d0af3ca075094f2ec622ab6f0ce38475f9b7660018b382`.
 CI downloads that exact source and checks the hash; there is no copied schema
 master here. SQL was applied repeatedly only to an isolated PostgreSQL 16
 fixture. The application cannot UPDATE/DELETE/TRUNCATE its four ledger tables;
 tenant/product deletion cannot erase their history. There is no destructive
 down migration: retain the facts on application rollback.
+
+Chart 0.3.59 separately adds exact-command audit indexing and an ephemeral
+hash-only history cursor cache. Current command/source authorization is always
+required; opaque tokens do not contain or expose global audit position. Cache
+expiry/deletion cannot erase identity or audit facts. Application-role row locks
+work through a narrow hash-column privilege plus forced policies rejecting every
+actual update and active deletion. Cleanup is bounded to 1,000 expired rows per
+minute when Staff operations are enabled, with locked rows skipped.
+
+### Private command activity continuation — 2026-10-31
+
+History GET now returns bounded action/outcome/UTC summaries under exact current
+machine/tenant/command/initiator scope, with no raw details, contacts, nonces,
+global sequence or audit hashes. A 15-minute opaque continuation survives a new
+service instance, preserves original expiry and excludes newer appends until
+refresh. Tests cover unknown/tampered/foreign/expired cursors, missing/duplicate/
+unknown query fields, wrong actor/product/tenant, withdrawal and source outage.
+Mandatory-audit failure returns no page and rolls back any new token.
+
+The route absence, non-UTC output and PostgreSQL application-role lock failure
+were observed before correction. The new wire response uses the existing
+`tenant_id` spelling. Real role tests prove continuation/cleanup, no active
+deletion, no actual update and allowed expired deletion. A 1,105-row fixture
+proves the 1,000-row bound and skip-locked behavior. All four immutable identity
+ledgers remain outside cursor collection.
+
+Final full owner race/coverage passed (54.3% overall, API 63.8%, store 61.6%), as
+did vet/build/lint (zero issues), redacted secret scan, four delivery tests,
+shell/diff checks and Linux/arm64 `helivanta-staff-onboarding-history:local` build.
+Canonical SQL/hash were fetched and verified from the published schema commit;
+its repository/PR/Helm gates passed. At 100,001 synthetic audit rows, the actual
+bounded query used the new partial index with 0.046 ms local execution, inside
+a rolled-back transaction. This is query-plan evidence, not an API SLO.
+Exact owner candidate CI is recorded in the draft PR/checkpoint after commit.
+No normal-role UI, operator recovery/replacement or production acceptance follows
+from these history tests.
 
 ## Verification
 
@@ -243,7 +279,7 @@ consumer activation, schema deployment or production release is claimed.
   and current organisation/registry proof; projected rows alone are insufficient.
 - Current human authority in Helivanta before and after owner requests, its
   canonical client/Global API contracts and exact account/tenant UI binding.
-- Protected bounded command history and attributable operator recovery,
+- Consumer acceptance of private command activity and attributable operator recovery,
   including replacement/conflict/orphan handling. A missing provider user is
   never a reason to send the same create again.
 - Real recipient contact verification and account setup through configured

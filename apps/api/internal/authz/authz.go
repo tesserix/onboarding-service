@@ -62,6 +62,7 @@ const (
 	ActionMemberRead              Action = "member.read"
 	ActionMemberWrite             Action = "member.write"
 	ActionStaffIdentityRead       Action = "staff.identity.read"
+	ActionStaffIdentityHistory    Action = "staff.identity.history"
 	ActionStaffIdentityCreate     Action = "staff.identity.create"
 	ActionStaffIdentityObserve    Action = "staff.identity.observe"
 	ActionProductRead             Action = "product.read"
@@ -98,6 +99,7 @@ var policy = map[Action]rule{
 	ActionMemberRead:              {orgScope: true, product: true, orgAdmin: true},
 	ActionMemberWrite:             {write: true, orgScope: true, product: true, orgAdmin: true},
 	ActionStaffIdentityRead:       {orgScope: true, product: true},
+	ActionStaffIdentityHistory:    {orgScope: true, product: true},
 	ActionStaffIdentityCreate:     {write: true, orgScope: true, product: true},
 	ActionStaffIdentityObserve:    {write: true, orgScope: true, product: true},
 	ActionProductRead:             {product: true},

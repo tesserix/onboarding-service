@@ -34,18 +34,8 @@ func (StaffIdentityOperation) String() string { return "[redacted staff identity
 func (s *Store) ReadStaffIdentity(ctx context.Context, scope StaffIdentityScope, event audit.Event) (StaffIdentityOperation, error) {
 	var result StaffIdentityOperation
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		if err := lockStaffIdentityScope(ctx, tx, StaffIdentityCommand{
-			OrgID: scope.OrgID, ProductKey: scope.ProductKey, MachineSubject: scope.MachineSubject,
-			ProviderOrgID: scope.ProviderOrgID, ProviderProjectID: scope.ProviderProjectID,
-		}); err != nil {
-			return err
-		}
 		var err error
-		result.Command, err = scanStaffIdentityCommand(tx.QueryRow(ctx, `SELECT `+staffIdentityColumns+`
- FROM staff_identity_commands WHERE id=$1 AND org_id=$2 AND product_key=$3
- AND machine_subject=$4 AND actor_subject=$5 AND provider_org_id=$6 AND provider_project_id=$7`,
-			scope.CommandID, scope.OrgID, scope.ProductKey, scope.MachineSubject,
-			scope.ActorSubject, scope.ProviderOrgID, scope.ProviderProjectID))
+		result.Command, err = readScopedStaffIdentityCommand(ctx, tx, scope)
 		if err != nil {
 			return err
 		}
@@ -80,4 +70,14 @@ func (s *Store) ReadStaffIdentity(ctx context.Context, scope StaffIdentityScope,
 		return StaffIdentityOperation{}, err
 	}
 	return result, nil
+}
+
+func readScopedStaffIdentityCommand(ctx context.Context, tx pgx.Tx, scope StaffIdentityScope) (StaffIdentityCommand, error) {
+	if err := lockStaffIdentityScope(ctx, tx, StaffIdentityCommand{OrgID: scope.OrgID, ProductKey: scope.ProductKey, MachineSubject: scope.MachineSubject, ProviderOrgID: scope.ProviderOrgID, ProviderProjectID: scope.ProviderProjectID}); err != nil {
+		return StaffIdentityCommand{}, err
+	}
+	return scanStaffIdentityCommand(tx.QueryRow(ctx, `SELECT `+staffIdentityColumns+`
+ FROM staff_identity_commands WHERE id=$1 AND org_id=$2 AND product_key=$3
+ AND machine_subject=$4 AND actor_subject=$5 AND provider_org_id=$6 AND provider_project_id=$7`,
+		scope.CommandID, scope.OrgID, scope.ProductKey, scope.MachineSubject, scope.ActorSubject, scope.ProviderOrgID, scope.ProviderProjectID))
 }

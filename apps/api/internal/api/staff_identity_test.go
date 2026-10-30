@@ -81,6 +81,31 @@ func staffIdentityPath(c store.StaffIdentityCommand) string {
 	return "/v1/orgs/" + c.OrgID.String() + "/staff-identities/" + c.ID.String()
 }
 
+func TestStaffIdentityHistoryRequiresCurrentExactCommandAndMinimizesActivity(t *testing.T) {
+	h := newHarness(t, onboarding.WithStaffIdentity("planning-poker", staffSource{}))
+	c := preparedStaffIdentity(t, h)
+	rec := h.do(t, http.MethodGet, staffIdentityPath(c)+"/history?actor_subject=TEST-admin&limit=2", productToken, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("history: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	body := decode(t, rec)
+	items, ok := body["items"].([]any)
+	if !ok || len(items) != 1 || body["command_id"] != c.ID.String() || body["tenant_id"] != c.OrgID.String() || rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("history did not bind/minimize command activity")
+	}
+	if items[0].(map[string]any)["action"] != "staff.identity.prepare" {
+		t.Fatal("history omitted preparation activity")
+	}
+	if at, ok := items[0].(map[string]any)["occurred_at"].(string); !ok || !strings.HasSuffix(at, "Z") {
+		t.Fatal("history timestamp is not canonical UTC")
+	}
+	for _, private := range []string{c.Email, c.ProviderUserID, c.BindingNonce, c.GivenName, c.Reason, `"seq"`, `"detail"`, `"hash"`, `"prev_hash"`} {
+		if strings.Contains(rec.Body.String(), private) {
+			t.Fatal("command history disclosed private/internal state")
+		}
+	}
+}
+
 func TestStaffIdentityCreationDispatchesOnceAndRetainsExactCommand(t *testing.T) {
 	var calls atomic.Int32
 	var expected store.StaffIdentityCommand

@@ -136,6 +136,34 @@ Staff links/grants before admitting a legacy identity as a first enrollment.
 
 ## Persistence and release gates
 
+### Bounded private command history
+
+Expose exact-command GET history to the currently authorized product machine and
+original initiating actor, with fresh canonical source/registry verification.
+Return only typed action/outcome/time summaries and command/scope identity, never
+raw audit detail, contact, correlation nonce, source secrets or global audit
+sequence/hash. Select the exact org/product/machine/command audit prefix through
+a matching partial index; page at 1–100 entries (default 20) using the ledger's
+serialized sequence internally. New appends after the first page stay outside
+that descending page chain; refresh starts a new view.
+
+Use 32-byte opaque random continuation tokens, retaining only their hashes,
+scope binding, sequence position and 15-minute expiry in an owner-owned ephemeral
+table. Do not encode global sequence in a readable cursor or add a new deployment
+secret. Tokens survive process/replica changes but never supply authorization;
+each page rechecks current principal, command actor, source and entitlement.
+Foreign, unknown or expired tokens fail with the same invalid-cursor result.
+Continuation retains the original expiry. Page/cursor publication requires the
+mandatory disclosure audit in the same transaction; audit failure returns no page
+and leaves no new cursor. Application deletion is limited to expired cursor cache
+state, never identity commands/roots/dispatches/receipts or audit history. Garbage
+collection is bounded and skips locked rows. Cursor rollback/expiry does not
+authorize another provider create.
+
+This endpoint serves command activity, not an operator authorization decision or
+an accepted replacement protocol. Operator identity/history scope and independent
+replacement/conflict/orphan resolution remain separately reviewed gates.
+
 ### Provider projection-failure correction — 2026-10-31
 
 A separate local v4.15.3 provider reproduced successful deactivation (sequence

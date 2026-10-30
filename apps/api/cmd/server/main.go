@@ -169,6 +169,9 @@ func run(log *slog.Logger) error {
 	}
 
 	go purgeIdempotencyKeys(ctx, st, log)
+	if cfg.StaffIdentityProductKey != "" {
+		go purgeStaffIdentityHistoryCursors(ctx, st, log)
+	}
 	go reapRegistryCredentials(ctx, svc, log)
 
 	errs := make(chan error, 1)
@@ -227,6 +230,24 @@ func purgeIdempotencyKeys(ctx context.Context, st *store.Store, log *slog.Logger
 		case <-ticker.C:
 			if err := st.PurgeExpiredIdempotencyKeys(ctx); err != nil {
 				log.Warn("could not purge idempotency keys", "error", err)
+			}
+		}
+	}
+}
+
+func purgeStaffIdentityHistoryCursors(ctx context.Context, st *store.Store, log *slog.Logger) {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
+			_, err := st.PurgeExpiredStaffIdentityHistoryCursors(bounded)
+			cancel()
+			if err != nil {
+				log.Warn("could not purge expired Staff history cursors", "error", err)
 			}
 		}
 	}

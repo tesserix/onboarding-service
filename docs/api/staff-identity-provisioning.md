@@ -1,8 +1,8 @@
 # Staff identity provisioning — draft owner contract
 
 Status: PUT command creation, GET receipt and POST observation candidates are
-implemented and locally tested; bounded history and operator recovery remain
-in development.
+implemented and locally tested, together with bounded private command activity.
+Operator recovery/replacement and consumer UI remain in development.
 Not accepted or deployed. Implements only
 the identity-owner part of Helivanta A01; membership, Staff/person review,
 employment and scoped operational access remain separate owner decisions.
@@ -158,6 +158,41 @@ best-effort audit attempts now have a separate two-second budget, so a blocked
 denial audit cannot hold a cancelled request indefinitely. A failed mandatory
 Staff disclosure audit releases no private receipt.
 
+## Bounded private command activity
+
+`GET /v1/orgs/{tenant}/staff-identities/{command}/history?actor_subject={initiator}`
+accepts optional `limit` (canonical integer 1–100, default 20) and `cursor` from
+the prior response. Reject repeated/unknown/empty query values and any body.
+The response binds schema version, command ID, `tenant_id`, product and initiating
+actor, and returns `items` of action/outcome/UTC time, `has_more` and, when needed,
+an opaque `next_cursor` with `cursor_expires_at`. Raw audit detail, contact/name,
+nonce, provider credentials and global audit sequence/hash are excluded.
+
+The current product machine, source/registry entitlement and exact original
+command/actor binding are checked on every page. The actor field is a command
+precondition, not proof of the current human; the product must authorize that
+human before requesting/disclosing activity. Newer appends are outside an existing
+descending page chain; refresh opens a new view. Serialized audit sequence is
+used internally, through an exact-command partial index, without exposing it.
+
+Continuation tokens are 32 random bytes with only a SHA-256 hash, scope binding
+and internal position stored in an owner cache. They survive process/replica
+changes but confer no authority. Foreign, tampered, unknown or expired cursors
+return the same 400. Continuation keeps its original 15-minute expiry. Current
+source outage returns 503; removed scope remains denied even with a valid cursor.
+No data or new token is released if mandatory disclosure audit fails: audit,
+page publication and new cursor storage share a database transaction.
+
+The cache is separate from the four immutable identity ledgers. Forced database
+policies permit expired deletion and reject active deletion/actual updates.
+A narrow hash-column UPDATE privilege supports PostgreSQL row locks; an update
+policy with false new-row check prevents mutation. With Staff operations enabled,
+the API collects at most 1,000 expired rows per minute, skips locked rows and
+uses a five-second maintenance budget. It never deletes identity/audit facts.
+History uses a five-second service context; denied-audit fallback retains its
+existing separate two-second budget. This activity endpoint is not
+operator recovery, a replacement decision or an operational permission grant.
+
 ## Errors and recovery
 
 Use the owner's existing problem document: 400 invalid input, 401 missing/invalid
@@ -170,6 +205,6 @@ because an observation request timed out.
 Persist commands, claims and receipts through membership removal, account
 deletion and application rollback. Source 404 after uncertainty cannot tell
 never-sent from created-then-deleted. Explicit accountable operator resolution,
-replacement/conflict/orphan handling and protected bounded history remain
+replacement/conflict/orphan handling and operator-scoped history remain
 required before this contract can be accepted as full provisioning. No
 credential rotation, live schema change or rollout follows from this draft.
