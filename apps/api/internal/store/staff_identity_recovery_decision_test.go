@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -349,5 +350,45 @@ func TestStaffRecoveryDecisionRunsWithApplicationPrivileges(t *testing.T) {
 	for _, statement := range []string{"UPDATE staff_identity_replacements SET generation=2", "DELETE FROM staff_identity_replacements", "TRUNCATE staff_identity_replacements"} {
 		_, err := pool.Exec(t.Context(), statement)
 		requireRecoverySQLState(t, err, "42501")
+	}
+}
+
+func TestStaffRecoveryLaterGenerationRejectsHistoricalCreatorsAndAccounts(t *testing.T) {
+	for _, depth := range []int{1, 2} {
+		t.Run(fmt.Sprintf("depth-%d", depth), func(t *testing.T) {
+			s, root, scope, in, candidate, event := staffRecoveryDecisionFixture(t, "replace")
+			history := []StaffIdentityCommand{root}
+			for generation := 1; generation <= depth; generation++ {
+				got, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event)
+				if err != nil {
+					t.Fatal(err)
+				}
+				child := *got.Successor
+				history = append(history, child)
+				productEvent := audit.Event{ActorType: audit.ActorProduct, ActorID: child.MachineSubject, ProductKey: child.ProductKey, OrgID: child.OrgID.String(), Action: "staff.identity.dispatch", Target: child.ID.String(), Outcome: audit.OutcomeSuccess, RequestID: child.ID.String()}
+				if claimed, err := s.ClaimStaffIdentityDispatch(t.Context(), child, productEvent); err != nil || !claimed {
+					t.Fatalf("generation dispatch: %v", err)
+				}
+				nextID, err := uuid.NewV7()
+				if err != nil {
+					t.Fatal(err)
+				}
+				trackRecoverySuccessors(t, s, nextID)
+				candidate = &StaffIdentitySuccessor{ID: nextID, ProviderUserID: "TEST-history-" + nextID.String(), BindingNonce: "history-nonce-" + nextID.String()}
+				scope.CommandID = child.ID
+				in.RequestID = recoveryRequest(t, s, child, "replace", fmt.Sprintf("TEST-initiator-%d", generation+1))
+				event.Target = child.ID.String()
+				event.RequestID = in.RequestID.String()
+			}
+			prior := history[depth-1]
+			for _, reviewer := range []string{prior.ActorSubject, prior.ProviderUserID} {
+				in.ReviewedBy = reviewer
+				event.ActorID = reviewer
+				got, err := s.DecideStaffIdentityRecovery(t.Context(), scope, in, candidate, event)
+				if !errors.Is(err, ErrConflict) || got.Successor != nil {
+					t.Fatalf("historical creator/account approved a later generation: %v", err)
+				}
+			}
+		})
 	}
 }

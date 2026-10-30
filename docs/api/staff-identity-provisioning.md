@@ -181,7 +181,9 @@ root/parent lineage and audit together. It does not dispatch a provider account.
 Only the exact successor can subsequently use normal creation; exact retries do
 not redispatch it. The original dispatch and contact root stay retained. Products
 cannot bypass uncertainty with arbitrary new command IDs. Explicit replacement
-requires the platform operator workflow in ADR-0005; its authenticated endpoints,
+requires an independent operator: original-root and all prior successor creators/
+provider-user subjects remain excluded across new command IDs. It requires the
+platform operator workflow in ADR-0005; its authenticated endpoints,
 source conflict/orphan checks and UI are still pending. This is an additive draft
 v1 annotation, not approval to activate a new consumer or production policy.
 

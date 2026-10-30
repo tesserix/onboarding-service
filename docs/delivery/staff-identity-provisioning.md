@@ -8,6 +8,35 @@ routes, creation PUT and bounded command activity are implemented in the current
 authorization in Helivanta, recipient verification, membership and employment
 activation are not implemented by these endpoints.
 
+## Historical self-review guard — 2026-10-31
+
+A review of later-generation recovery identified an independence bypass: the
+original root creator/account, or an intermediate successor creator/account,
+could approve after a new command ID replaced its immediate binding. Actual
+PostgreSQL cases reproduced accepted second-/third-generation self-review before
+the fix. Owner decision execution now reads immutable root history and excludes
+all retained identity creators/provider-user subjects, in addition to the current
+request's four interested subjects. Equality-probe indexes keep the checks bounded;
+there is no recursive ancestor walk and no user-supplied root/party list.
+
+Canonical schema is now `325012bc6fbaf199413dbce6ed58406be4ca66e5`, chart 0.3.62,
+SHA-256 `aa89167dad24dcfb3fd71e305cad29f573d1604ffc99ee75f9e8f459b4880756`.
+Its published immutable source was hash-verified and pinned for owner CI. Two
+concurrent root/subject indexes support the application-owner historical guards;
+the database's immediate-request FK/check exclusions remain unchanged. No new
+operator endpoint or source permission was enabled.
+
+The new historical case and previous transaction/API cases pass: fifteen new
+checks in this increment plus fourteen earlier recovery tests. Full owner actual-
+PostgreSQL race/coverage passed: 55.1% overall, API 63.8%, store 64.9%, decision
+83.6%, successor/root helpers 83.3%, shared recovery scope 100%. Vet/build/lint
+(zero issues), four delivery checks, redacted secrets and shell/diff checks pass;
+schema Helm lint/template and seven selected repository tests pass. These are
+backend/contract/race tests, not full normal-role UI or real-provider E2E evidence.
+Current verified operator authority/source proof, endpoints/activity/UI, prepared-
+command/profile correction, recipient setup, canonical product registration,
+legacy classification and remaining A01–A12 acceptance remain open as below.
+
 ## Atomic decisions, lineage and stale-authority denial — 2026-10-31
 
 Owner storage now commits an independent decision, prepared successor, permanent

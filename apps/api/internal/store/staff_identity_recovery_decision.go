@@ -62,6 +62,21 @@ func (s *Store) DecideStaffIdentityRecovery(ctx context.Context, scope StaffIden
 		if in.ReviewedBy == request.RequestedBy || in.ReviewedBy == request.OriginalActorSubject || in.ReviewedBy == request.OriginalUserID || in.ReviewedBy == request.ReplacementActorSubject {
 			return ErrConflict
 		}
+		root, _, err := staffIdentityRecoveryRoot(ctx, tx, command)
+		if err != nil {
+			return err
+		}
+		var historicalParty bool
+		err = tx.QueryRow(ctx, `SELECT
+           (SELECT actor_subject=$2 OR provider_user_id=$2 FROM staff_identity_commands WHERE id=$1)
+           OR EXISTS(SELECT 1 FROM staff_identity_replacements WHERE root_command_id=$1 AND replacement_actor_subject=$2)
+           OR EXISTS(SELECT 1 FROM staff_identity_replacements WHERE root_command_id=$1 AND successor_user_id=$2)`, root, in.ReviewedBy).Scan(&historicalParty)
+		if err != nil {
+			return err
+		}
+		if historicalParty {
+			return ErrConflict
+		}
 		needsSuccessor := in.Decision == "approved" && request.Action == "replace"
 		if needsSuccessor != (successor != nil) {
 			return ErrConflict
@@ -128,16 +143,7 @@ func scanStaffIdentityRecoveryRequest(row pgx.Row) (StaffIdentityRecoveryRequest
 }
 
 func prepareStaffIdentitySuccessor(ctx context.Context, tx pgx.Tx, scope StaffIdentityRecoveryScope, parent StaffIdentityCommand, request StaffIdentityRecoveryRequest, in StaffIdentitySuccessor) (StaffIdentityCommand, error) {
-	var root uuid.UUID
-	var parentGeneration int
-	err := tx.QueryRow(ctx, `SELECT roots.root_command_id,coalesce(lineage.generation,0)
- FROM staff_identity_contact_claims roots
- LEFT JOIN staff_identity_replacements lineage ON lineage.successor_command_id=$1
- WHERE roots.provider_org_id=$2 AND roots.email_key=$3
- AND (roots.root_command_id=$1 OR lineage.root_command_id=roots.root_command_id)`, parent.ID, parent.ProviderOrgID, strings.ToLower(parent.Email)).Scan(&root, &parentGeneration)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return StaffIdentityCommand{}, ErrConflict
-	}
+	root, parentGeneration, err := staffIdentityRecoveryRoot(ctx, tx, parent)
 	if err != nil {
 		return StaffIdentityCommand{}, err
 	}
@@ -162,4 +168,18 @@ func prepareStaffIdentitySuccessor(ctx context.Context, tx pgx.Tx, scope StaffId
 		return StaffIdentityCommand{}, err
 	}
 	return child, nil
+}
+
+func staffIdentityRecoveryRoot(ctx context.Context, tx pgx.Tx, parent StaffIdentityCommand) (uuid.UUID, int, error) {
+	var root uuid.UUID
+	var generation int
+	err := tx.QueryRow(ctx, `SELECT roots.root_command_id,coalesce(lineage.generation,0)
+ FROM staff_identity_contact_claims roots
+ LEFT JOIN staff_identity_replacements lineage ON lineage.successor_command_id=$1
+ WHERE roots.provider_org_id=$2 AND roots.email_key=$3
+ AND (roots.root_command_id=$1 OR lineage.root_command_id=roots.root_command_id)`, parent.ID, parent.ProviderOrgID, strings.ToLower(parent.Email)).Scan(&root, &generation)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, 0, ErrConflict
+	}
+	return root, generation, err
 }

@@ -110,3 +110,11 @@ is not migration proof. Prepared commands stranded by canonical machine-account
 replacement, legitimate profile correction, and late source-orphan reconciliation
 need explicit operator acceptance; do not infer those cases from dispatched-parent
 fixtures or a store-only approval.
+
+Historical independence extends beyond the immediate parent: original-root and
+all retained successor creators/provider-user subjects are barred from reviewing
+later-generation recovery. Two root/subject indexes support bounded equality
+probes. Second-/third-generation PostgreSQL tests reproduced the prior bypass and
+now deny root/intermediate parties. These application-owner guards supplement,
+rather than replace, the database's immediate-request exclusions and the future
+verified-current-operator authorization boundary.
