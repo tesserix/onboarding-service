@@ -31,9 +31,10 @@ A rejection is final for its request. One competing replacement approval wins;
 closure of an unresolved investigation allows later reviewed replacement and
 preserves the original dispatch/contact root.
 
-Thirteen added actual-PostgreSQL tests passed, including twelve concurrent
+Fourteen added actual-PostgreSQL tests passed, including twelve concurrent
 replacement decisions, real application-role mutation denial, machine rotation,
-withdrawal, scope drift, exact retries, audit binding and audit rollback. The full
+withdrawal, scope drift, exact retries, audit binding, audit rollback and complete proposal/replay execution with actual
+application-role privileges. The full
 owner race/coverage suite passed (54.5% overall, store 62.7%, proposal operation
 87.0%), plus vet/build/lint (zero issues), four delivery checks, redacted secret
 scan and shell/diff checks. Schema-owner local tests passed (seven selected

@@ -4,7 +4,11 @@ import (
 	"errors"
 	"testing"
 
+	"context"
+
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tesserix/onboarding-service/api/internal/audit"
 )
 
@@ -147,5 +151,45 @@ func TestStaffRecoveryProposalRequiresMatchingPlatformAudit(t *testing.T) {
 	var count int
 	if err := s.pool.QueryRow(t.Context(), `SELECT count(*) FROM staff_identity_recovery_requests WHERE id=$1`, id).Scan(&count); err != nil || count != 0 {
 		t.Fatalf("misattributed audit retained request: count=%d err=%v", count, err)
+	}
+}
+
+func TestStaffRecoveryProposalRunsWithActualApplicationPrivileges(t *testing.T) {
+	s, c := staffRecoveryFixture(t)
+	cfg := s.pool.Config()
+	previous := cfg.AfterConnect
+	cfg.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+		if previous != nil {
+			if err := previous(ctx, conn); err != nil {
+				return err
+			}
+		}
+		_, err := conn.Exec(ctx, `SET ROLE onboarding`)
+		return err
+	}
+	pool, err := pgxpool.NewWithConfig(t.Context(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	restricted := &Store{pool: pool}
+	var role string
+	if err := pool.QueryRow(t.Context(), `SELECT current_user`).Scan(&role); err != nil || role != "onboarding" {
+		t.Fatalf("application role not selected: %v", err)
+	}
+	id, err := uuid.NewV7()
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := StaffIdentityRecoveryScope{CommandID: c.ID, OrgID: c.OrgID, ProductKey: c.ProductKey, MachineSubject: c.MachineSubject, ProviderOrgID: c.ProviderOrgID, ProviderProjectID: c.ProviderProjectID}
+	in := StaffIdentityRecoveryRequest{ID: id, RequestedBy: "TEST-platform-maker", Action: "close_unresolved", Reason: "Investigate uncertain dispatch", EvidenceReference: "QA-RECOVERY-6"}
+	event := audit.Event{ActorType: audit.ActorPlatform, ActorID: in.RequestedBy, ProductKey: c.ProductKey, OrgID: c.OrgID.String(), Action: "staff.identity.recovery.propose", Target: c.ID.String(), Outcome: audit.OutcomeSuccess, RequestID: id.String()}
+	got, err := restricted.ProposeStaffIdentityRecovery(t.Context(), scope, in, event)
+	if err != nil || got.ID != id {
+		t.Fatalf("actual application-role proposal failed: %v", err)
+	}
+	replay, err := restricted.ProposeStaffIdentityRecovery(t.Context(), scope, in, event)
+	if err != nil || replay != got {
+		t.Fatalf("actual application-role retry failed: %v", err)
 	}
 }
