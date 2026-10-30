@@ -18,15 +18,16 @@ var staffIdentityEventTypes = []string{
 }
 
 type staffIdentityEvent struct {
-	Sequence  string
-	Aggregate struct {
+	Sequence     string
+	CreationDate string
+	Aggregate    struct {
 		ID, ResourceOwner string
 		Type              struct{ Type string }
 	}
 	Type    struct{ Type string }
 	Payload struct {
-		Key, Email, UserID, ProjectID, GrantID string
-		RoleKeys                               []string
+		Key, Email, UserID, ProjectID, GrantID, Value string
+		RoleKeys                                      []string
 	}
 }
 

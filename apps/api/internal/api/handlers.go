@@ -26,6 +26,7 @@ func (d Deps) registerRoutes(g *gin.RouterGroup) {
 	g.GET("/orgs/:id/staff-identities/:commandId", d.getStaffIdentity)
 	g.GET("/orgs/:id/staff-identities/:commandId/history", d.getStaffIdentityHistory)
 	g.GET("/orgs/:id/staff-identities/:commandId/recovery", d.getStaffIdentityRecovery)
+	g.POST("/orgs/:id/staff-identities/:commandId/recovery/observations", d.observeStaffIdentityRecovery)
 	g.PUT("/orgs/:id/staff-identities/:commandId/recovery/requests/:requestId", d.proposeStaffIdentityRecovery)
 	g.GET("/orgs/:id/staff-identities/:commandId/recovery/requests/:requestId", d.getStaffIdentityRecoveryRequest)
 	g.PUT("/orgs/:id/staff-identities/:commandId", d.createStaffIdentity)

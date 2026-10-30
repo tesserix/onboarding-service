@@ -39,6 +39,26 @@ endpoint; conflict/orphan verification and complete reviewer UI remain required.
 
 ## Audited operator read/proposal service boundary — local candidate
 
+The fresh source-view POST now consumes the exact-account classifier under the
+verified console-reader boundary. Frozen input is read privately from the exact
+dispatched command; current operator/tenant/product/source scope is rechecked
+after subject I/O and before mandatory transactional disclosure audit. The
+response exposes only disposition and observation/birth time. It creates no
+account, receipt, decision, closure or successor. Generic replay cache exclusion
+is regression-tested: fresh source changes are visible and later revocation
+cannot recover an old success. Independent approval must call the source verifier
+again and cannot treat an earlier observation response as authority.
+
+Classification is `absent` only after two actual missing reads and stable empty
+object history. `matching` requires retained birth/contact and current sealed
+binding through the existing observer. `removed` additionally requires actual
+missing reads, terminal removal and bounded history proving one human birth and
+the latest causal nonce. Source errors, stale projection, contradiction, unknown
+history or saturation fail unavailable. Four-second proof and 32/64-event bounds
+remain explicit availability limits. No universal contact-availability claim is
+made. Actual isolated v4.15.3 and projection-fault tests verify the classifications
+and refusal of a stale 404, with captured projection state restored afterwards.
+
 Exact request detail now uses the same current-human boundary with two live
 source/operator proofs and a final audited store read. Its request/decision/
 successor projection uses one statement snapshot, exposes only the evidence

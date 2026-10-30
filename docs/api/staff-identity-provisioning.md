@@ -2,7 +2,7 @@
 
 Status: PUT command creation, GET receipt and POST observation candidates are
 implemented and locally tested, together with bounded private command activity.
-Current-human recovery receipt, request-detail and proposal candidates are also implemented; independent
+Current-human recovery receipt, request-detail, fresh source-view and proposal candidates are also implemented; independent
 decision service/API, conflict/orphan verification and consumer UI remain in development.
 Not accepted or deployed. Implements only
 the identity-owner part of Helivanta A01; membership, Staff/person review,
@@ -74,9 +74,10 @@ organization binding, active product/project and current entitlement are checked
 under the actual operator principal; transactional store reads/writes recheck the
 current canonical registry. Independent scope changes fail closed.
 
-`STAFF_IDENTITY_PRODUCT_KEY` and the existing explicit `ZITADEL_CONSOLE_PROJECT_ID`
+`STAFF_IDENTITY_PRODUCT_KEY` and the existing explicit `CONSOLE_PROJECT_ID`
 must both be configured with the current authority source. Nothing defaults to a
-production product/project. The full request budget is 25 seconds; source proof
+production product/project; `CONSOLE_CLIENT_ID` must be paired with the console
+project as required by startup validation. The full request budget is 25 seconds; source proof
 has its own four-second bound. Actual deployed latency/SLO is unproven.
 
 Proposal HTTP 200 returns only schema version, tenant, command/request IDs,
@@ -126,6 +127,46 @@ retained lineage is 409. Approval without required successor lineage fails close
 Authority/entitlement withdrawal before final disclosure returns no reason,
 evidence or decision. Normal-role reviewer UI remains unproven.
 
+### Fresh exact-account source view
+
+`POST /v1/orgs/{tenant}/staff-identities/{command}/recovery/observations` accepts
+no body or query. It requires current human console-reader authority and an
+already-dispatched exact command. The account, organization, contact, names,
+nonce and preparation time come exclusively from its retained private facts.
+The configured source adapter must support exact-account recovery inspection;
+missing support is 503, never an inferred absence.
+
+HTTP 200 returns schema version, tenant/command IDs, `source_disposition`,
+`observed_at` and optional `source_created_at`. Disposition is only `absent`,
+`matching` or `removed`. It classifies that frozen account at the observation
+time. It does not promise universal contact availability, verified contact,
+creation receipt persistence, membership, employment or approval eligibility.
+No provider ID, nonce, private profile/contact, source revision or source body is
+returned. An absence must have neither birth nor object revision; matching/removal
+must have a valid scoped revision and a source birth within the frozen command's
+creation bounds. Returned proof identity, owner and freshness are checked again
+by the service.
+
+The adapter brackets exact reads with stable authoritative object heads. Two
+actual missing reads plus empty history are required for `absent`. Matching
+requires retained birth/contact and exact sealed creation metadata through the
+existing observer. Removal requires actual missing reads plus one retained human
+birth, the latest causal command binding, terminal removal and bounded ownership
+history. Stale 404s, stale active/deleted projections, wrong/missing bindings,
+multiple births, history saturation, malformed proof or source churn return 503.
+The source adapter is bounded to four seconds, matching mutation history to 32
+events and removal ownership history to 64; saturation is unavailable.
+
+The whole request has a 25-second budget. Current operator/source/registry scope
+is rechecked after subject I/O and final transactional disclosure audit records
+only the disposition and observation time. Source-view responses never use the
+generic replay cache, including with `Idempotency-Key`; a retry performs a fresh
+read and requires current authority. This read-only operation creates no account,
+receipt, recovery decision, closure or successor. Later approval must obtain new
+proof; this response cannot serve as approval authority. Scope withdrawal is 404,
+stale/invalid proof is 503, un-dispatched commands conflict, and body/query input
+is 400. Normal reviewer UI and independent approval remain unaccepted.
+
 ## Create or replay
 
 `PUT /v1/orgs/{tenant}/staff-identities/{uuidv7-command}`
@@ -174,7 +215,7 @@ returned. Do not permit a different new command to hide an unresolved one.
 
 Source/registry scope is rechecked before dispatch and after provider I/O, then
 again for the authorized/audited receipt read. The 25-second total budget includes
-the provider's 15-second creation budget. Cancellation, withdrawal or audit failure
+the provider adapter's two-second creation budget. Cancellation, withdrawal or audit failure
 cannot authorize redispatch. Unavailable/invalid source results retain a dispatched
 command rather than fabricated success. Observation may later retain only an
 exact matching creation. This request never verifies contact, sets a password,

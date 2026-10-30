@@ -35,8 +35,9 @@ still need explicit retained handling during the successor's one dispatch.
 This does not require enumerating unrelated accounts or proving universal
 absence of an email across an organization.
 
-The next source verifier must instead classify the exact frozen provider-user
-object with bounded, owner-scoped authoritative history and source reads:
+The candidate source verifier now classifies the exact frozen provider-user
+object with bounded, owner-scoped authoritative history and source reads. Its
+reader view is implemented; independent decision integration remains open:
 
 | Evidence | Required handling |
 |---|---|
@@ -54,10 +55,32 @@ Its approved service disposition still needs implementation and explicit tests.
 
 ## Remaining proof gates
 
-Before an independent decision endpoint is exposed: implement/test exact-object
-classification against the pinned actual provider, including created-but-stale-
-404, contradictory ownership, matching orphan reconciliation, missing/removed
-objects, source churn, history bounds and dependency failure. Recheck actual
+The current adapter proves absent, matching and removed states against the actual
+isolated v4.15.3 provider. Immediate matching proof failed closed when asynchronous
+email delivery advanced the account head; a fresh read succeeded without another
+creation. The fixture now bounds fresh read attempts at three and dispatches
+creation once. Matching requires the sealed nonce and retained birth/contact;
+removal additionally requires actual 404s, terminal removal, one human birth and
+the latest causal nonce binding in bounded ownership history. No source mutation
+is performed by classification.
+
+An explicit projection-fault test captures one synthetic account's parent and
+cascading child rows privately before temporarily removing only its projection.
+Actual GetUser then returns 404 while history retains creation; recovery refuses
+absence. Restoration recomputes generated columns, checks all captured rows and
+recovers matching proof. The initial restoration attempted to insert a generated
+notification column; it failed, was corrected, and the captured state was fully
+restored before the successful rerun. Source event history was preserved.
+
+These are actual-provider protocol/fault tests plus TLS and database/HTTP callback
+tests, not normal Admin/recipient/reviewer UI acceptance. The new fresh source
+view reauthorizes current human/tenant/product scope and commits disclosure audit;
+it does not reconcile creation receipts or approve recovery.
+
+Before an independent decision endpoint is exposed: integrate the tested exact-
+object classifier with matching orphan receipt reconciliation and explicit
+conflict handling. Contradictory ownership, missing/removed objects, source churn,
+history bounds and dependency failure must continue to fail closed. Recheck actual
 operator and tenant/product/source scope around the decision transaction; retain
 independence across the full root/successor history. Exact and concurrent retries
 must retain one decision/successor with no provider dispatch inside approval.

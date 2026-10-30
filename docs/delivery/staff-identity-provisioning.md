@@ -8,6 +8,64 @@ routes, creation PUT and bounded command activity are implemented in the current
 authorization in Helivanta, recipient verification, membership and employment
 activation are not implemented by these endpoints.
 
+## Exact-account classification and fresh reviewer source view — local candidate
+
+The new source verifier classifies only the frozen account: absent after two
+actual missing reads and stable empty authoritative history; matching after
+retained birth/contact and current sealed nonce proof; removed after actual
+missing reads, terminal removal and bounded history proving one human birth plus
+the latest causal nonce. It never changes the source. TLS race tests cover stale
+404, contradictory ownership/contact/nonce/birth, source churn, lost historical
+binding, multiple births, saturation, dependency errors, invalid input, ambient
+cookies and redirects. There is no contact-availability or operational-access claim.
+
+The current-human reviewer source-view POST uses immutable stored input, validates
+proof identity/owner/freshness and bounds, rechecks live authority and canonical
+scope, and requires final transactional audit. It exposes only disposition and
+observation/birth time. It creates no source account, retained creation receipt,
+decision or successor. A cache regression first hid changed facts; explicit route
+exclusion now forces fresh observations and denies revoked authority. Database/
+HTTP integration tests use callback subject/operator proofs, not normal UI.
+
+Actual isolated v4.15.3 race fixtures passed absent/matching/removed account proof
+and the previous operator withdrawal checks. Asynchronous email delivery changed
+the account head during immediate matching proof; a later unchanged read passed.
+The fixture performs at most three fresh read attempts and creates once; final
+matching took two proof attempts. Recreation details are captured privately before deleting
+only the newly created role-free synthetic account.
+
+A separate actual projection fault captured one retained synthetic account's
+parent/child rows with mode 0600, temporarily removed its projection, observed real
+GetUser 404 and verified that history prevented absence proof. Restore initially
+failed on a generated notification column; it was corrected, all captured rows
+were restored, and successful race reruns verified exact captured rows and matching
+source proof. This modifies only the named isolated fixture, never event history
+or production. Backups stay in the existing private fixture directory.
+
+Full actual-PostgreSQL owner race/coverage passed: 56.0% overall, API 66.0%, store
+66.7%, provider 87.8%; subject classifier 93.6%, removed ownership 95.8%. Separate
+cross-package source-view service coverage is 85.7%. Vet/build, default and
+fixture-tag lint (zero issues) passed. Final delivery/secret/diff and exact-head
+CI evidence are tracked separately. Coverage is not feature completion.
+
+The API docs now match actual `CONSOLE_PROJECT_ID`/paired `CONSOLE_CLIENT_ID`
+configuration and the existing two-second provider creation budget; no runtime
+timeout was changed. No schema/migration/production rollout, merge or release
+occurred. Remaining: fresh independent decision service/API, matching-orphan
+receipt reconciliation, explicit conflict handling, recovery activity, prepared-
+command/profile correction, consumer UI, recipient setup/sign-in, canonical
+registration (#12), legacy grants and all remaining A01–A12 lifecycle/cross-module
+cutoff acceptance. Normal Admin/recipient/reviewer UI and real-source full owner
+HTTP acceptance remain unproven; full Access/RBAC stays open.
+
+Actual provider/fault commands are explicitly selected with `staff_provider_fixture`:
+`TestStaffRecoveryOperatorActualProvider` requires the existing private fixture
+directory. `TestStaffRecoverySubjectProjectionFaultActualProvider` additionally
+requires an existing active subject capture basename in
+`STAFF_RECOVERY_SUBJECT_CAPTURE`, the named isolated DB container in
+`STAFF_PROVIDER_FAULT_CONTAINER`, and explicit local Unix `DOCKER_HOST`. It fails
+before mutation if those are unavailable and retains private restoration captures.
+
 ## Exact recovery request review — local candidate, 2026-10-31
 
 The new current-human GET by exact tenant/command/request returns immutable maker,

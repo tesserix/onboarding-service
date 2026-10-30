@@ -37,6 +37,26 @@ func staffRecoveryRequestID(c *gin.Context) (uuid.UUID, bool) {
 	return request, true
 }
 
+func (d Deps) observeStaffIdentityRecovery(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	tenant, command, ok := staffIdentityIDs(c)
+	if !ok {
+		return
+	}
+	body, _ := c.Get(bodyKey)
+	raw, _ := body.([]byte)
+	if c.Request.URL.RawQuery != "" || c.Request.URL.ForceQuery || len(raw) != 0 {
+		abort(c, http.StatusBadRequest, "source observation does not accept query parameters or a request body")
+		return
+	}
+	receipt, err := d.Service.ObserveStaffIdentityRecovery(c.Request.Context(), principalOf(c), tenant, command)
+	if err != nil {
+		d.respondStaffIdentityErr(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, receipt)
+}
+
 func (d Deps) getStaffIdentityRecoveryRequest(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	tenant, command, ok := staffIdentityIDs(c)

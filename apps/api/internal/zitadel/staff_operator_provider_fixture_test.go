@@ -17,8 +17,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// Explicit source-protocol fixture; not human login or HMS reviewer acceptance.
-func TestStaffRecoveryOperatorActualProvider(t *testing.T) {
+func loadStaffProviderFixture(t *testing.T) (string, string, []byte) {
+	t.Helper()
 	root := os.Getenv("STAFF_PROVIDER_FIXTURE_PATH")
 	if !filepath.IsAbs(root) {
 		t.Fatal("explicit isolated provider fixture is required")
@@ -40,6 +40,12 @@ func TestStaffRecoveryOperatorActualProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal("private fixture credential unavailable")
 	}
+	return root, fixture.Org, pat
+}
+
+// Explicit source-protocol fixture; not human login or HMS reviewer acceptance.
+func TestStaffRecoveryOperatorActualProvider(t *testing.T) {
+	root, org, pat := loadStaffProviderFixture(t)
 	client := &http.Client{Timeout: 4 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	call := func(method, path string, in any) map[string]json.RawMessage {
 		t.Helper()
@@ -53,7 +59,7 @@ func TestStaffRecoveryOperatorActualProvider(t *testing.T) {
 		}
 		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(pat)))
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("x-zitadel-orgid", fixture.Org)
+		req.Header.Set("x-zitadel-orgid", org)
 		res, err := client.Do(req)
 		if err != nil {
 			t.Fatal("isolated provider unavailable")
@@ -83,12 +89,12 @@ func TestStaffRecoveryOperatorActualProvider(t *testing.T) {
 		call(http.MethodPost, "/management/v1/projects/"+project+"/roles", map[string]string{"roleKey": key, "displayName": key})
 	}
 	subject := id(call(http.MethodPost, "/v2/users/human", map[string]any{
-		"organizationId": fixture.Org, "username": label + "@example.invalid",
+		"organizationId": org, "username": label + "@example.invalid",
 		"profile": map[string]string{"givenName": "Synthetic", "familyName": "RecoveryOperator"},
 		"email":   map[string]any{"email": label + "@example.invalid", "isVerified": true},
 	}), "userId")
 	grant := id(call(http.MethodPost, "/management/v1/users/"+subject+"/grants", map[string]any{"projectId": project, "roleKeys": []string{"platform", "rotate-credentials"}}), "userGrantId")
-	provider := New("http://localhost:32880", StaticToken(strings.TrimSpace(string(pat))), fixture.Org, nil)
+	provider := New("http://localhost:32880", StaticToken(strings.TrimSpace(string(pat))), org, nil)
 	proof, err := provider.VerifyStaffRecoveryOperator(t.Context(), subject, project, true)
 	if err != nil || proof.Subject != subject || proof.GrantID != grant || !proof.Write {
 		t.Fatalf("actual current operator authority unavailable: %v", err)
@@ -116,5 +122,48 @@ func TestStaffRecoveryOperatorActualProvider(t *testing.T) {
 	proof, err = provider.VerifyStaffRecoveryOperator(t.Context(), subject, project, false)
 	if (!errors.Is(err, ErrStaffOperatorDenied) && !errors.Is(err, ErrIdentityUnavailable)) || proof != (StaffRecoveryOperatorProof{}) {
 		t.Fatal("actual disabled identity retained read authority")
+	}
+	input := StaffIdentityInput{OrganizationID: org, UserID: "TEST-recovery-" + uuid.NewString(),
+		Email: "recovery-subject-" + uuid.NewString() + "@example.invalid", GivenName: "Synthetic", FamilyName: "RecoverySubject",
+		BindingNonce: "TEST-recovery-binding-" + uuid.NewString()}
+	preparedAt := time.Now().UTC()
+	account, err := provider.InspectStaffRecoverySubject(t.Context(), input, preparedAt)
+	if err != nil || account.Disposition != "absent" || account.UserID != input.UserID {
+		t.Fatalf("actual exact-subject absence unavailable: %v", err)
+	}
+	created, err := provider.CreateStaffIdentity(t.Context(), input)
+	if err != nil || created.ID != input.UserID {
+		t.Fatalf("actual frozen-subject creation unavailable: %v", err)
+	}
+	capture, err := json.Marshal(map[string]any{"input": input, "prepared_at": preparedAt, "created_at": created.CreatedAt,
+		"purpose": "isolated role-free source removal proof fixture; no production or UI acceptance"})
+	if err != nil {
+		t.Fatal("private recreation capture unavailable")
+	}
+	file, err := os.OpenFile(filepath.Join(root, "recovery-subject-"+input.UserID+".json"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal("private recreation capture unavailable")
+	}
+	_, writeErr := file.Write(capture)
+	closeErr := file.Close()
+	if writeErr != nil || closeErr != nil {
+		t.Fatal("private recreation capture incomplete")
+	}
+	attempts := 0
+	for attempts < 3 {
+		attempts++
+		account, err = provider.InspectStaffRecoverySubject(t.Context(), input, preparedAt)
+		if err == nil || !errors.Is(err, ErrIdentityUnavailable) {
+			break
+		}
+	}
+	t.Logf("matching subject fresh-read attempts: %d; creation dispatched once", attempts)
+	if err != nil || account.Disposition != "matching" || account.UserID != input.UserID || !account.CreatedAt.Equal(created.CreatedAt) {
+		t.Fatalf("actual matching orphan proof unavailable: %v", err)
+	}
+	call(http.MethodDelete, "/v2/users/"+input.UserID, nil)
+	account, err = provider.InspectStaffRecoverySubject(t.Context(), input, preparedAt)
+	if err != nil || account.Disposition != "removed" || account.UserID != input.UserID || !account.CreatedAt.Equal(created.CreatedAt) {
+		t.Fatalf("actual retained removal ownership unavailable: %v", err)
 	}
 }

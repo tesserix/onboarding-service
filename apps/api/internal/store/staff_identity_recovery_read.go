@@ -9,7 +9,7 @@ import (
 
 // ReadStaffIdentityRecovery retains original private facts under current operator scope.
 func (s *Store) ReadStaffIdentityRecovery(ctx context.Context, scope StaffIdentityRecoveryScope, operator string, event audit.Event) (StaffIdentityOperation, error) {
-	if operator == "" || event.ActorType != audit.ActorPlatform || event.ActorID != operator || event.ProductKey != scope.ProductKey || event.OrgID != scope.OrgID.String() || event.Target != scope.CommandID.String() || (event.Action != "staff.identity.recovery.read" && event.Action != "staff.identity.recovery.inspect") || event.Outcome != audit.OutcomeSuccess {
+	if operator == "" || event.ActorType != audit.ActorPlatform || event.ActorID != operator || event.ProductKey != scope.ProductKey || event.OrgID != scope.OrgID.String() || event.Target != scope.CommandID.String() || (event.Action != "staff.identity.recovery.read" && event.Action != "staff.identity.recovery.inspect" && event.Action != "staff.identity.recovery.source.observe") || event.Outcome != audit.OutcomeSuccess {
 		return StaffIdentityOperation{}, ErrConflict
 	}
 	var result StaffIdentityOperation
