@@ -245,8 +245,8 @@ func principalOf(c *gin.Context) authz.Principal {
 // bug, not a retry.
 func (d Deps) idempotency() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Observations must reauthorize and reread current proof, never replay authority.
-		if c.FullPath() == "/v1/orgs/:id/staff-identities/:commandId/observations" {
+		// Staff commands use durable claims and current authorization, never replay-cache authority.
+		if c.FullPath() == "/v1/orgs/:id/staff-identities/:commandId/observations" || c.FullPath() == "/v1/orgs/:id/staff-identities/:commandId" {
 			c.Next()
 			return
 		}

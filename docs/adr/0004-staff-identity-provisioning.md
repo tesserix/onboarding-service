@@ -71,6 +71,25 @@ Source links use this base:
 
 ## Durable command and recovery
 
+The first command also reserves its case-insensitive contact within the verified
+provider organisation. Persist an append-only root contact claim in the schema
+owner, atomically with preparation and audit. Its original command, source org
+and original email are retained by a composite foreign key. The key uses Go
+`strings.ToLower`, matching the inspected v4.15.3 event-store username constraint
+normalization; do not strip dots/plus suffixes or rewrite the frozen email.
+This is an owner command reservation, not an email-based identity match or an
+assertion that another source organisation permits that login. Provider policy
+can impose narrower/global uniqueness and must still be honored.
+
+Different commands cannot acquire the same root claim, including after uncertain
+dispatch or upstream deletion. Exact retries recover the original random fields
+and reservation. Existing commands without a retained claim fail closed for new
+dispatch and require reviewed classification; do not silently backfill historical
+facts. Root claims cannot be released by expiration or rewritten/deleted. A later
+operator-approved replacement must explicitly reference that root and preserve
+its prior command/outcome history; it must never be mistaken for a retry of the
+old dispatch. That operator replacement protocol remains an acceptance gate.
+
 Persist immutable command input, tenant, product machine, human actor, UUIDv7
 command ID, required reason, server-selected random provider ID and a random
 binding nonce **before** provider I/O. Do not use the existing expiring 24-hour

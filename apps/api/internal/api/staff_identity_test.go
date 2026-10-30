@@ -2,10 +2,12 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,6 +20,14 @@ import (
 
 type staffSource struct {
 	observe func(context.Context, zitadel.StaffIdentityInput, time.Time) (zitadel.StaffIdentityObservation, error)
+	create  func(context.Context, zitadel.StaffIdentityInput) (zitadel.StaffIdentityCreated, error)
+}
+
+func (s staffSource) CreateStaffIdentity(ctx context.Context, in zitadel.StaffIdentityInput) (zitadel.StaffIdentityCreated, error) {
+	if s.create == nil {
+		return zitadel.StaffIdentityCreated{}, zitadel.ErrIdentityUnavailable
+	}
+	return s.create(ctx, in)
 }
 
 func (s staffSource) ObserveStaffIdentity(ctx context.Context, in zitadel.StaffIdentityInput, created time.Time) (zitadel.StaffIdentityObservation, error) {
@@ -35,8 +45,11 @@ func preparedStaffIdentity(t *testing.T, h *harness) store.StaffIdentityCommand 
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		for _, table := range []string{"staff_identity_creations", "staff_identity_dispatches", "staff_identity_commands"} {
+		for _, table := range []string{"staff_identity_creations", "staff_identity_dispatches", "staff_identity_contact_claims", "staff_identity_commands"} {
 			column := "command_id"
+			if table == "staff_identity_contact_claims" {
+				column = "root_command_id"
+			}
 			if table == "staff_identity_commands" {
 				column = "id"
 			}
@@ -66,6 +79,43 @@ func preparedStaffIdentity(t *testing.T, h *harness) store.StaffIdentityCommand 
 
 func staffIdentityPath(c store.StaffIdentityCommand) string {
 	return "/v1/orgs/" + c.OrgID.String() + "/staff-identities/" + c.ID.String()
+}
+
+func TestStaffIdentityCreationDispatchesOnceAndRetainsExactCommand(t *testing.T) {
+	var calls atomic.Int32
+	var expected store.StaffIdentityCommand
+	source := staffSource{create: func(_ context.Context, in zitadel.StaffIdentityInput) (zitadel.StaffIdentityCreated, error) {
+		calls.Add(1)
+		if in.UserID != expected.ProviderUserID || in.OrganizationID != expected.ProviderOrgID || in.Email != expected.Email || in.BindingNonce != expected.BindingNonce {
+			t.Error("dispatch changed frozen source identity input")
+		}
+		return zitadel.StaffIdentityCreated{ID: in.UserID, CreatedAt: time.Now().UTC()}, nil
+	}}
+	h := newHarness(t, onboarding.WithStaffIdentity("planning-poker", source))
+	expected = preparedStaffIdentity(t, h)
+	raw, err := json.Marshal(map[string]string{"actor_subject": expected.ActorSubject, "email": expected.Email, "given_name": expected.GivenName, "family_name": expected.FamilyName, "reason": expected.Reason})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var first string
+	for attempt := range 2 {
+		rec := h.do(t, http.MethodPut, staffIdentityPath(expected), productToken, string(raw))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("creation attempt %d: status=%d body=%s", attempt, rec.Code, rec.Body.String())
+		}
+		body := decode(t, rec)
+		if body["command_state"] != "created" || body["user_id"] != expected.ProviderUserID {
+			t.Fatal("creation receipt lost exact provider identity")
+		}
+		if attempt == 0 {
+			first = rec.Body.String()
+		} else if rec.Body.String() != first {
+			t.Fatal("retry changed immutable creation receipt")
+		}
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("creation retried provider: calls=%d", calls.Load())
+	}
 }
 
 func dispatchedStaffIdentity(t *testing.T, h *harness) store.StaffIdentityCommand {

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -102,7 +103,16 @@ func (s *Store) PrepareStaffIdentity(ctx context.Context, c StaffIdentityCommand
 			return ErrIdempotencyConflict
 		}
 		if inserted.RowsAffected() == 0 {
-			return nil
+			return requireStaffIdentityContact(ctx, tx, result)
+		}
+		claim, err := tx.Exec(ctx, `INSERT INTO staff_identity_contact_claims
+ (root_command_id,provider_org_id,email,email_key) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
+			result.ID, result.ProviderOrgID, result.Email, strings.ToLower(result.Email))
+		if err != nil {
+			return err
+		}
+		if claim.RowsAffected() != 1 {
+			return ErrIdempotencyConflict
 		}
 		return appendAudit(ctx, tx, event)
 	})
@@ -127,6 +137,9 @@ func (s *Store) ClaimStaffIdentityDispatch(ctx context.Context, c StaffIdentityC
 		if !sameStaffIdentityCommand(original, c) {
 			return ErrConflict
 		}
+		if err := requireStaffIdentityContact(ctx, tx, original); err != nil {
+			return err
+		}
 		inserted, err := tx.Exec(ctx, `INSERT INTO staff_identity_dispatches(command_id)
  VALUES($1) ON CONFLICT(command_id) DO NOTHING`, c.ID)
 		if err != nil {
@@ -142,6 +155,19 @@ func (s *Store) ClaimStaffIdentityDispatch(ctx context.Context, c StaffIdentityC
 		return false, err
 	}
 	return claimed, nil
+}
+
+func requireStaffIdentityContact(ctx context.Context, tx pgx.Tx, c StaffIdentityCommand) error {
+	var claimed bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM staff_identity_contact_claims
+ WHERE root_command_id=$1 AND provider_org_id=$2 AND email=$3 AND email_key=$4)`,
+		c.ID, c.ProviderOrgID, c.Email, strings.ToLower(c.Email)).Scan(&claimed); err != nil {
+		return err
+	}
+	if !claimed {
+		return ErrIdempotencyConflict
+	}
+	return nil
 }
 
 func sameStaffIdentityRequest(a, b StaffIdentityCommand) bool {

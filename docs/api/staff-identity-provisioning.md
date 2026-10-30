@@ -1,7 +1,8 @@
 # Staff identity provisioning — draft owner contract
 
-Status: GET receipt and POST observation candidates are implemented and tested;
-PUT creation, bounded history and operator recovery remain in development.
+Status: PUT command creation, GET receipt and POST observation candidates are
+implemented and locally tested; bounded history and operator recovery remain
+in development.
 Not accepted or deployed. Implements only
 the identity-owner part of Helivanta A01; membership, Staff/person review,
 employment and scoped operational access remain separate owner decisions.
@@ -53,13 +54,21 @@ nulls, whitespace-only values, query overrides and non-UUIDv7 commands are
 rejected. Passwords, verified-contact flags, roles, provider IDs, callback URLs,
 source organisation and caller-selected correlation metadata are not inputs.
 
-The owner persists immutable command facts before provider I/O and commits one
-dispatch claim with audit. Only its winning caller may send one role-free human
+The owner persists immutable command facts and a case-insensitive contact root
+within the source organisation, atomically with mandatory audit. Original email
+is retained; the key uses the pinned provider's Go lowercase normalization,
+without dot/plus rewriting. A different command cannot bypass a retained root.
+Historical commands without roots cannot silently reserve or dispatch and need
+reviewed classification. Provider policy can impose additional login uniqueness.
+Roots are permanent; operator replacement must preserve explicit lineage.
+
+The owner then commits one dispatch claim with audit. Only its winning caller may send one role-free human
 creation. A concurrent/exact retry retains the original generated account ID and
 nonce. Changed input or actor conflicts. A possibly dispatched create is never
 automatically repeated, including after timeout, source absence or restart.
 
-Return `202` with a minimized command receipt: schema version, command ID,
+Return `200` when a creation receipt is durably recorded, or `202` for unresolved
+dispatch, with a minimized command receipt: schema version, command ID,
 tenant, product, initiating actor, `command_state` (`prepared`, `dispatched`,
 `created`), immutable preparation time and, only when durably recorded, the
 provider account ID and creation time. `dispatched` is an unresolved outcome;
@@ -67,6 +76,14 @@ it does not prove delivery, absence or failure. `created` proves retained
 creation, not current identity state, contact verification, account setup or any
 membership/employment permission. No source profile, contact, nonce or code is
 returned. Do not permit a different new command to hide an unresolved one.
+
+Source/registry scope is rechecked before dispatch and after provider I/O, then
+again for the authorized/audited receipt read. The 25-second total budget includes
+the provider's 15-second creation budget. Cancellation, withdrawal or audit failure
+cannot authorize redispatch. Unavailable/invalid source results retain a dispatched
+command rather than fabricated success. Observation may later retain only an
+exact matching creation. This request never verifies contact, sets a password,
+grants a role or activates membership.
 
 ## Protected state and fresh observation
 

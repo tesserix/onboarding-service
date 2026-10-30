@@ -6,9 +6,9 @@ port=${PGPORT:-5432}
 schema=$(mktemp)
 trap 'rm -f "$schema"' EXIT
 curl --fail --silent --show-error --location \
-  https://raw.githubusercontent.com/tesserix/tesserix-k8s/18d42798e92136b74bdf5ece8c4142c7890fd8d7/charts/apps/db-schema-bootstrap/schemas/global/global/onboarding_db.sql \
+  https://raw.githubusercontent.com/tesserix/tesserix-k8s/2214e7a7d6730570447bbe1f0ad8e341c5026c3b/charts/apps/db-schema-bootstrap/schemas/global/global/onboarding_db.sql \
   --output "$schema"
-printf '%s  %s\n' 706e027e603cd8b0a1320128b1c48da53106c90c421bcf359ec51a0aa7407954 "$schema" | shasum -a 256 -c >&2
+printf '%s  %s\n' 676f5c8676e48d9647b3d08e37a6e82ca84c91d22d8d4d343ee9bc9e03fafb63 "$schema" | shasum -a 256 -c >&2
 PGPASSWORD=local psql -h 127.0.0.1 -p "$port" -U local -d app_test -v ON_ERROR_STOP=1 >&2 <<'SQL'
 DO $$ BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'onboarding') THEN

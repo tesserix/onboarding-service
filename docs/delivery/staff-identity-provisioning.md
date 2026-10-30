@@ -4,7 +4,7 @@ Updated: 2026-10-31. Status: draft, incomplete; do not merge or deploy as comple
 provisioning. Owner [PR #22](https://github.com/tesserix/onboarding-service/pull/22)
 and canonical SQL [PR #1616](https://github.com/tesserix/tesserix-k8s/pull/1616)
 are coordinated with Helivanta A01–A12. Exact protected receipt and observation
-routes are implemented in the current candidate. Creation submission, human
+routes and creation PUT are implemented in the current candidate. Human
 authorization in Helivanta, recipient verification, membership and employment
 activation are not implemented by these endpoints.
 
@@ -30,7 +30,7 @@ does not restore access or permit another dispatch. Its later disclosure and
 eligibility still require current service/product/human authorization. No
 operator recovery endpoint is implemented by these store methods.
 
-The [API contract](../api/staff-identity-provisioning.md) records the new GET/POST
+The [API contract](../api/staff-identity-provisioning.md) records the new PUT/GET/POST
 routes. They require a current product machine matching the explicit configured
 canonical key, its active tenant entitlement, fresh owner identity proof and the
 original initiating actor/command binding. `hms` is only a fixture, not a default
@@ -44,15 +44,47 @@ POST reports current state separately and does not verify email or authenticate
 the recipient. Current-state observations bypass the HTTP replay cache.
 
 Canonical SQL is pinned to `tesserix-k8s` revision
-`18d42798e92136b74bdf5ece8c4142c7890fd8d7`; SHA-256
-`706e027e603cd8b0a1320128b1c48da53106c90c421bcf359ec51a0aa7407954`.
+`2214e7a7d6730570447bbe1f0ad8e341c5026c3b`; SHA-256
+`676f5c8676e48d9647b3d08e37a6e82ca84c91d22d8d4d343ee9bc9e03fafb63`.
 CI downloads that exact source and checks the hash; there is no copied schema
 master here. SQL was applied repeatedly only to an isolated PostgreSQL 16
-fixture. The application cannot UPDATE/DELETE/TRUNCATE its three ledger tables;
+fixture. The application cannot UPDATE/DELETE/TRUNCATE its four ledger tables;
 tenant/product deletion cannot erase their history. There is no destructive
 down migration: retain the facts on application rollback.
 
 ## Verification
+
+The creation increment first reproduced two failures: different commands could
+prepare the same case-insensitive contact, and creation PUT returned 404. Both
+now pass. Real database/router tests cover new command reservation and creation,
+exact/conflicting replay, eight concurrent requests with one provider create,
+uncertain timeout/invalid results retained as 202, read-only lost-response
+reconciliation, midflight entitlement withdrawal, replay-key withdrawal, closed
+UTF-8/required-field validation and minimized responses. Contact races retain
+one root/command, audit failure rolls both back, and historical commands cannot
+manufacture roots. New schema Helm/repository gates passed. The full local owner
+race/coverage suite passed (API 62.8%, store 58.7%), as did vet/build/lint (zero
+issues). Overall coverage is 54.1%; this is not an overall completion percentage.
+The final Linux/arm64 `helivanta-staff-onboarding-create:local` image build,
+redacted secret scan, shell validation and four Python delivery tests passed.
+Exact-head CI is not yet established for this uncommitted increment.
+
+An explicitly selected actual-provider test also passed against the separate
+loopback v4.15.3 fixture. Owner HTTP creation durably recorded a new role-free
+human, exact PUT replay retained its receipt, fresh observation left email
+unverified, and actual membership/user-grant searches both returned empty.
+Account evidence is stored privately as 0600 JSON with no password/verification
+override. This test uses fixture-supplied registry proof and is not normal-role
+UI/recipient acceptance. It fails rather than skips if its explicit loopback
+ledger, private fixture or owner-readable credential is unavailable:
+
+```sh
+ONBOARDING_TEST_DSN='postgres://postgres@127.0.0.1:32768/postgres?sslmode=disable' \
+STAFF_PROVIDER_FIXTURE_PATH=/absolute/private/local-provider-fixture \
+mise exec go@1.27.3 -- go test -race -tags staff_provider_fixture \
+  ./internal/api -run TestStaffIdentityCreationUsesActualLocalProvider -count=1
+mise exec -- golangci-lint run --build-tags staff_provider_fixture ./...
+```
 
 Tests first reproduced missing public methods and absent canonical relations.
 Provider regressions also reproduced acceptance of duplicate proof fields and
@@ -202,8 +234,8 @@ mise exec -- golangci-lint run ./...
 These are owner/provider acceptance checks; no new normal-role UI journey,
 consumer activation, schema deployment or production release is claimed.
 
-- Creation submission with duplicate/contact reservation, current source and
-  actor boundaries, at-most-once dispatch and full uncertain-outcome handling.
+- Real provider/consumer acceptance of creation PUT and reservations, including
+  current human decisions and accountable handling of unresolved outcomes.
 - Final review/CI and consumer acceptance of the event-store-backed provider
   freshness correction, including the configured provider version/capability
   and current organisation/registry proof; projected rows alone are insufficient.

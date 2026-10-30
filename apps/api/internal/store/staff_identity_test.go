@@ -29,8 +29,11 @@ func staffIdentityFixture(t *testing.T) (*Store, StaffIdentityCommand, audit.Eve
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		for _, table := range []string{"staff_identity_creations", "staff_identity_dispatches", "staff_identity_commands"} {
+		for _, table := range []string{"staff_identity_creations", "staff_identity_dispatches", "staff_identity_contact_claims", "staff_identity_commands"} {
 			column := "command_id"
+			if table == "staff_identity_contact_claims" {
+				column = "root_command_id"
+			}
 			if table == "staff_identity_commands" {
 				column = "id"
 			}
@@ -109,7 +112,7 @@ func TestStaffIdentityLedgerCannotBeRewrittenByApplicationRole(t *testing.T) {
 	if _, err := s.RecordStaffIdentityCreation(ctx, prepared, time.Now().UTC(), event); err != nil {
 		t.Fatal(err)
 	}
-	for _, table := range []string{"staff_identity_commands", "staff_identity_dispatches", "staff_identity_creations"} {
+	for _, table := range []string{"staff_identity_commands", "staff_identity_dispatches", "staff_identity_creations", "staff_identity_contact_claims"} {
 		for _, command := range []string{"UPDATE " + table + " SET created_at=now()", "DELETE FROM " + table, "TRUNCATE " + table} {
 			tx, err := s.pool.Begin(ctx)
 			if err != nil {
@@ -380,6 +383,110 @@ func TestStaffIdentityCreationReceiptReplaysWithoutTimestampPrecisionLoss(t *tes
 	records, err := s.AuditSearch(ctx, AuditFilter{RequestID: command.ID.String(), Action: event.Action}, 10)
 	if err != nil || len(records) != 1 {
 		t.Fatalf("creation audit is not exactly once: count=%d err=%v", len(records), err)
+	}
+}
+
+func TestStaffIdentityPreparationReservesContactAcrossDifferentCommands(t *testing.T) {
+	s, first, event := staffIdentityFixture(t)
+	first.Email = "Staff.Contact@example.invalid"
+	if _, err := s.PrepareStaffIdentity(t.Context(), first, event); err != nil {
+		t.Fatal(err)
+	}
+	second := first
+	second.ID = uuid.Must(uuid.NewV7())
+	second.ProviderUserID = "TEST-different-staff-account"
+	second.BindingNonce = "TEST_different_identity_command_nonce_opaque"
+	second.Email = "staff.contact@EXAMPLE.invalid"
+	event.Target = second.ID.String()
+	event.RequestID = second.ID.String()
+	if _, err := s.PrepareStaffIdentity(t.Context(), second, event); !errors.Is(err, ErrIdempotencyConflict) {
+		t.Fatalf("different command duplicated a reserved contact: %v", err)
+	}
+	var count int
+	if err := s.pool.QueryRow(t.Context(), `SELECT count(*) FROM staff_identity_commands`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("failed reservation retained a competing command: count=%d err=%v", count, err)
+	}
+}
+
+func TestStaffIdentityContactReservationHasOneConcurrentRoot(t *testing.T) {
+	s, base, event := staffIdentityFixture(t)
+	const contenders = 8
+	commands := make([]StaffIdentityCommand, contenders)
+	ids := make([]uuid.UUID, contenders)
+	for i := range commands {
+		commands[i] = base
+		commands[i].ID = uuid.Must(uuid.NewV7())
+		commands[i].ProviderUserID = fmt.Sprintf("TEST-contact-race-%d", i)
+		commands[i].BindingNonce = fmt.Sprintf("TEST-contact-race-nonce-%d", i)
+		ids[i] = commands[i].ID
+	}
+	t.Cleanup(func() {
+		for _, statement := range []string{`DELETE FROM staff_identity_contact_claims WHERE root_command_id=ANY($1)`, `DELETE FROM staff_identity_commands WHERE id=ANY($1)`} {
+			if _, err := s.pool.Exec(context.Background(), statement, ids); err != nil {
+				t.Error(err)
+			}
+		}
+	})
+	var winners atomic.Int32
+	var wg sync.WaitGroup
+	for _, command := range commands {
+		wg.Go(func() {
+			a := event
+			a.Target = command.ID.String()
+			a.RequestID = command.ID.String()
+			_, err := s.PrepareStaffIdentity(t.Context(), command, a)
+			if err == nil {
+				winners.Add(1)
+			} else if !errors.Is(err, ErrIdempotencyConflict) {
+				t.Errorf("contact race failed unexpectedly: %v", err)
+			}
+		})
+	}
+	wg.Wait()
+	var roots, retained int
+	if err := s.pool.QueryRow(t.Context(), `SELECT count(*) FROM staff_identity_contact_claims`).Scan(&roots); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.pool.QueryRow(t.Context(), `SELECT count(*) FROM staff_identity_commands`).Scan(&retained); err != nil {
+		t.Fatal(err)
+	}
+	if winners.Load() != 1 || roots != 1 || retained != 1 {
+		t.Fatalf("contact race: winners=%d roots=%d commands=%d", winners.Load(), roots, retained)
+	}
+}
+
+func TestStaffIdentityContactReservationRollsBackOnAuditFailure(t *testing.T) {
+	s, command, event := staffIdentityFixture(t)
+	event.Outcome = "INVALID"
+	if _, err := s.PrepareStaffIdentity(t.Context(), command, event); err == nil {
+		t.Fatal("preparation succeeded without mandatory audit")
+	}
+	for _, table := range []string{"staff_identity_commands", "staff_identity_contact_claims"} {
+		var count int
+		if err := s.pool.QueryRow(t.Context(), "SELECT count(*) FROM "+table).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("failed audit retained %s: count=%d err=%v", table, count, err)
+		}
+	}
+}
+
+func TestStaffIdentityHistoricalCommandCannotAcquireMissingContactClaim(t *testing.T) {
+	s, command, event := staffIdentityFixture(t)
+	prepared, err := s.PrepareStaffIdentity(t.Context(), command, event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(t.Context(), `DELETE FROM staff_identity_contact_claims WHERE root_command_id=$1`, command.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.PrepareStaffIdentity(t.Context(), command, event); !errors.Is(err, ErrIdempotencyConflict) {
+		t.Fatalf("historical command acquired a new root: %v", err)
+	}
+	if claimed, err := s.ClaimStaffIdentityDispatch(t.Context(), prepared, event); !errors.Is(err, ErrIdempotencyConflict) || claimed {
+		t.Fatalf("unclassified historical command dispatched: claimed=%v err=%v", claimed, err)
+	}
+	var roots int
+	if err := s.pool.QueryRow(t.Context(), `SELECT count(*) FROM staff_identity_contact_claims`).Scan(&roots); err != nil || roots != 0 {
+		t.Fatalf("historical root was manufactured: count=%d err=%v", roots, err)
 	}
 }
 
