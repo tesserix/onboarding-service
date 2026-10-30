@@ -8,6 +8,32 @@ routes, creation PUT and bounded command activity are implemented in the current
 authorization in Helivanta, recipient verification, membership and employment
 activation are not implemented by these endpoints.
 
+## Actual recipient contact UI — 2026-10-31
+
+An isolated actual v4.15.3 provider redirected to an absent Login V2 service.
+A separate upstream v4.15.3 Login V2 container, pinned by image digest, and a
+local-only Mailpit capture unblocked the normal recipient flow. The dedicated
+login-client machine has only IAM_LOGIN_CLIENT and a private two-day credential;
+original fixture feature/SMTP state was retained before local configuration.
+Neither the production provider nor a Staff operational grant was changed.
+
+Browser actions on an existing role-free creation entered its login name,
+requested a fresh invitation, read the delivered email and submitted its code.
+Fresh provider reads confirmed active state and verified email. The unchanged
+owner observer then accepted that current state and the exact retained birth.
+Fresh provider membership/user-grant queries both returned zero results. No
+password, passkey or verified-contact override was set by the test. Code/token
+values and provider bodies remain private and are not consumer responses.
+
+The next visible recipient screen is Choose authentication method. Authenticator
+setup and subsequent sign-in are pending; browser credential entry requires a
+human handoff. This proves actual local provider delivery/contact UI, with
+fixture-supplied registry scope. It does not prove canonical production-source
+registration, HMS Admin initiation, independent reviewer decisions, membership
+activation or complete provisioning. Private evidence and pinned Compose JSON
+are retained in the existing authorized QA fixture directory; no fixture secrets
+or account payloads are committed.
+
 ## Implemented and tested
 
 The provider protocol creates a human without roles, passwords or a verified
@@ -282,8 +308,10 @@ consumer activation, schema deployment or production release is claimed.
 - Consumer acceptance of private command activity and attributable operator recovery,
   including replacement/conflict/orphan handling. A missing provider user is
   never a reason to send the same create again.
-- Real recipient contact verification and account setup through configured
-  provider delivery and normal UI. Synthetic `isVerified` fixtures are not proof.
+- Complete recipient authenticator setup/sign-in and normal HMS initiation/
+  reviewer integration. Actual local provider delivery/contact UI passed above;
+  production-source delivery and full account-setup acceptance remain open.
+  Synthetic `isVerified` fixtures are not proof.
 - Reviewed existing-identity resolution and historical Staff/link/grant
   classification, followed by least-privilege Helivanta membership and independent
   current-person linking/review; no creation receipt activates operational access.
