@@ -67,7 +67,9 @@ race/coverage suite passed (API 62.8%, store 58.7%), as did vet/build/lint (zero
 issues). Overall coverage is 54.1%; this is not an overall completion percentage.
 The final Linux/arm64 `helivanta-staff-onboarding-create:local` image build,
 redacted secret scan, shell validation and four Python delivery tests passed.
-Exact-head CI is not yet established for this uncommitted increment.
+At the local validation checkpoint, exact-head CI was not yet established.
+The runtime creation increment was then committed/pushed as `f7bc168`; its
+CI is [41076590905](https://github.com/tesserix/onboarding-service/actions/runs/41076590905).
 
 An explicitly selected actual-provider test also passed against the separate
 loopback v4.15.3 fixture. Owner HTTP creation durably recorded a new role-free
