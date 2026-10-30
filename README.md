@@ -55,6 +55,7 @@ navigation, session/BFF and browser tests run in `tesserix-home`.
 | `CONSOLE_PROJECT_ID` / `CONSOLE_CLIENT_ID` | Exact platform console project and OAuth client; both required at cutover. |
 | `LEGACY_CONSOLE_ENABLED` | Set `false` in production: reject old sealed cookies and remove Google login/callback routes. Compatibility default remains `true` for an explicitly reviewed recovery rollout. |
 | `HOSPITAL_PROVISIONING_ENABLED` | Enables private operator-backed hospital claims/activation. |
+| `STAFF_IDENTITY_PRODUCT_KEY` | Explicit canonical registered product for protected Staff identity receipts/observations. Empty disables these operations; no `hms` or branding default is inferred. Registration under issue #12 remains required before activation. |
 | `HELIVANTA_PROVISIONING_URL` | Reviewed Helivanta workload endpoint. |
 | `DB_MAX_CONNS` / `PORT` | Pool sizing / API listener. |
 

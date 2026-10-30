@@ -23,6 +23,8 @@ func (d Deps) registerRoutes(g *gin.RouterGroup) {
 	g.POST("/orgs/enrolments", d.enrolOrg)
 	g.GET("/orgs/:id", d.getOrg)
 	g.GET("/orgs/:id/identity", d.getOrgIdentity)
+	g.GET("/orgs/:id/staff-identities/:commandId", d.getStaffIdentity)
+	g.POST("/orgs/:id/staff-identities/:commandId/observations", d.observeStaffIdentity)
 	g.POST("/orgs/:id/deactivate", d.setOrgState("inactive"))
 	g.POST("/orgs/:id/reactivate", d.setOrgState("active"))
 

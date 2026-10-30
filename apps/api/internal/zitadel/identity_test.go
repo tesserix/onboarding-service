@@ -16,6 +16,33 @@ import (
 
 const identityTenant = "11111111-1111-4111-8111-111111111111"
 
+func TestVerifyOrganizationRejectsAmbiguousJSONSource(t *testing.T) {
+	for _, kind := range []string{"duplicate", "case alias", "unicode fold alias", "invalid UTF8", "excessive nesting"} {
+		t.Run(kind, func(t *testing.T) {
+			replies := identityResponses()
+			path := "/admin/v1/orgs/org-1"
+			body := replies[path]
+			switch kind {
+			case "duplicate":
+				body = strings.Replace(body, `"state":"ORG_STATE_ACTIVE"`, `"state":"ORG_STATE_INACTIVE","state":"ORG_STATE_ACTIVE"`, 1)
+			case "case alias":
+				body = strings.Replace(body, `"state":"ORG_STATE_ACTIVE"`, `"State":"ORG_STATE_INACTIVE","state":"ORG_STATE_ACTIVE"`, 1)
+			case "unicode fold alias":
+				body = strings.Replace(body, `"state":"ORG_STATE_ACTIVE"`, `"ſtate":"ORG_STATE_INACTIVE","state":"ORG_STATE_ACTIVE"`, 1)
+			case "invalid UTF8":
+				body = strings.Replace(body, "PRIVATE_BUSINESS_NAME", string([]byte{0xff}), 1)
+			case "excessive nesting":
+				body = strings.TrimSuffix(body, "}") + `,"unused":` + strings.Repeat("[", 40) + "0" + strings.Repeat("]", 40) + "}"
+			}
+			replies[path] = body
+			got, err := identityClient(t, replies).VerifyOrganization(context.Background(), "org-1", identityTenant, "project-1")
+			if !errors.Is(err, ErrIdentityUnavailable) || got.State != "" {
+				t.Fatal("ambiguous source JSON established organisation identity")
+			}
+		})
+	}
+}
+
 func identityResponses() map[string]string {
 	return map[string]string{
 		"/admin/v1/orgs/org-1":                             `{"org":{"id":"org-1","state":"ORG_STATE_ACTIVE","name":"PRIVATE_BUSINESS_NAME","details":{"sequence":"101"}}}`,

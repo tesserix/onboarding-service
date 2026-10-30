@@ -1,8 +1,9 @@
 # ADR 0004: Durable role-free Staff identity provisioning
 
-Status: implementation in progress. The provider protocol and durable ledger
-have local tests; the endpoint, reconciliation/operator recovery and consumer UI
-remain open. No live provisioning authority is established by this document. Consumer:
+Status: implementation in progress. Provider protocol, durable ledger and exact
+receipt/observation endpoints have local tests. Creation submission, bounded
+history, operator recovery and consumer UI remain open. No live provisioning
+authority is established by this document. Consumer:
 `tesserix/helivanta#417`, `#1053` and the A01–A12 Staff acceptance plan.
 
 ## Ownership, scope and budget
@@ -14,7 +15,10 @@ human account must assign no organisation owner/member role, project role,
 Helivanta membership, employment, hospital grant or clinical privilege.
 `Service.AddMember` defaults to `ORG_OWNER`; it is not the Staff account API.
 
-Use the existing registered `hms` product machine and current active entitlement.
+Use the explicitly configured, canonically registered product machine and its
+current active entitlement. `hms` is a test fixture, not a production default.
+Resolve the production key through canonical onboarding under owner issue #12;
+do not infer it from branding or alias it to `helivanta`.
 Resolve the source organisation through the same fresh owner verification as
 `ProductIdentity`, before dispatch and before releasing a current observation.
 Browser input cannot select an IdP organisation or product, claim a verified
@@ -32,6 +36,12 @@ Target 99.9% API availability; ordinary receipt reads target p99 300 ms and
 provider observations have a two-second total deadline. Provider creation may
 remain unresolved after that deadline; HTTP success must not invent certainty.
 No additional service, broker or fixed infrastructure is proposed.
+
+The Staff identity product key is explicitly configured as
+`STAFF_IDENTITY_PRODUCT_KEY`, with no production default. Current private
+receipt reads have a three-second service budget; observations have six seconds
+including repeated current registry/source verification, with two seconds for
+the provider user/metadata reads. These are bounds, not measured latency SLOs.
 
 ## Provider evidence and retry constraint
 

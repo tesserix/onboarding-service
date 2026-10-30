@@ -32,6 +32,20 @@ type StaffIdentityInput struct {
 
 func (StaffIdentityInput) String() string { return "[redacted staff identity input]" }
 
+// Validate rejects invalid immutable input before a command can claim dispatch.
+func (in StaffIdentityInput) Validate() error {
+	address, err := mail.ParseAddress(in.Email)
+	if err != nil || address.Address != in.Email || len(in.Email) > 200 || !identitySourceID.MatchString(in.OrganizationID) || !identitySourceID.MatchString(in.UserID) || !identitySourceID.MatchString(in.BindingNonce) || len(in.BindingNonce) < 16 {
+		return ErrStaffIdentityInvalid
+	}
+	for _, name := range []string{in.GivenName, in.FamilyName} {
+		if !utf8.ValidString(name) || strings.TrimSpace(name) != name || name == "" || utf8.RuneCountInString(name) > 200 || strings.ContainsFunc(name, unicode.IsControl) {
+			return ErrStaffIdentityInvalid
+		}
+	}
+	return nil
+}
+
 // StaffIdentityCreated records creation only, never contact or access eligibility.
 type StaffIdentityCreated struct {
 	ID        string
@@ -41,14 +55,8 @@ type StaffIdentityCreated struct {
 // CreateStaffIdentity dispatches once; callers must persist the dispatch claim first.
 func (c *Client) CreateStaffIdentity(ctx context.Context, in StaffIdentityInput) (StaffIdentityCreated, error) {
 	empty := StaffIdentityCreated{}
-	address, err := mail.ParseAddress(in.Email)
-	if err != nil || address.Address != in.Email || len(in.Email) > 200 || !identitySourceID.MatchString(in.OrganizationID) || !identitySourceID.MatchString(in.UserID) || !identitySourceID.MatchString(in.BindingNonce) || len(in.BindingNonce) < 16 {
-		return empty, ErrStaffIdentityInvalid
-	}
-	for _, name := range []string{in.GivenName, in.FamilyName} {
-		if !utf8.ValidString(name) || strings.TrimSpace(name) != name || name == "" || len(name) > 200 || strings.ContainsFunc(name, unicode.IsControl) {
-			return empty, ErrStaffIdentityInvalid
-		}
+	if err := in.Validate(); err != nil {
+		return empty, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()

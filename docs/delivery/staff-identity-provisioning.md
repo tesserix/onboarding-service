@@ -1,10 +1,12 @@
 # Staff identity provisioning implementation checkpoint
 
-Date: 2026-10-30. Status: draft, incomplete; do not merge or deploy as completed
+Updated: 2026-10-31. Status: draft, incomplete; do not merge or deploy as completed
 provisioning. Owner [PR #22](https://github.com/tesserix/onboarding-service/pull/22)
 and canonical SQL [PR #1616](https://github.com/tesserix/tesserix-k8s/pull/1616)
-are coordinated with Helivanta A01–A12. This checkpoint implements no HTTP route,
-human authorization, recipient verification, membership or employment action.
+are coordinated with Helivanta A01–A12. Exact protected receipt and observation
+routes are implemented in the current candidate. Creation submission, human
+authorization in Helivanta, recipient verification, membership and employment
+activation are not implemented by these endpoints.
 
 ## Implemented and tested
 
@@ -26,7 +28,20 @@ preserve source timestamp nanoseconds, and cannot be silently replaced.
 Retaining an already-dispatched provider outcome after entitlement withdrawal
 does not restore access or permit another dispatch. Its later disclosure and
 eligibility still require current service/product/human authorization. No
-observation or operator recovery endpoint is implemented by these store methods.
+operator recovery endpoint is implemented by these store methods.
+
+The [API contract](../api/staff-identity-provisioning.md) records the new GET/POST
+routes. They require a current product machine matching the explicit configured
+canonical key, its active tenant entitlement, fresh owner identity proof and the
+original initiating actor/command binding. `hms` is only a fixture, not a default
+or an alias for production registration. Owner issue #12 remains open.
+
+The provider observer binds account/organisation/contact/nonce and exact birth
+time, rereading the user after metadata. Current owner scope is rechecked after
+provider I/O and again under locks before disclosure. An uncertain creation can
+be reconciled, but never dispatched again. GET releases only retained facts;
+POST reports current state separately and does not verify email or authenticate
+the recipient. Current-state observations bypass the HTTP replay cache.
 
 Canonical SQL is pinned to `tesserix-k8s` revision
 `18d42798e92136b74bdf5ece8c4142c7890fd8d7`; SHA-256
@@ -79,17 +94,53 @@ image digests. Module/workspace/CI/container now consistently use Go 1.27.3 and
 currently retrievable digest-pinned shared images; no scan exemption was added.
 Record the final current-head CI separately from these local results.
 
+The next increment reproduced and fixed conflicting JSON source fields being
+accepted as active, a denied request held beyond the four-second watchdog by an
+unbounded audit lock, a generic HTTP cached observation surviving both changed
+verification and entitlement withdrawal, and valid 200-character Unicode names
+being rejected by a byte limit. Protected read tests cover current actor/scope,
+audit rollback and private response minimization. Source proof tests cover
+version/state changes, contact/owner/nonce mismatch, retained birth mismatch,
+inactive/unverified/missing/deleted accounts, redirects and cancellation.
+Middleware fault/retry tests use real PostgreSQL; the IdP is an external fixture.
+No real recipient contact-verification UI acceptance follows from those tests.
+
+At `87fc47f`, owner CI `41052581748` passed all applicable gates, including image
+build and vulnerability audit. Schema PR #1616 passed all applicable CI gates at
+`18d42798`. These baselines do not establish the next candidate's CI.
+
+The final local full owner race suite passed at 53.7% overall coverage, including
+API 61.7%, store 58.0%, provider 83.7% and configuration 93.8%. Full vet/build/lint
+passed with zero issues; Python delivery tests, actionlint, shell syntax, redacted
+Gitleaks and a fresh Linux/arm64 image build passed. The dependency symbol scan
+again found no affected-code vulnerabilities, with the same three uncalled
+required-module advisories.
+
+Additional primary-source review found that v4.15.3
+`internal/api/grpc/user/v2/user_query.go:GetUserByID` requests triggering through
+`GetUserByIDWithPermission(ctx, true, ...)`, while management metadata reads call
+`GetUserMetadataByKey(ctx, true, ...)`. The metadata query helper logs trigger
+errors and then executes its SQL read; the user path calls a void trigger helper
+before its query. Matching row versions across reads is therefore not proof that
+projection synchronization succeeded. This is an unclosed provider-failure
+acceptance gate, not a reproduced live exploit. Add the actual local fault test
+and authoritative source revision/watermark proof before using a positive
+observation for enrollment or calling identity eligibility complete. The source
+still returns minimized observations; no membership/permission activation exists
+in these routes.
+
 ## Remaining acceptance
 
-- Authenticated product-machine endpoint with fresh canonical identity proof,
-  current registered `hms` product/entitlement checks and current human authority
-  enforced in Helivanta before and after the owner request.
-- Protected bounded receipt/history reads and exact request/account/tenant
-  binding; private contact disclosure must be explicitly authorized and audited.
-- Provider observation matching ID, organisation, contact, nonce and creation
-  provenance; read-only reconciliation after uncertain dispatch and explicit
-  attributable operator recovery. A missing provider user is never a reason to
-  send the same create again.
+- Creation submission with duplicate/contact reservation, current source and
+  actor boundaries, at-most-once dispatch and full uncertain-outcome handling.
+- Reproduced provider projection-failure behavior and authoritative
+  synchronization/revision proof for positive eligibility; do not substitute
+  repeated stable query reads for that evidence.
+- Current human authority in Helivanta before and after owner requests, its
+  canonical client/Global API contracts and exact account/tenant UI binding.
+- Protected bounded command history and attributable operator recovery,
+  including replacement/conflict/orphan handling. A missing provider user is
+  never a reason to send the same create again.
 - Real recipient contact verification and account setup through configured
   provider delivery and normal UI. Synthetic `isVerified` fixtures are not proof.
 - Reviewed existing-identity resolution and historical Staff/link/grant

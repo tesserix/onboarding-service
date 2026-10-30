@@ -196,3 +196,14 @@ func TestCreateStaffIdentityRejectsInvalidImmutableInputWithoutProviderCalls(t *
 		}
 	}
 }
+
+func TestStaffIdentityNamesUseProviderCharacterLimits(t *testing.T) {
+	in := StaffIdentityInput{OrganizationID: "org-1", UserID: "TEST-staff-account", Email: "synthetic@example.invalid", GivenName: strings.Repeat("अ", 200), FamilyName: "Staff", BindingNonce: "TEST-binding-nonce"}
+	if err := in.Validate(); err != nil {
+		t.Fatalf("valid 200-character name was rejected by its byte length: %v", err)
+	}
+	in.GivenName += "अ"
+	if err := in.Validate(); !errors.Is(err, ErrStaffIdentityInvalid) {
+		t.Fatal("name above the provider character limit was accepted")
+	}
+}

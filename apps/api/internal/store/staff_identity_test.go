@@ -265,6 +265,94 @@ func TestStaffIdentityReceiptRequiresDispatchAndAtomicAudit(t *testing.T) {
 	}
 }
 
+func TestStaffIdentityReadIsScopedAuditedAndReportsRetainedState(t *testing.T) {
+	s, command, event := staffIdentityFixture(t)
+	ctx := context.Background()
+	prepared, err := s.PrepareStaffIdentity(ctx, command, event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := StaffIdentityScope{
+		CommandID: command.ID, OrgID: command.OrgID, ProductKey: command.ProductKey,
+		MachineSubject: command.MachineSubject, ActorSubject: command.ActorSubject,
+		ProviderOrgID: command.ProviderOrgID, ProviderProjectID: command.ProviderProjectID,
+	}
+	readEvent := event
+	readEvent.Action = "staff.identity.read"
+	got, err := s.ReadStaffIdentity(ctx, scope, readEvent)
+	if err != nil || got.Command.ProviderUserID != prepared.ProviderUserID || got.DispatchedAt != nil || got.Creation != nil {
+		t.Fatalf("prepared receipt was not retained: %v", err)
+	}
+	event.Action = "staff.identity.dispatch"
+	if claimed, err := s.ClaimStaffIdentityDispatch(ctx, prepared, event); err != nil || !claimed {
+		t.Fatalf("dispatch: %v", err)
+	}
+	got, err = s.ReadStaffIdentity(ctx, scope, readEvent)
+	if err != nil || got.DispatchedAt == nil || got.DispatchedAt.IsZero() || got.Creation != nil {
+		t.Fatalf("uncertain dispatch was reported as creation: %v", err)
+	}
+	created := time.Date(2026, 10, 30, 10, 0, 0, 123456789, time.UTC)
+	event.Action = "staff.identity.created"
+	if _, err := s.RecordStaffIdentityCreation(ctx, prepared, created, event); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.ReadStaffIdentity(ctx, scope, readEvent)
+	if err != nil || got.DispatchedAt == nil || got.Creation == nil || !got.Creation.ProviderCreatedAt.Equal(created) || got.Creation.ProviderUserID != prepared.ProviderUserID {
+		t.Fatalf("immutable creation state was not returned: %v", err)
+	}
+	records, err := s.AuditSearch(ctx, AuditFilter{RequestID: command.ID.String(), Action: readEvent.Action}, 10)
+	if err != nil || len(records) != 3 {
+		t.Fatalf("private receipt disclosure was not audited: count=%d err=%v", len(records), err)
+	}
+}
+
+func TestStaffIdentityReadDeniesChangedActorScopeAndAuditFailure(t *testing.T) {
+	for _, kind := range []string{"actor", "machine", "tenant", "product", "command", "withdrawn entitlement", "failed audit"} {
+		t.Run(kind, func(t *testing.T) {
+			s, command, event := staffIdentityFixture(t)
+			ctx := context.Background()
+			if _, err := s.PrepareStaffIdentity(ctx, command, event); err != nil {
+				t.Fatal(err)
+			}
+			scope := StaffIdentityScope{CommandID: command.ID, OrgID: command.OrgID,
+				ProductKey: command.ProductKey, MachineSubject: command.MachineSubject,
+				ActorSubject: command.ActorSubject, ProviderOrgID: command.ProviderOrgID,
+				ProviderProjectID: command.ProviderProjectID}
+			event.Action = "staff.identity.read"
+			switch kind {
+			case "actor":
+				scope.ActorSubject = "TEST-other-admin"
+			case "machine":
+				scope.MachineSubject = "TEST-other-machine"
+			case "tenant":
+				scope.OrgID = uuid.New()
+			case "product":
+				scope.ProductKey = "TEST-other-product"
+			case "command":
+				id, err := uuid.NewV7()
+				if err != nil {
+					t.Fatal(err)
+				}
+				scope.CommandID = id
+			case "withdrawn entitlement":
+				if err := s.RevokeGrant(ctx, command.OrgID, command.ProductKey); err != nil {
+					t.Fatal(err)
+				}
+			case "failed audit":
+				event.Outcome = "TEST-invalid-outcome"
+			}
+			got, err := s.ReadStaffIdentity(ctx, scope, event)
+			if err == nil || (kind != "failed audit" && !errors.Is(err, ErrNotFound)) || got.Command.ID != uuid.Nil || got.Command.Email != "" || got.Creation != nil {
+				t.Fatalf("unauthorized or unaudited read released private state: %v", err)
+			}
+			records, err := s.AuditSearch(ctx, AuditFilter{RequestID: command.ID.String(), Action: event.Action}, 10)
+			if err != nil || len(records) != 0 {
+				t.Fatalf("failed disclosure retained success audit: count=%d err=%v", len(records), err)
+			}
+		})
+	}
+}
+
 func TestStaffIdentityCreationReceiptReplaysWithoutTimestampPrecisionLoss(t *testing.T) {
 	s, command, event := staffIdentityFixture(t)
 	ctx := context.Background()

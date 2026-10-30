@@ -76,8 +76,11 @@ func run(log *slog.Logger) error {
 	}
 
 	identity := onboarding.ZitadelIdentity{Client: client}
-	svc := onboarding.New(st, identity, authz.New(st), log,
-		onboarding.WithRegistryProjectID(cfg.RegistryProjectID))
+	serviceOptions := []onboarding.Option{onboarding.WithRegistryProjectID(cfg.RegistryProjectID)}
+	if cfg.StaffIdentityProductKey != "" {
+		serviceOptions = append(serviceOptions, onboarding.WithStaffIdentity(cfg.StaffIdentityProductKey, client))
+	}
+	svc := onboarding.New(st, identity, authz.New(st), log, serviceOptions...)
 
 	var hospitalWorkloads api.WorkloadVerifier
 	if os.Getenv("HOSPITAL_PROVISIONING_ENABLED") == "true" {
@@ -98,7 +101,8 @@ func run(log *slog.Logger) error {
 		if err != nil || u.Scheme != "https" || u.Host != "helivanta.app" || u.Path != "/api/internal/v1/hospital-enrolments" || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
 			return errors.New("invalid Helivanta provisioning destination")
 		}
-		svc = onboarding.New(st, identity, authz.New(st), log, onboarding.WithRegistryProjectID(cfg.RegistryProjectID), onboarding.WithHospitals(onboarding.HospitalConfig{Claims: hospitalclaims.New(kube, "identity-operator"), Product: "helivanta", HelivantaURL: target, HelivantaTokenFile: "/var/run/helivanta-provisioning/token"}))
+		serviceOptions = append(serviceOptions, onboarding.WithHospitals(onboarding.HospitalConfig{Claims: hospitalclaims.New(kube, "identity-operator"), Product: "helivanta", HelivantaURL: target, HelivantaTokenFile: "/var/run/helivanta-provisioning/token"}))
+		svc = onboarding.New(st, identity, authz.New(st), log, serviceOptions...)
 	}
 
 	verifier, err := auth.NewJWKSVerifier(ctx, cfg.ZitadelIssuer, cfg.ZitadelJWKSURL, cfg.Audience, http.DefaultClient)
