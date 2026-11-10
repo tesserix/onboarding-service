@@ -15,19 +15,23 @@ import (
 
 // CustomerSignup is an immutable submitted command and its mutable delivery state.
 type CustomerSignup struct {
-	ID             uuid.UUID
-	TenantID       uuid.UUID
-	ResourceID     uuid.UUID
-	OwnerSubject   string
-	ReceiptHash    []byte
-	IntentHash     []byte
-	OwnerEmailHash []byte
-	Input          customercontract.Signup
-	State          string
-	Attempts       int
-	RetryAt        time.Time
-	LeaseUntil     *time.Time
-	ErrorCode      string
+	ID               uuid.UUID
+	TenantID         uuid.UUID
+	ResourceID       uuid.UUID
+	OwnerSubject     string
+	ReceiptHash      []byte
+	ReceiptExpiresAt time.Time
+	ReceiptVerified  bool
+	ReceiptActive    bool
+	LeaseID          *uuid.UUID
+	IntentHash       []byte
+	OwnerEmailHash   []byte
+	Input            customercontract.Signup
+	State            string
+	Attempts         int
+	RetryAt          time.Time
+	LeaseUntil       *time.Time
+	ErrorCode        string
 }
 
 // ReserveCustomerSignup persists intent and its audit before remote provisioning.
@@ -46,7 +50,7 @@ func (s *Store) ReserveCustomerSignup(ctx context.Context, in CustomerSignup, ev
 		}
 		prior, err := scanCustomerSignup(tx.QueryRow(ctx, `SELECT `+customerSignupColumns+` FROM customer_signups WHERE id=$1 FOR UPDATE`, in.ID))
 		if err == nil {
-			if subtle.ConstantTimeCompare(prior.ReceiptHash, in.ReceiptHash) != 1 {
+			if !prior.ReceiptActive || subtle.ConstantTimeCompare(prior.ReceiptHash, in.ReceiptHash) != 1 {
 				return ErrNotFound
 			}
 			if subtle.ConstantTimeCompare(prior.IntentHash, in.IntentHash) != 1 || prior.TenantID != in.TenantID || prior.OwnerSubject != in.OwnerSubject {
@@ -90,12 +94,12 @@ func (s *Store) ReserveCustomerSignup(ctx context.Context, in CustomerSignup, ev
 	return result, err
 }
 
-const customerSignupColumns = `id,tenant_id,resource_id,owner_subject,receipt_hash,intent_hash,owner_email_hash,input,state,attempts,retry_at,lease_until,error_code`
+const customerSignupColumns = `id,tenant_id,resource_id,owner_subject,receipt_hash,intent_hash,owner_email_hash,input,state,attempts,retry_at,lease_until,error_code,receipt_expires_at,receipt_verified,receipt_expires_at>now(),lease_id`
 
 func scanCustomerSignup(row pgx.Row) (CustomerSignup, error) {
 	var result CustomerSignup
 	var raw []byte
-	err := row.Scan(&result.ID, &result.TenantID, &result.ResourceID, &result.OwnerSubject, &result.ReceiptHash, &result.IntentHash, &result.OwnerEmailHash, &raw, &result.State, &result.Attempts, &result.RetryAt, &result.LeaseUntil, &result.ErrorCode)
+	err := row.Scan(&result.ID, &result.TenantID, &result.ResourceID, &result.OwnerSubject, &result.ReceiptHash, &result.IntentHash, &result.OwnerEmailHash, &raw, &result.State, &result.Attempts, &result.RetryAt, &result.LeaseUntil, &result.ErrorCode, &result.ReceiptExpiresAt, &result.ReceiptVerified, &result.ReceiptActive, &result.LeaseID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return result, ErrNotFound
 	}
@@ -117,7 +121,7 @@ func (s *Store) CustomerSignup(ctx context.Context, id uuid.UUID, receiptHash []
 	if err != nil {
 		return CustomerSignup{}, err
 	}
-	if subtle.ConstantTimeCompare(row.ReceiptHash, receiptHash) != 1 {
+	if !row.ReceiptActive || subtle.ConstantTimeCompare(row.ReceiptHash, receiptHash) != 1 {
 		return CustomerSignup{}, ErrNotFound
 	}
 	return row, nil
