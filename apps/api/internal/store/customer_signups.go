@@ -139,10 +139,67 @@ func (s *Store) CustomerSignupBySubject(ctx context.Context, subject string) (Cu
 
 // LeaseCustomerSignups claims a bounded batch without holding locks across native calls.
 func (s *Store) LeaseCustomerSignups(ctx context.Context, limit int, now time.Time) ([]CustomerSignup, error) {
-	return nil, nil
+	if limit < 1 || limit > 25 {
+		return nil, ErrConflict
+	}
+	rows, err := s.pool.Query(ctx, `WITH due AS (
+        SELECT id FROM customer_signups
+        WHERE state IN ('recorded','identity_requested') AND retry_at <= $1
+          AND (lease_until IS NULL OR lease_until <= $1)
+        ORDER BY retry_at,id LIMIT $2 FOR UPDATE SKIP LOCKED
+    ) UPDATE customer_signups SET lease_until=$1+interval '1 minute',
+        lease_id=gen_random_uuid(),updated_at=now()
+      WHERE id IN (SELECT id FROM due) RETURNING `+customerSignupColumns, now, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (CustomerSignup, error) {
+		return scanCustomerSignup(row)
+	})
 }
 
 // FinishCustomerSignup fences delivery results to the current lease and intent state.
 func (s *Store) FinishCustomerSignup(ctx context.Context, row CustomerSignup, state, errorCode string, retryAt time.Time) error {
+	if row.LeaseID == nil || (row.State != "recorded" && row.State != "identity_requested") {
+		return ErrConflict
+	}
+	switch state {
+	case "recorded":
+		if row.State != "recorded" {
+			return ErrConflict
+		}
+	case "existing_account":
+		if row.State != "recorded" {
+			return ErrConflict
+		}
+	case "identity_requested", "needs_support":
+	case "ready":
+		if row.State != "identity_requested" {
+			return ErrConflict
+		}
+	default:
+		return ErrConflict
+	}
+	attempts := row.Attempts
+	if errorCode != "" {
+		if errorCode != "identity_unavailable" && errorCode != "provisioning_unavailable" {
+			return ErrConflict
+		}
+		attempts++
+		if attempts >= 20 {
+			attempts, state = 20, "needs_support"
+		}
+	}
+	result, err := s.pool.Exec(ctx, `UPDATE customer_signups SET state=$4,error_code=$5,
+        retry_at=$6,attempts=$7,lease_until=NULL,lease_id=NULL,updated_at=now()
+        WHERE id=$1 AND lease_id=$2 AND state=$3`,
+		row.ID, row.LeaseID, row.State, state, errorCode, retryAt, attempts)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() != 1 {
+		return ErrConflict
+	}
 	return nil
 }
