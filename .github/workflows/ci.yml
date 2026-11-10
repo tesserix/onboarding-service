@@ -29,7 +29,7 @@ jobs:
           echo "release_images=$(jq -c '{include: .}' .github/container-images.json)" >> "$GITHUB_OUTPUT"
 
   api:
-    uses: tesserix/tesserix-workflows/.github/workflows/go-ci.yml@cbdda50c8a7ebf077073602b4a5cff23f50c03c6
+    uses: tesserix/tesserix-workflows/.github/workflows/go-ci.yml@34703a2632c5daedd99e3f423c603fedbf757f59
     with:
       working_directory: apps/api
       go_version: 1.27.2
