@@ -149,3 +149,27 @@ func TestSignupDeliveryLeaseRejectsStaleCompletionAfterRecovery(t *testing.T) {
 		t.Fatalf("reused completion accepted: %v", err)
 	}
 }
+
+func TestSignupProofBudgetIsSharedBoundedAndResetsAfterWindow(t *testing.T) {
+	s := newStore(t)
+	seedProduct(t, s, "helivanta")
+	in := signupCommand(t)
+	if _, err := s.ReserveCustomerSignup(t.Context(), in, audit.Event{ActorType: audit.ActorSystem, ActorID: "signup-test", Outcome: audit.OutcomeSuccess}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
+	for i := 0; i < 5; i++ {
+		if err := s.ConsumeSignupProof(t.Context(), in.ID, now); err != nil {
+			t.Fatalf("allowed attempt %d rejected: %v", i, err)
+		}
+	}
+	if err := s.ConsumeSignupProof(t.Context(), in.ID, now); !errors.Is(err, ErrConflict) {
+		t.Fatalf("sixth native proof attempt allowed: %v", err)
+	}
+	if err := s.ConsumeSignupProof(t.Context(), in.ID, now.Add(15*time.Minute)); err != nil {
+		t.Fatalf("new proof window rejected: %v", err)
+	}
+	if err := s.ConsumeSignupProof(t.Context(), uuid.New(), now); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown signup consumed proof budget: %v", err)
+	}
+}

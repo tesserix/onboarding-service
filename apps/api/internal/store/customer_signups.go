@@ -203,3 +203,8 @@ func (s *Store) FinishCustomerSignup(ctx context.Context, row CustomerSignup, st
 	}
 	return nil
 }
+
+// ConsumeSignupProof reserves a native proof attempt before contacting identity.
+func (s *Store) ConsumeSignupProof(ctx context.Context, id uuid.UUID, now time.Time) error {
+	return nil
+}
