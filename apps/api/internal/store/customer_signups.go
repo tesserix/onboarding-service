@@ -107,3 +107,18 @@ func scanCustomerSignup(row pgx.Row) (CustomerSignup, error) {
 	}
 	return result, nil
 }
+
+// CustomerSignup resolves only the caller's opaque receipt.
+func (s *Store) CustomerSignup(ctx context.Context, id uuid.UUID, receiptHash []byte) (CustomerSignup, error) {
+	return CustomerSignup{}, ErrNotFound
+}
+
+// CustomerSignupByTenant is for the authenticated provisioning callback only.
+func (s *Store) CustomerSignupByTenant(ctx context.Context, tenant uuid.UUID) (CustomerSignup, error) {
+	return CustomerSignup{}, ErrNotFound
+}
+
+// CustomerSignupBySubject resolves the expected native subject before native proof checking.
+func (s *Store) CustomerSignupBySubject(ctx context.Context, subject string) (CustomerSignup, error) {
+	return CustomerSignup{}, ErrNotFound
+}

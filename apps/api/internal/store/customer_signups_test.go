@@ -65,3 +65,33 @@ func signupCommand(t *testing.T) CustomerSignup {
 	return CustomerSignup{ID: id, TenantID: tenant, ResourceID: uuid.Must(uuid.NewV7()), OwnerSubject: "owner-" + tenant.String(), ReceiptHash: digest(id.String()), IntentHash: digest(string(raw)), OwnerEmailHash: digest(input.Owner.Email), Input: input, RetryAt: time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC)}
 }
 func digest(value string) []byte { sum := sha256.Sum256([]byte(value)); return sum[:] }
+
+func TestSignupReceiptCannotReadAnotherCommandOrItsOwnerDetails(t *testing.T) {
+	s := newStore(t)
+	seedProduct(t, s, "helivanta")
+	in := signupCommand(t)
+	_, err := s.ReserveCustomerSignup(t.Context(), in, audit.Event{ActorType: audit.ActorSystem, ActorID: "signup-test", Outcome: audit.OutcomeSuccess})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.CustomerSignup(t.Context(), in.ID, in.ReceiptHash)
+	if err != nil || got.OwnerSubject != in.OwnerSubject || got.Input.Owner.Email != in.Input.Owner.Email {
+		t.Fatalf("own receipt failed: %v", err)
+	}
+	for _, hash := range [][]byte{nil, digest("foreign")} {
+		if _, err = s.CustomerSignup(t.Context(), in.ID, hash); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("foreign receipt read owner intent: %v", err)
+		}
+	}
+	if _, err = s.CustomerSignup(t.Context(), uuid.New(), in.ReceiptHash); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown command resolved: %v", err)
+	}
+	got, err = s.CustomerSignupByTenant(t.Context(), in.TenantID)
+	if err != nil || got.ID != in.ID {
+		t.Fatalf("callback lost durable resource mapping: %v", err)
+	}
+	got, err = s.CustomerSignupBySubject(t.Context(), in.OwnerSubject)
+	if err != nil || got.ID != in.ID {
+		t.Fatalf("native proof lost command mapping: %v", err)
+	}
+}
