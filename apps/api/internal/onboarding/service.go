@@ -39,6 +39,7 @@ type Member struct {
 
 // Identity is the slice of Zitadel this service uses.
 type Identity interface {
+	VerifyExistingHuman(ctx context.Context, userID, email string) error
 	VerifyOrganization(ctx context.Context, orgID, tenantID, projectID string) (zitadel.OrganizationIdentity, error)
 	CreateOrg(ctx context.Context, name string) (string, error)
 	RemoveOrg(ctx context.Context, orgID string) error
@@ -182,18 +183,19 @@ func RequestIDFrom(ctx context.Context) string {
 // --- organizations -------------------------------------------------------
 
 type CreateOrgInput struct {
-	Name         string            `json:"name" binding:"required,min=2,max=200"`
-	OwnerEmail   string            `json:"ownerEmail" binding:"required,email"`
-	OwnerName    string            `json:"ownerName,omitempty" binding:"omitempty,max=200"`
-	Products     []string          `json:"products,omitempty"`
-	PrimaryDomai string            `json:"-"`
-	BillingEmail string            `json:"billingEmail,omitempty" binding:"omitempty,email"`
-	SupportEmail string            `json:"supportEmail,omitempty" binding:"omitempty,email"`
-	Plan         string            `json:"plan,omitempty" binding:"omitempty,max=64"`
-	Seats        int               `json:"seats,omitempty" binding:"omitempty,min=0,max=1000000"`
-	Region       string            `json:"region,omitempty" binding:"omitempty,max=32"`
-	ExternalRef  string            `json:"externalRef,omitempty" binding:"omitempty,max=200"`
-	Labels       map[string]string `json:"labels,omitempty"`
+	ExistingOwnerUserID string            `json:"existingOwnerUserId,omitempty" binding:"omitempty,max=200"`
+	Name                string            `json:"name" binding:"required,min=2,max=200"`
+	OwnerEmail          string            `json:"ownerEmail" binding:"required,email"`
+	OwnerName           string            `json:"ownerName,omitempty" binding:"omitempty,max=200"`
+	Products            []string          `json:"products,omitempty"`
+	PrimaryDomai        string            `json:"-"`
+	BillingEmail        string            `json:"billingEmail,omitempty" binding:"omitempty,email"`
+	SupportEmail        string            `json:"supportEmail,omitempty" binding:"omitempty,email"`
+	Plan                string            `json:"plan,omitempty" binding:"omitempty,max=64"`
+	Seats               int               `json:"seats,omitempty" binding:"omitempty,min=0,max=1000000"`
+	Region              string            `json:"region,omitempty" binding:"omitempty,max=32"`
+	ExternalRef         string            `json:"externalRef,omitempty" binding:"omitempty,max=200"`
+	Labels              map[string]string `json:"labels,omitempty"`
 }
 
 // CreateOrgResult is the org plus whatever failed after it became real. The
@@ -208,6 +210,15 @@ type CreateOrgResult struct {
 func (s *Service) CreateOrganization(ctx context.Context, p authz.Principal, in CreateOrgInput) (CreateOrgResult, error) {
 	if err := s.guard(ctx, p, authz.ActionOrgCreate, "", map[string]string{"name": in.Name}); err != nil {
 		return CreateOrgResult{}, err
+	}
+
+	if in.ExistingOwnerUserID != "" {
+		if p.Kind != authz.KindProduct {
+			return CreateOrgResult{}, ErrInvalid
+		}
+		if err := s.idp.VerifyExistingHuman(ctx, in.ExistingOwnerUserID, in.OwnerEmail); err != nil {
+			return CreateOrgResult{}, ErrInvalid
+		}
 	}
 
 	products, err := s.requestedProducts(ctx, p, in.Products)
@@ -243,7 +254,13 @@ func (s *Service) CreateOrganization(ctx context.Context, p authz.Principal, in 
 
 	res := CreateOrgResult{Organization: org}
 	if in.OwnerEmail != "" {
-		if err := s.inviteOwner(ctx, zitadelOrgID, in.OwnerEmail, in.OwnerName); err != nil {
+		var ownerErr error
+		if in.ExistingOwnerUserID != "" {
+			ownerErr = s.idp.AddOrgMember(ctx, zitadelOrgID, in.ExistingOwnerUserID, "ORG_OWNER")
+		} else {
+			ownerErr = s.inviteOwner(ctx, zitadelOrgID, in.OwnerEmail, in.OwnerName)
+		}
+		if err := ownerErr; err != nil {
 			s.log.Error("organization created without its owner", "org", org.ID, "error", err)
 			res.Warnings = append(res.Warnings, fmt.Sprintf("owner %s was not invited; invite them from the members tab", in.OwnerEmail))
 		}
@@ -624,7 +641,7 @@ func (s *Service) Members(ctx context.Context, p authz.Principal, orgID uuid.UUI
 	return members, nil
 }
 
-func (s *Service) AddMember(ctx context.Context, p authz.Principal, orgID uuid.UUID, email, name, role string) (Member, error) {
+func (s *Service) AddMember(ctx context.Context, p authz.Principal, orgID uuid.UUID, email, name, role string, existingUserID ...string) (Member, error) {
 	if role == "" {
 		role = "ORG_OWNER"
 	}
@@ -639,8 +656,32 @@ func (s *Service) AddMember(ctx context.Context, p authz.Principal, orgID uuid.U
 		return Member{}, err
 	}
 
-	first, last := splitName(name, email)
-	userID, err := s.idp.CreateHumanUser(ctx, org.ZitadelOrgID, email, first, last)
+	var userID string
+	if len(existingUserID) > 0 && existingUserID[0] != "" {
+		if p.Kind != authz.KindProduct {
+			return Member{}, ErrInvalid
+		}
+		userID = existingUserID[0]
+		if err := s.idp.VerifyExistingHuman(ctx, userID, email); err != nil {
+			return Member{}, ErrInvalid
+		}
+		members, err := s.idp.OrgMembers(ctx, org.ZitadelOrgID)
+		if err != nil {
+			return Member{}, fmt.Errorf("%w: read owner membership", ErrUnavailable)
+		}
+		for _, member := range members {
+			if member.UserID == userID {
+				for _, currentRole := range member.Roles {
+					if currentRole == role {
+						return member, nil
+					}
+				}
+			}
+		}
+	} else {
+		first, last := splitName(name, email)
+		userID, err = s.idp.CreateHumanUser(ctx, org.ZitadelOrgID, email, first, last)
+	}
 	if err != nil {
 		return Member{}, fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}

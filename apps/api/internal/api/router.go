@@ -14,6 +14,7 @@ import (
 )
 
 type Deps struct {
+	PlanningPokerWorkloads WorkloadVerifier
 	MCPTokens              TokenVerifier
 	DisableLegacyConsole   bool
 	HospitalWorkloads      WorkloadVerifier
@@ -74,6 +75,7 @@ func NewRouter(d Deps) *gin.Engine {
 	v1.GET("/hospital-onboardings/:tenantId", d.getHospital)
 	r.POST("/internal/v1/hospital-enrolments", d.completeHospital)
 	d.registerCustomers(r)
+	d.registerPlanningPoker(r)
 	d.registerOwnerSecurity(r)
 	d.registerMCP(r)
 	return r
