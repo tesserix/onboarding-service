@@ -70,3 +70,23 @@ func TestSignupPasswordLinkReturnsToHelivantaWithoutReturningACode(t *testing.T)
 		t.Fatal("password link escaped the Helivanta flow")
 	}
 }
+
+func TestSignupProofBindsTheExactActiveHumanHomeOrganizationAndEmail(t *testing.T) {
+	rec := newRecorder()
+	client := newClient(t, rec)
+	rec.replies["/v2/users/owner-test"] = map[string]any{"user": map[string]any{"userId": "owner-test", "state": "USER_STATE_ACTIVE", "details": map[string]string{"resourceOwner": "org-test"}, "human": map[string]any{"email": map[string]any{"email": "owner@example.test", "isVerified": false}}}}
+	verified, err := client.SignupIdentity(t.Context(), "org-test", "owner-test", "owner@example.test")
+	if err != nil || verified || rec.find("GET", "/v2/users/owner-test") == nil {
+		t.Fatalf("unverified native state was guessed: verified=%v err=%v", verified, err)
+	}
+	if _, err = client.SignupIdentity(t.Context(), "foreign-org", "owner-test", "owner@example.test"); !errors.Is(err, ErrIdentityUnavailable) {
+		t.Fatalf("foreign organization bound: %v", err)
+	}
+	if _, err = client.SignupIdentity(t.Context(), "org-test", "owner-test", "foreign@example.test"); !errors.Is(err, ErrIdentityUnavailable) {
+		t.Fatalf("foreign email bound: %v", err)
+	}
+	rec.replies["/v2/users/owner-test"] = map[string]any{"user": map[string]any{"userId": "owner-test", "state": "USER_STATE_ACTIVE", "details": map[string]string{"resourceOwner": "org-test"}}}
+	if _, err = client.SignupIdentity(t.Context(), "org-test", "owner-test", "owner@example.test"); !errors.Is(err, ErrIdentityUnavailable) {
+		t.Fatalf("machine account accepted as human owner: %v", err)
+	}
+}

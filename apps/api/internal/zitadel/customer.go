@@ -76,3 +76,41 @@ func (c *Client) SendSignupPasswordLink(ctx context.Context, userID string) erro
 	}
 	return c.signupCommand(ctx, "/v2/users/"+userID+"/password_reset", map[string]any{"sendLink": map[string]string{"urlTemplate": "https://helivanta.app/signup/verify#phase=password&userId={{.UserID}}&code={{.Code}}", "notificationType": "NOTIFICATION_TYPE_Email"}})
 }
+
+// SignupIdentity reads the current native binding rather than trusting an email or supplied subject.
+func (c *Client) SignupIdentity(ctx context.Context, orgID, userID, email string) (bool, error) {
+	if !identitySourceID.MatchString(orgID) || !identitySourceID.MatchString(userID) || email == "" {
+		return false, ErrIdentityUnavailable
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	token, err := c.tokens.Token(ctx)
+	if err != nil || token == "" {
+		return false, ErrIdentityUnavailable
+	}
+	var result struct {
+		User struct {
+			ID      string `json:"userId"`
+			State   string `json:"state"`
+			Details struct {
+				ResourceOwner string `json:"resourceOwner"`
+			} `json:"details"`
+			Human *struct {
+				Email struct {
+					Address  string `json:"email"`
+					Verified bool   `json:"isVerified"`
+				} `json:"email"`
+			} `json:"human"`
+		} `json:"user"`
+	}
+	client := *c.http
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	if err = c.readIdentity(ctx, &client, token, http.MethodGet, "/v2/users/"+userID, orgID, nil, &result); err != nil {
+		return false, err
+	}
+	user := result.User
+	if user.ID != userID || user.State != "USER_STATE_ACTIVE" || user.Details.ResourceOwner != orgID || user.Human == nil || !strings.EqualFold(user.Human.Email.Address, email) {
+		return false, ErrIdentityUnavailable
+	}
+	return user.Human.Email.Verified, nil
+}
