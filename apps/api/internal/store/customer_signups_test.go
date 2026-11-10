@@ -221,3 +221,24 @@ func TestSignupMailDeliveryCannotExceedSharedHourlyBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestNewSignupIntakeIsGloballyBoundedWithoutChargingReplays(t *testing.T) {
+	s := newStore(t)
+	seedProduct(t, s, "helivanta")
+	event := audit.Event{ActorType: audit.ActorSystem, ActorID: "signup-test", Outcome: audit.OutcomeSuccess}
+	first := signupCommand(t)
+	if _, err := s.ReserveCustomerSignup(t.Context(), first, event); err != nil {
+		t.Fatal(err)
+	}
+	for range 19 {
+		if _, err := s.ReserveCustomerSignup(t.Context(), signupCommand(t), event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.ReserveCustomerSignup(t.Context(), signupCommand(t), event); !errors.Is(err, ErrConflict) {
+		t.Fatalf("unbounded public identity intake allowed: %v", err)
+	}
+	if _, err := s.ReserveCustomerSignup(t.Context(), first, event); err != nil {
+		t.Fatalf("capacity limit rejected durable replay: %v", err)
+	}
+}
