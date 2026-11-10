@@ -62,6 +62,16 @@ func (s *Store) ReserveCustomerSignup(ctx context.Context, in CustomerSignup, ev
 		if !errors.Is(err, ErrNotFound) {
 			return err
 		}
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('customer-intake:helivanta',0))`); err != nil {
+			return err
+		}
+		var recent int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM (SELECT id FROM customer_signups WHERE created_at >= now()-interval '1 hour' LIMIT 20) recent`).Scan(&recent); err != nil {
+			return err
+		}
+		if recent >= 20 {
+			return ErrConflict
+		}
 		product, err := scanProduct(tx.QueryRow(ctx, `SELECT `+productColumns+` FROM products WHERE key='helivanta' FOR SHARE`))
 		if err != nil {
 			return err
