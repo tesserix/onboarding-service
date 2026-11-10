@@ -32,7 +32,7 @@ jobs:
     uses: tesserix/tesserix-workflows/.github/workflows/go-ci.yml@34703a2632c5daedd99e3f423c603fedbf757f59
     with:
       working_directory: apps/api
-      go_version: 1.27.2
+      go_version: 1.27.3
       # Measured with PostgreSQL: 47.4%. Prevent regression while raising coverage.
       coverage_min_lines: 47
       database_enabled: true
