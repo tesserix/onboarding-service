@@ -195,6 +195,8 @@ func TestHospitalFirstOwnerDoesNotRequireAPreexistingIdentity(t *testing.T) {
 	}
 	for name, body := range map[string]string{
 		"caller_selected_subject": strings.Replace(input, `"initialAdmin":`, `"initialAdminUserId":"foreign-subject","initialAdmin":`, 1),
+		"adoption_profile":        strings.Replace(input, `"initialAdmin":`, `"tenantId":"11111111-1111-4111-8111-111111111111","organizationId":"existing-org","initialAdmin":`, 1),
+		"preserve_policy_profile": strings.Replace(input, `"initialAdmin":`, `"preserveLoginPolicy":true,"initialAdmin":`, 1),
 		"invalid_contact":         strings.ReplaceAll(input, "owner@example.test", "not-an-email"),
 		"missing_given_name":      strings.ReplaceAll(input, `"givenName":"Test"`, `"givenName":""`),
 	} {
