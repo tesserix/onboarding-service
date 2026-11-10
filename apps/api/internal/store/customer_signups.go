@@ -218,11 +218,11 @@ func (s *Store) FinishCustomerSignup(ctx context.Context, row CustomerSignup, st
 // ConsumeSignupProof reserves a native proof attempt before contacting identity.
 func (s *Store) ConsumeSignupProof(ctx context.Context, id uuid.UUID, now time.Time) error {
 	result, err := s.pool.Exec(ctx, `UPDATE customer_signups SET
-      proof_attempts=CASE WHEN proof_window_at IS NULL OR proof_window_at <= $2::timestamptz-interval '15 minutes' THEN 1 ELSE proof_attempts+1 END,
-      proof_window_at=CASE WHEN proof_window_at IS NULL OR proof_window_at <= $2::timestamptz-interval '15 minutes' THEN $2 ELSE proof_window_at END,
+      proof_attempts=CASE WHEN proof_attempts=0 OR proof_window_at IS NULL OR proof_window_at <= $2::timestamptz-interval '15 minutes' THEN 1 ELSE proof_attempts+1 END,
+      proof_window_at=CASE WHEN proof_attempts=0 OR proof_window_at IS NULL OR proof_window_at <= $2::timestamptz-interval '15 minutes' THEN $2 ELSE proof_window_at END,
       updated_at=now()
       WHERE id=$1 AND state NOT IN ('existing_account','needs_support')
-        AND (proof_window_at IS NULL OR proof_window_at <= $2::timestamptz-interval '15 minutes' OR proof_attempts<5)`, id, now)
+        AND (proof_attempts=0 OR proof_window_at IS NULL OR proof_window_at <= $2::timestamptz-interval '15 minutes' OR proof_attempts<5)`, id, now)
 	if err != nil {
 		return err
 	}
@@ -261,11 +261,11 @@ func (s *Store) RotateSignupReceipt(ctx context.Context, id uuid.UUID, hash []by
 // ConsumeSignupMail reserves a shared native delivery allowance before sending.
 func (s *Store) ConsumeSignupMail(ctx context.Context, id uuid.UUID, now time.Time) error {
 	result, err := s.pool.Exec(ctx, `UPDATE customer_signups SET
-  mail_attempts=CASE WHEN mail_window_at <= $2::timestamptz-interval '1 hour' THEN 1 ELSE mail_attempts+1 END,
-  mail_window_at=CASE WHEN mail_window_at <= $2::timestamptz-interval '1 hour' THEN $2 ELSE mail_window_at END,
+  mail_attempts=CASE WHEN mail_attempts=0 OR mail_window_at <= $2::timestamptz-interval '1 hour' THEN 1 ELSE mail_attempts+1 END,
+  mail_window_at=CASE WHEN mail_attempts=0 OR mail_window_at <= $2::timestamptz-interval '1 hour' THEN $2 ELSE mail_window_at END,
   updated_at=now()
   WHERE id=$1 AND state NOT IN ('existing_account','needs_support')
-   AND (mail_window_at <= $2::timestamptz-interval '1 hour' OR mail_attempts<3)`, id, now)
+   AND (mail_attempts=0 OR mail_window_at <= $2::timestamptz-interval '1 hour' OR mail_attempts<3)`, id, now)
 	if err != nil {
 		return err
 	}
