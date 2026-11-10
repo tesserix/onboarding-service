@@ -30,7 +30,10 @@ an `initialAdmin` profile instead of `initialAdminUserId`:
 }
 ```
 
-The API derives `initialAdminUserId` as `owner-<tenantId>`. Sending both owner
+The API derives `initialAdminUserId` as `owner-<tenantId>`. Before writing a new
+profile-bearing claim, a server-side dry run verifies that the installed schema
+preserves the complete binding. Schema pruning fails without writing an
+incomplete immutable claim. The real creation response is checked as well. Sending both owner
 modes, an invalid profile or a new-owner profile with adoption fields is rejected.
 The profile uses the operator's canonical Go type, pinned by commit from the
 public `tesserix/tesserix-operators` repository. Its legacy Go module path is

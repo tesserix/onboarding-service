@@ -5,8 +5,10 @@ import (
 	"strings"
 
 	"github.com/tesserix/onboarding-service/api/internal/hospitalclaims"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/dynamic/fake"
+	ktesting "k8s.io/client-go/testing"
 	"testing"
 )
 
@@ -55,5 +57,30 @@ func TestFirstOwnerProfilePersistsAndCannotBeReplacedByReplay(t *testing.T) {
 	}
 	if _, err = client.Create(t.Context(), spec); err == nil {
 		t.Fatal("replay changed first owner profile")
+	}
+}
+
+func TestCreateRejectsServerPruningOfFirstOwnerBinding(t *testing.T) {
+	kube := fake.NewSimpleDynamicClient(runtime.NewScheme())
+	writes := 0
+	kube.PrependReactor("create", "zitadelorganizations", func(action ktesting.Action) (bool, runtime.Object, error) {
+		create := action.(ktesting.CreateAction)
+		if len(action.(ktesting.CreateActionImpl).GetCreateOptions().DryRun) == 0 {
+			writes++
+		}
+		object := create.GetObject().(*unstructured.Unstructured).DeepCopy()
+		unstructured.RemoveNestedField(object.Object, "spec", "initialAdmin")
+		return true, object, nil
+	})
+	client := hospitalclaims.New(kube, "identity-operator")
+	var spec hospitalclaims.Spec
+	if err := json.Unmarshal([]byte(`{"product":"helivanta","tenantId":"11111111-1111-4111-8111-111111111111","displayName":"Hospital","initialAdminUserId":"owner-11111111-1111-4111-8111-111111111111","initialAdmin":{"givenName":"Test","familyName":"Owner","email":"owner@example.test"}}`), &spec); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Create(t.Context(), spec); err == nil {
+		t.Fatal("an API server with an outdated schema silently discarded the approved owner")
+	}
+	if writes != 0 {
+		t.Fatalf("schema mismatch wrote an incomplete immutable claim: %d", writes)
 	}
 }

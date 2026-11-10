@@ -48,6 +48,21 @@ func (c *Client) Create(ctx context.Context, spec Spec) (Result, error) {
 		return Result{}, err
 	}
 	claim := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "identity.tesserix.app/v1alpha1", "kind": "ZitadelOrganization", "metadata": map[string]any{"name": spec.Product + "-" + spec.TenantID}, "spec": fields}}
+	if spec.InitialAdmin != nil {
+		preview, err := c.resource.Create(ctx, claim, metav1.CreateOptions{DryRun: []string{metav1.DryRunAll}})
+		if err != nil && !apierrors.IsAlreadyExists(err) {
+			return Result{}, err
+		}
+		if err == nil {
+			accepted, err := decode(preview)
+			if err != nil {
+				return Result{}, err
+			}
+			if !reflect.DeepEqual(accepted.Spec, spec) {
+				return Result{}, ErrConflict
+			}
+		}
+	}
 	obj, err := c.resource.Create(ctx, claim, metav1.CreateOptions{})
 	if apierrors.IsAlreadyExists(err) {
 		result, e := c.Get(ctx, spec.Product, spec.TenantID)
@@ -62,7 +77,14 @@ func (c *Client) Create(ctx context.Context, spec Spec) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	return decode(obj)
+	accepted, err := decode(obj)
+	if err != nil {
+		return Result{}, err
+	}
+	if !reflect.DeepEqual(accepted.Spec, spec) {
+		return Result{}, ErrConflict
+	}
+	return accepted, nil
 }
 func (c *Client) Get(ctx context.Context, product, tenant string) (Result, error) {
 	obj, e := c.resource.Get(ctx, product+"-"+tenant, metav1.GetOptions{})
