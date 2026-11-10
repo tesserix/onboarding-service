@@ -80,6 +80,7 @@ func run(log *slog.Logger) error {
 		onboarding.WithRegistryProjectID(cfg.RegistryProjectID))
 
 	var hospitalWorkloads api.WorkloadVerifier
+	var customerWorkloads api.WorkloadVerifier
 	if os.Getenv("HOSPITAL_PROVISIONING_ENABLED") == "true" {
 		kubeConfig, err := rest.InClusterConfig()
 		if err != nil {
@@ -93,12 +94,16 @@ func run(log *slog.Logger) error {
 		if err != nil {
 			return err
 		}
+		customerWorkloads, err = workloadidentity.New(kubeConfig, "helivanta-customer-onboarding", "system:serviceaccount:helivanta:helivanta-api")
+		if err != nil {
+			return err
+		}
 		target := os.Getenv("HELIVANTA_PROVISIONING_URL")
 		u, err := url.Parse(target)
 		if err != nil || u.Scheme != "https" || u.Host != "helivanta.app" || u.Path != "/api/internal/v1/hospital-enrolments" || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
 			return errors.New("invalid Helivanta provisioning destination")
 		}
-		svc = onboarding.New(st, identity, authz.New(st), log, onboarding.WithRegistryProjectID(cfg.RegistryProjectID), onboarding.WithHospitals(onboarding.HospitalConfig{Claims: hospitalclaims.New(kube, "identity-operator"), Product: "helivanta", HelivantaURL: target, HelivantaTokenFile: "/var/run/helivanta-provisioning/token"}))
+		svc = onboarding.New(st, identity, authz.New(st), log, onboarding.WithRegistryProjectID(cfg.RegistryProjectID), onboarding.WithCustomerIdentity(client), onboarding.WithHospitals(onboarding.HospitalConfig{Claims: hospitalclaims.New(kube, "identity-operator"), Product: "helivanta", HelivantaURL: target, HelivantaTokenFile: "/var/run/helivanta-provisioning/token"}))
 	}
 
 	verifier, err := auth.NewJWKSVerifier(ctx, cfg.ZitadelIssuer, cfg.ZitadelJWKSURL, cfg.Audience, http.DefaultClient)
@@ -145,7 +150,7 @@ func run(log *slog.Logger) error {
 	}
 	router := api.NewRouter(api.Deps{
 		MCPTokens: mcpTokens,
-		Service:   svc, Store: st, Tokens: verifier, RegistryTokens: registryVerifier, HospitalWorkloads: hospitalWorkloads,
+		Service:   svc, Store: st, Tokens: verifier, RegistryTokens: registryVerifier, HospitalWorkloads: hospitalWorkloads, CustomerWorkloads: customerWorkloads,
 		ConsoleTokens: legacyTokens, Sessions: sessions,
 		ConsoleAccessTokens:  consoleAccess,
 		DisableLegacyConsole: !cfg.LegacyConsoleEnabled,
@@ -164,6 +169,12 @@ func run(log *slog.Logger) error {
 		IdleTimeout:       90 * time.Second,
 	}
 
+	if customerWorkloads != nil {
+		deliveryCtx, cancelDelivery := context.WithCancel(ctx)
+		done := make(chan struct{})
+		go func() { defer close(done); deliverCustomers(deliveryCtx, svc, log) }()
+		defer func() { cancelDelivery(); <-done }()
+	}
 	go purgeIdempotencyKeys(ctx, st, log)
 	go reapRegistryCredentials(ctx, svc, log)
 
@@ -224,6 +235,21 @@ func purgeIdempotencyKeys(ctx context.Context, st *store.Store, log *slog.Logger
 			if err := st.PurgeExpiredIdempotencyKeys(ctx); err != nil {
 				log.Warn("could not purge idempotency keys", "error", err)
 			}
+		}
+	}
+}
+
+func deliverCustomers(ctx context.Context, svc *onboarding.Service, log *slog.Logger) {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	for {
+		if err := svc.DeliverCustomers(ctx, time.Now().UTC()); err != nil && ctx.Err() == nil {
+			log.Error("customer signup delivery deferred")
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
 		}
 	}
 }
