@@ -31,8 +31,8 @@ func TestSignupRejectsUnboundedOrUnsupportedIntentBeforeProvisioning(t *testing.
 			}
 		})
 	}
-	for _, kind := range []string{"hospital", "pharmacy"} {
-		for _, state := range []string{"MH", "OD"} {
+	for _, kind := range []customercontract.Kind{customercontract.Hospital, customercontract.Pharmacy} {
+		for _, state := range []customercontract.StateCode{customercontract.Maharashtra, customercontract.Odisha} {
 			s := validSignup()
 			s.Kind = kind
 			s.StateCode = state
@@ -47,4 +47,22 @@ func TestSignupRejectsUnboundedOrUnsupportedIntentBeforeProvisioning(t *testing.
 }
 func validSignup() customercontract.Signup {
 	return customercontract.Signup{Setup: customercontract.Setup{Name: "TEST Hospital", Kind: "hospital", CountryCode: "IN", StateCode: "MH"}, Owner: &identity.OrganizationInitialAdmin{GivenName: "Test", FamilyName: "Owner", Email: "owner@example.test"}}
+}
+
+func TestReadyReceiptRequiresCompleteInitialWorkspaceBinding(t *testing.T) {
+	receipt := customercontract.Receipt{State: customercontract.Ready}
+	if receipt.Validate() == nil {
+		t.Fatal("ready accepted without completed tenant and resource")
+	}
+	receipt.Name = "TEST Hospital"
+	receipt.Kind = customercontract.Hospital
+	receipt.TenantID = uuid.NewString()
+	receipt.ResourceID = uuid.Must(uuid.NewV7()).String()
+	if err := receipt.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	receipt.ResourceID = "not-a-resource"
+	if receipt.Validate() == nil {
+		t.Fatal("ready accepted with malformed resource identity")
+	}
 }

@@ -14,12 +14,54 @@ import (
 
 var ErrInvalid = errors.New("invalid customer signup")
 
+// Kind distinguishes the two independently administered customer models.
+type Kind string
+
+const (
+	Hospital Kind = "hospital"
+	Pharmacy Kind = "pharmacy"
+)
+
+func (Kind) Values() []string { return []string{string(Hospital), string(Pharmacy)} }
+
+// Country is the supported customer country, not a legal applicability decision.
+type Country string
+
+const India Country = "IN"
+
+func (Country) Values() []string { return []string{string(India)} }
+
+// StateCode is the administrative home-state choice.
+type StateCode string
+
+const (
+	Maharashtra StateCode = "MH"
+	Odisha      StateCode = "OD"
+)
+
+func (StateCode) Values() []string { return []string{string(Maharashtra), string(Odisha)} }
+
+// Status is public receipt progress, not a native credential.
+type Status string
+
+const (
+	NotStarted          Status = "not_started"
+	EmailActionRequired Status = "email_action_required"
+	Provisioning        Status = "provisioning"
+	Ready               Status = "ready"
+	NeedsSupport        Status = "needs_support"
+)
+
+func (Status) Values() []string {
+	return []string{string(NotStarted), string(EmailActionRequired), string(Provisioning), string(Ready), string(NeedsSupport)}
+}
+
 // Setup is the common initial business-resource intent.
 type Setup struct {
-	Name        string `json:"name"`
-	Kind        string `json:"kind" enum:"hospital,pharmacy"`
-	CountryCode string `json:"countryCode" enum:"IN"`
-	StateCode   string `json:"stateCode" enum:"MH,OD"`
+	Name        string    `json:"name"`
+	Kind        Kind      `json:"kind"`
+	CountryCode Country   `json:"countryCode"`
+	StateCode   StateCode `json:"stateCode"`
 }
 
 // Signup is submitted intent, never a verified identity or licence.
@@ -30,11 +72,11 @@ type Signup struct {
 
 // Receipt contains no native credential or verification code.
 type Receipt struct {
-	State      string `json:"state" enum:"not_started,email_action_required,provisioning,ready,needs_support"`
-	Name       string `json:"name,omitempty"`
-	Kind       string `json:"kind,omitempty"`
-	TenantID   string `json:"tenantId,omitempty"`
-	ResourceID string `json:"resourceId,omitempty"`
+	State      Status `json:"state"`
+	Name       string `json:"name,omitempty" requireWhen:"ready"`
+	Kind       Kind   `json:"kind,omitempty" requireWhen:"ready"`
+	TenantID   string `json:"tenantId,omitempty" requireWhen:"ready" format:"uuid"`
+	ResourceID string `json:"resourceId,omitempty" requireWhen:"ready" format:"uuid"`
 }
 
 // Proof is used only at the native identity boundary, never persisted.
@@ -75,10 +117,32 @@ func (s Setup) Validate() error {
 	if !utf8.ValidString(s.Name) || s.Name == "" || strings.TrimSpace(s.Name) != s.Name || utf8.RuneCountInString(s.Name) > 150 || strings.ContainsFunc(s.Name, unicode.IsControl) {
 		return ErrInvalid
 	}
-	value := reflect.ValueOf(s)
+	if !slices.Contains(s.Kind.Values(), string(s.Kind)) || !slices.Contains(s.CountryCode.Values(), string(s.CountryCode)) || !slices.Contains(s.StateCode.Values(), string(s.StateCode)) {
+		return ErrInvalid
+	}
+	return nil
+}
+
+// Validate refuses ready receipts without the complete initial resource binding.
+func (r Receipt) Validate() error {
+	if !slices.Contains(r.State.Values(), string(r.State)) {
+		return ErrInvalid
+	}
+	if r.Kind != "" && !slices.Contains(r.Kind.Values(), string(r.Kind)) {
+		return ErrInvalid
+	}
+	value := reflect.ValueOf(r)
 	for i := range value.NumField() {
-		if choices := value.Type().Field(i).Tag.Get("enum"); choices != "" && !slices.Contains(strings.Split(choices, ","), value.Field(i).String()) {
+		field := value.Type().Field(i)
+		text := value.Field(i).String()
+		if field.Tag.Get("requireWhen") == string(r.State) && text == "" {
 			return ErrInvalid
+		}
+		if field.Tag.Get("format") == "uuid" && text != "" {
+			id, err := uuid.Parse(text)
+			if err != nil || id == uuid.Nil || id.String() != text {
+				return ErrInvalid
+			}
 		}
 	}
 	return nil

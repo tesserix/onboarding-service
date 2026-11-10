@@ -59,6 +59,13 @@ func contractSchema(kind reflect.Type, choices string) (string, error) {
 		return contractSchema(kind.Elem(), choices)
 	}
 	if kind.Kind() == reflect.String {
+		if values, ok := reflect.Zero(kind).Interface().(interface{ Values() []string }); ok {
+			raw, err := json.Marshal(values.Values())
+			if err != nil {
+				return "", err
+			}
+			return "z.enum(" + string(raw) + ")", nil
+		}
 		if choices != "" {
 			raw, err := json.Marshal(strings.Split(choices, ","))
 			if err != nil {
@@ -75,7 +82,17 @@ func contractSchema(kind reflect.Type, choices string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return "z.object({" + strings.Join(fields, ",") + "}).strict()", nil
+	schema := "z.object({" + strings.Join(fields, ",") + "}).strict()"
+	for i := range kind.NumField() {
+		field := kind.Field(i)
+		if when := field.Tag.Get("requireWhen"); when != "" {
+			name := strings.Split(field.Tag.Get("json"), ",")[0]
+			key, _ := json.Marshal(name)
+			state, _ := json.Marshal(when)
+			schema += ".superRefine((value,ctx)=>{if(value.state===" + string(state) + "&&!value[" + string(key) + "]){ctx.addIssue({code:'custom',path:[" + string(key) + "],message:'Complete initial workspace binding required'});}})"
+		}
+	}
+	return schema, nil
 }
 
 func contractFields(kind reflect.Type) ([]string, error) {
@@ -103,6 +120,9 @@ func contractFields(kind reflect.Type) ([]string, error) {
 		schema, err := contractSchema(field.Type, field.Tag.Get("enum"))
 		if err != nil {
 			return nil, err
+		}
+		if field.Tag.Get("format") == "uuid" {
+			schema += ".uuid()"
 		}
 		if len(tag) > 1 && tag[1] == "omitempty" {
 			schema += ".optional()"
