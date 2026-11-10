@@ -1,6 +1,7 @@
 package onboarding
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -8,8 +9,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/tesserix/onboarding-service/api/customercontract"
 	"github.com/tesserix/onboarding-service/api/internal/audit"
+	"github.com/tesserix/onboarding-service/api/internal/hospitalclaims"
 	"github.com/tesserix/onboarding-service/api/internal/store"
 	"github.com/tesserix/onboarding-service/api/internal/zitadel"
+	"io"
+	"net/http"
+	"os"
 	"strings"
 	"time"
 )
@@ -180,4 +185,105 @@ func (s *Service) DeliverCustomer(ctx context.Context, id uuid.UUID, hash []byte
 }
 
 // DeliverCustomers advances a bounded batch of durable identity deliveries.
-func (s *Service) DeliverCustomers(ctx context.Context, now time.Time) error { return nil }
+func (s *Service) DeliverCustomers(ctx context.Context, now time.Time) error {
+	if s.signupIdentity == nil || s.hospitals == nil || s.hospitals.Claims == nil {
+		return ErrUnavailable
+	}
+	rows, err := s.store.LeaseCustomerSignups(ctx, 5, now)
+	if err != nil {
+		return ErrUnavailable
+	}
+	for _, row := range rows {
+		current, cancel := context.WithTimeout(ctx, 8*time.Second)
+		state, code := s.deliverCustomer(current, row)
+		cancel()
+		retry := now.Add(30 * time.Second)
+		if code != "" {
+			retry = now.Add(time.Duration((5<<min(row.Attempts, 8))+int(row.ID[0])%5) * time.Second)
+		}
+		if err = s.store.FinishCustomerSignup(ctx, row, state, code, retry); err != nil && !errors.Is(err, store.ErrConflict) {
+			return ErrUnavailable
+		}
+	}
+	return nil
+}
+
+func (s *Service) deliverCustomer(ctx context.Context, row store.CustomerSignup) (string, string) {
+	if row.Input.Validate(row.ID) != nil || row.TenantID != customerTenantID(row.ID.String()) || row.OwnerSubject != "owner-"+row.TenantID.String() {
+		return "needs_support", ""
+	}
+	if row.State == "recorded" {
+		other, err := s.signupIdentity.OtherSignupIdentity(ctx, row.Input.Owner.Email, row.OwnerSubject)
+		if err != nil {
+			return row.State, "identity_unavailable"
+		}
+		if other {
+			return "existing_account", ""
+		}
+		_, err = s.hospitals.Claims.Create(ctx, hospitalclaims.Spec{Product: "helivanta", TenantID: row.TenantID.String(), DisplayName: row.Input.Name, InitialAdminUserID: row.OwnerSubject, InitialAdmin: row.Input.Owner})
+		if errors.Is(err, hospitalclaims.ErrConflict) {
+			return "needs_support", ""
+		}
+		if err != nil {
+			return row.State, "identity_unavailable"
+		}
+		return "identity_requested", ""
+	}
+	claim, err := s.hospitals.Claims.Get(ctx, "helivanta", row.TenantID.String())
+	if err != nil {
+		return row.State, "identity_unavailable"
+	}
+	if claim.Spec.InitialAdminUserID != row.OwnerSubject || claim.Spec.TenantID != row.TenantID.String() || claim.Spec.Product != "helivanta" {
+		return "needs_support", ""
+	}
+	if !HospitalReady(claim) {
+		return row.State, ""
+	}
+	if err = s.initializeCustomer(ctx, row); err != nil {
+		return row.State, "provisioning_unavailable"
+	}
+	return "ready", ""
+}
+
+func (s *Service) initializeCustomer(ctx context.Context, row store.CustomerSignup) error {
+	workspace := customercontract.Workspace{TenantID: row.TenantID.String(), OrganizationID: "helivanta-" + row.TenantID.String(), OwnerSubject: row.OwnerSubject, ResourceID: row.ResourceID.String(), Setup: row.Input.Setup}
+	if workspace.Validate() != nil {
+		return ErrConflict
+	}
+	raw, err := json.Marshal(workspace)
+	if err != nil {
+		return ErrUnavailable
+	}
+	token, err := os.ReadFile(s.hospitals.HelivantaTokenFile)
+	if err != nil || len(token) > 8192 || strings.TrimSpace(string(token)) == "" {
+		return ErrUnavailable
+	}
+	target := strings.TrimSuffix(s.hospitals.HelivantaURL, "/hospital-enrolments") + "/customer-workspaces"
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(raw))
+	if err != nil {
+		return ErrUnavailable
+	}
+	request.Header.Set("X-Onboarding-Token", "Bearer "+strings.TrimSpace(string(token)))
+	request.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 5 * time.Second}
+	if s.hospitals.HTTPClient != nil {
+		copy := *s.hospitals.HTTPClient
+		client = &copy
+	}
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	response, err := client.Do(request)
+	if err != nil {
+		return ErrUnavailable
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		return ErrUnavailable
+	}
+	var receipt customercontract.Receipt
+	decoder := json.NewDecoder(io.LimitReader(response.Body, 8192))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&receipt) != nil || decoder.Decode(new(any)) != io.EOF || receipt.Validate() != nil || receipt.State != customercontract.Ready || receipt.TenantID != workspace.TenantID || receipt.ResourceID != workspace.ResourceID || receipt.Name != workspace.Name || receipt.Kind != workspace.Kind {
+		return ErrUnavailable
+	}
+	return nil
+}
