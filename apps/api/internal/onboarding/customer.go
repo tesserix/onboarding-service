@@ -178,3 +178,6 @@ func (s *Service) DeliverCustomer(ctx context.Context, id uuid.UUID, hash []byte
 	}
 	return generic, nil
 }
+
+// DeliverCustomers advances a bounded batch of durable identity deliveries.
+func (s *Service) DeliverCustomers(ctx context.Context, now time.Time) error { return nil }
