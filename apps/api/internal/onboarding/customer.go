@@ -250,6 +250,37 @@ func (s *Service) initializeCustomer(ctx context.Context, row store.CustomerSign
 	if workspace.Validate() != nil {
 		return ErrConflict
 	}
+	product, err := s.store.Product(ctx, "helivanta")
+	if err != nil || product.State != "active" {
+		return ErrUnavailable
+	}
+	started := time.Now().UTC()
+	org := store.Organization{ID: row.TenantID, ZitadelOrgID: workspace.OrganizationID}
+	proof, err := s.idp.VerifyOrganization(ctx, workspace.OrganizationID, workspace.TenantID, product.ZitadelProjectID)
+	if err != nil || !currentIdentityProof(proof, org, product, started, time.Now().UTC()) || proof.State != "active" {
+		return ErrUnavailable
+	}
+	verified, err := s.signupIdentity.SignupIdentity(ctx, workspace.OrganizationID, row.OwnerSubject, row.Input.Owner.Email)
+	if err != nil || !verified {
+		return ErrUnavailable
+	}
+	members, err := s.idp.OrgMembers(ctx, workspace.OrganizationID)
+	if err != nil {
+		return ErrUnavailable
+	}
+	owner := false
+	for _, member := range members {
+		if member.UserID == row.OwnerSubject {
+			for _, role := range member.Roles {
+				if role == "ORG_OWNER" {
+					owner = true
+				}
+			}
+		}
+	}
+	if !owner {
+		return ErrConflict
+	}
 	raw, err := json.Marshal(workspace)
 	if err != nil {
 		return ErrUnavailable
