@@ -73,6 +73,7 @@ type Service struct {
 	log               *slog.Logger
 	registryProjectID string
 	hospitals         *HospitalConfig
+	signupIdentity    *zitadel.Client
 }
 
 type Option func(*Service)

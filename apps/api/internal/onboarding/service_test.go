@@ -199,7 +199,7 @@ func newService(t *testing.T) (*Service, *fakeIdentity, *store.Store) {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
-	for _, table := range []string{"idps", "domains", "org_products", "organizations", "products", "idempotency_keys"} {
+	for _, table := range []string{"customer_signups", "idps", "domains", "org_products", "organizations", "products", "idempotency_keys"} {
 		if _, err := pool.Exec(context.Background(), "DELETE FROM "+table); err != nil {
 			t.Fatalf("clean %s: %v", table, err)
 		}

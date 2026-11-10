@@ -17,6 +17,7 @@ type Deps struct {
 	MCPTokens            TokenVerifier
 	DisableLegacyConsole bool
 	HospitalWorkloads    WorkloadVerifier
+	CustomerWorkloads    WorkloadVerifier
 	Service              *onboarding.Service
 	Store                *store.Store
 	// Tokens verifies a product's Zitadel machine token; ConsoleTokens verifies
@@ -71,6 +72,7 @@ func NewRouter(d Deps) *gin.Engine {
 	v1.POST("/hospital-onboardings", d.startHospital)
 	v1.GET("/hospital-onboardings/:tenantId", d.getHospital)
 	r.POST("/internal/v1/hospital-enrolments", d.completeHospital)
+	d.registerCustomers(r)
 	d.registerMCP(r)
 	return r
 }

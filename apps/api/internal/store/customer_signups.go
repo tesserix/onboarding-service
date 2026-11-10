@@ -248,4 +248,22 @@ func (s *Store) RotateSignupReceipt(ctx context.Context, id uuid.UUID, hash []by
 }
 
 // ConsumeSignupMail reserves a shared native delivery allowance before sending.
-func (s *Store) ConsumeSignupMail(ctx context.Context, id uuid.UUID, now time.Time) error { return nil }
+func (s *Store) ConsumeSignupMail(ctx context.Context, id uuid.UUID, now time.Time) error {
+	result, err := s.pool.Exec(ctx, `UPDATE customer_signups SET
+  mail_attempts=CASE WHEN mail_window_at <= $2::timestamptz-interval '1 hour' THEN 1 ELSE mail_attempts+1 END,
+  mail_window_at=CASE WHEN mail_window_at <= $2::timestamptz-interval '1 hour' THEN $2 ELSE mail_window_at END,
+  updated_at=now()
+  WHERE id=$1 AND state NOT IN ('existing_account','needs_support')
+   AND (mail_window_at <= $2::timestamptz-interval '1 hour' OR mail_attempts<3)`, id, now)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 1 {
+		return nil
+	}
+	_, err = s.customerSignupByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	return ErrConflict
+}
