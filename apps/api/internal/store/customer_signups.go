@@ -207,11 +207,11 @@ func (s *Store) FinishCustomerSignup(ctx context.Context, row CustomerSignup, st
 // ConsumeSignupProof reserves a native proof attempt before contacting identity.
 func (s *Store) ConsumeSignupProof(ctx context.Context, id uuid.UUID, now time.Time) error {
 	result, err := s.pool.Exec(ctx, `UPDATE customer_signups SET
-      proof_attempts=CASE WHEN proof_window_at IS NULL OR proof_window_at <= $2-interval '15 minutes' THEN 1 ELSE proof_attempts+1 END,
-      proof_window_at=CASE WHEN proof_window_at IS NULL OR proof_window_at <= $2-interval '15 minutes' THEN $2 ELSE proof_window_at END,
+      proof_attempts=CASE WHEN proof_window_at IS NULL OR proof_window_at <= $2::timestamptz-interval '15 minutes' THEN 1 ELSE proof_attempts+1 END,
+      proof_window_at=CASE WHEN proof_window_at IS NULL OR proof_window_at <= $2::timestamptz-interval '15 minutes' THEN $2 ELSE proof_window_at END,
       updated_at=now()
       WHERE id=$1 AND state NOT IN ('existing_account','needs_support')
-        AND (proof_window_at IS NULL OR proof_window_at <= $2-interval '15 minutes' OR proof_attempts<5)`, id, now)
+        AND (proof_window_at IS NULL OR proof_window_at <= $2::timestamptz-interval '15 minutes' OR proof_attempts<5)`, id, now)
 	if err != nil {
 		return err
 	}
@@ -231,5 +231,18 @@ func (s *Store) customerSignupByID(ctx context.Context, id uuid.UUID) (CustomerS
 
 // RotateSignupReceipt binds a fresh capability only after native proof succeeds.
 func (s *Store) RotateSignupReceipt(ctx context.Context, id uuid.UUID, hash []byte) error {
-	return nil
+	if len(hash) != 32 {
+		return ErrConflict
+	}
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		row, err := scanCustomerSignup(tx.QueryRow(ctx, `UPDATE customer_signups SET receipt_hash=$2,
+   receipt_verified=true,receipt_expires_at=now()+interval '7 days',updated_at=now()
+   WHERE id=$1 AND state NOT IN ('existing_account','needs_support') RETURNING `+customerSignupColumns, id, hash))
+		if err != nil {
+			return err
+		}
+		return appendAudit(ctx, tx, audit.Event{ActorType: audit.ActorSystem, ActorID: row.OwnerSubject,
+			ProductKey: "helivanta", OrgID: row.TenantID.String(), Action: "customer.signup.proven",
+			Outcome: audit.OutcomeSuccess, RequestID: row.ID.String(), Detail: "{}"})
+	})
 }

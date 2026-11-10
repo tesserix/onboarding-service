@@ -90,7 +90,7 @@ func (s *Service) StartHospital(ctx context.Context, p authz.Principal, in Start
 	if len(idempotencyKey) < 16 || len(idempotencyKey) > 200 || strings.TrimSpace(in.DisplayName) == "" || len(in.DisplayName) > 200 || (in.InitialAdmin == nil && !hospitalSourceID.MatchString(in.InitialAdminUserID)) || (in.InitialAdmin != nil && (in.InitialAdminUserID != "" || in.TenantID != "" || in.OrganizationID != "" || in.PreserveLoginPolicy)) {
 		return empty, ErrInvalid
 	}
-	tenant := uuid.NewSHA1(uuid.NameSpaceURL, []byte("hospital-onboarding:"+in.Product+":"+p.Subject+":"+idempotencyKey))
+	tenant := hospitalTenantID(in.Product, p.Subject, idempotencyKey)
 	adoption := in.TenantID != "" || in.OrganizationID != "" || in.PreserveLoginPolicy
 	if adoption {
 		if p.Kind != authz.KindPlatform {
