@@ -110,15 +110,25 @@ func scanCustomerSignup(row pgx.Row) (CustomerSignup, error) {
 
 // CustomerSignup resolves only the caller's opaque receipt.
 func (s *Store) CustomerSignup(ctx context.Context, id uuid.UUID, receiptHash []byte) (CustomerSignup, error) {
-	return CustomerSignup{}, ErrNotFound
+	if len(receiptHash) != 32 {
+		return CustomerSignup{}, ErrNotFound
+	}
+	row, err := scanCustomerSignup(s.pool.QueryRow(ctx, `SELECT `+customerSignupColumns+` FROM customer_signups WHERE id=$1`, id))
+	if err != nil {
+		return CustomerSignup{}, err
+	}
+	if subtle.ConstantTimeCompare(row.ReceiptHash, receiptHash) != 1 {
+		return CustomerSignup{}, ErrNotFound
+	}
+	return row, nil
 }
 
 // CustomerSignupByTenant is for the authenticated provisioning callback only.
 func (s *Store) CustomerSignupByTenant(ctx context.Context, tenant uuid.UUID) (CustomerSignup, error) {
-	return CustomerSignup{}, ErrNotFound
+	return scanCustomerSignup(s.pool.QueryRow(ctx, `SELECT `+customerSignupColumns+` FROM customer_signups WHERE tenant_id=$1`, tenant))
 }
 
 // CustomerSignupBySubject resolves the expected native subject before native proof checking.
 func (s *Store) CustomerSignupBySubject(ctx context.Context, subject string) (CustomerSignup, error) {
-	return CustomerSignup{}, ErrNotFound
+	return scanCustomerSignup(s.pool.QueryRow(ctx, `SELECT `+customerSignupColumns+` FROM customer_signups WHERE owner_subject=$1`, subject))
 }
