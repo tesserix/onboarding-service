@@ -2,16 +2,20 @@ package onboarding
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"github.com/google/uuid"
 	identity "github.com/tesserix/devai-sandbox-operator/operators/zitadel/api/v1alpha1"
 	"github.com/tesserix/onboarding-service/api/customercontract"
 	"github.com/tesserix/onboarding-service/api/internal/hospitalclaims"
+	"github.com/tesserix/onboarding-service/api/internal/store"
 	"github.com/tesserix/onboarding-service/api/internal/zitadel"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/dynamic/fake"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -87,5 +91,31 @@ func TestCustomerDeliveryCreatesOnePrivateClaimAndWaitsForNativeProof(t *testing
 	receipt, err := svc.Customer(t.Context(), id, hash[:])
 	if err != nil || receipt.State == customercontract.Ready {
 		t.Fatalf("unproven workspace became ready: %v", err)
+	}
+}
+
+func TestBusinessInitializationRequiresCurrentNativeAuthorityBeforeCallingHelivanta(t *testing.T) {
+	svc, _, st := newService(t)
+	seedProduct(t, st, "helivanta")
+	tenant := uuid.New()
+	resource := uuid.Must(uuid.NewV7())
+	var requests atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(customercontract.Receipt{State: customercontract.Ready, Name: "TEST Hospital", Kind: customercontract.Hospital, TenantID: tenant.String(), ResourceID: resource.String()})
+	}))
+	t.Cleanup(target.Close)
+	path := t.TempDir() + "/token"
+	if err := os.WriteFile(path, []byte("synthetic-workload-token"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	svc.hospitals = &HospitalConfig{HelivantaURL: target.URL + "/hospital-enrolments", HelivantaTokenFile: path}
+	row := store.CustomerSignup{TenantID: tenant, ResourceID: resource, OwnerSubject: "owner-" + tenant.String(), Input: customercontract.Signup{Setup: customercontract.Setup{Name: "TEST Hospital", Kind: customercontract.Hospital, CountryCode: customercontract.India, StateCode: customercontract.Maharashtra}, Owner: &identity.OrganizationInitialAdmin{GivenName: "Test", FamilyName: "Owner", Email: "owner@example.test"}}}
+	if err := svc.initializeCustomer(t.Context(), row); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("stale native ownership initialized a business: %v", err)
+	}
+	if requests.Load() != 0 {
+		t.Fatal("unverified owner reached business initialization")
 	}
 }
