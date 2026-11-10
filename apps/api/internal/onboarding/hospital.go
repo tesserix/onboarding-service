@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	identity "github.com/tesserix/devai-sandbox-operator/operators/zitadel/api/v1alpha1"
 	"github.com/tesserix/onboarding-service/api/internal/audit"
 	"github.com/tesserix/onboarding-service/api/internal/authz"
 	"github.com/tesserix/onboarding-service/api/internal/hospitalclaims"
@@ -38,12 +39,13 @@ var errHospitalWorkflow = fmt.Errorf("%w: use /v1/hospital-onboardings for Heliv
 var hospitalSourceID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,200}$`)
 
 type StartHospitalInput struct {
-	Product             string `json:"product"`
-	DisplayName         string `json:"displayName"`
-	InitialAdminUserID  string `json:"initialAdminUserId"`
-	TenantID            string `json:"tenantId,omitempty"`
-	OrganizationID      string `json:"organizationId,omitempty"`
-	PreserveLoginPolicy bool   `json:"preserveLoginPolicy,omitempty"`
+	Product             string                             `json:"product"`
+	DisplayName         string                             `json:"displayName"`
+	InitialAdminUserID  string                             `json:"initialAdminUserId,omitempty"`
+	InitialAdmin        *identity.OrganizationInitialAdmin `json:"initialAdmin,omitempty"`
+	TenantID            string                             `json:"tenantId,omitempty"`
+	OrganizationID      string                             `json:"organizationId,omitempty"`
+	PreserveLoginPolicy bool                               `json:"preserveLoginPolicy,omitempty"`
 }
 
 func (s *Service) hospitalProduct(ctx context.Context, p authz.Principal, key string, write bool) (store.Product, error) {
@@ -85,7 +87,7 @@ func (s *Service) StartHospital(ctx context.Context, p authz.Principal, in Start
 	if _, err := s.hospitalProduct(ctx, p, in.Product, true); err != nil {
 		return empty, err
 	}
-	if len(idempotencyKey) < 16 || len(idempotencyKey) > 200 || strings.TrimSpace(in.DisplayName) == "" || len(in.DisplayName) > 200 || !hospitalSourceID.MatchString(in.InitialAdminUserID) {
+	if len(idempotencyKey) < 16 || len(idempotencyKey) > 200 || strings.TrimSpace(in.DisplayName) == "" || len(in.DisplayName) > 200 || (in.InitialAdmin == nil && !hospitalSourceID.MatchString(in.InitialAdminUserID)) || (in.InitialAdmin != nil && in.InitialAdminUserID != "") {
 		return empty, ErrInvalid
 	}
 	tenant := uuid.NewSHA1(uuid.NameSpaceURL, []byte("hospital-onboarding:"+in.Product+":"+p.Subject+":"+idempotencyKey))
@@ -100,7 +102,13 @@ func (s *Service) StartHospital(ctx context.Context, p authz.Principal, in Start
 			return empty, ErrInvalid
 		}
 	}
-	spec := hospitalclaims.Spec{Product: in.Product, TenantID: tenant.String(), DisplayName: strings.TrimSpace(in.DisplayName), OrganizationID: in.OrganizationID, PreserveLoginPolicy: in.PreserveLoginPolicy, InitialAdminUserID: in.InitialAdminUserID}
+	spec := hospitalclaims.Spec{Product: in.Product, TenantID: tenant.String(), DisplayName: strings.TrimSpace(in.DisplayName), OrganizationID: in.OrganizationID, PreserveLoginPolicy: in.PreserveLoginPolicy, InitialAdminUserID: in.InitialAdminUserID, InitialAdmin: in.InitialAdmin}
+	if in.InitialAdmin != nil {
+		spec.InitialAdminUserID = "owner-" + tenant.String()
+	}
+	if err := spec.ValidateInitialAdmin(); err != nil {
+		return empty, ErrInvalid
+	}
 	if e := s.store.AppendAudit(ctx, audit.Event{ActorType: actorType(p), ActorID: p.Subject, ProductKey: in.Product, OrgID: tenant.String(), Action: "hospital.onboarding.requested", Outcome: audit.OutcomeSuccess, RequestID: RequestIDFrom(ctx), Detail: encodeDetail(map[string]string{"product": in.Product})}); e != nil {
 		return empty, ErrUnavailable
 	}

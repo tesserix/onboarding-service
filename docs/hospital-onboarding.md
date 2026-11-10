@@ -15,6 +15,46 @@ receive that service credential.
 }
 ```
 
+For a first customer without an existing identity, the same trusted API accepts
+an `initialAdmin` profile instead of `initialAdminUserId`:
+
+```json
+{
+  "product": "helivanta",
+  "displayName": "Example Hospital Group",
+  "initialAdmin": {
+    "givenName": "Example",
+    "familyName": "Owner",
+    "email": "owner@example.test"
+  }
+}
+```
+
+The API derives `initialAdminUserId` as `owner-<tenantId>`. Sending both owner
+modes, an invalid profile or a new-owner profile with adoption fields is rejected.
+The profile uses the operator's canonical Go type, pinned by commit from the
+public `tesserix/tesserix-operators` repository. Its legacy Go module path is
+resolved with an explicit versioned module replacement; there is no local path
+replacement or independently copied claim model.
+
+Zitadel creates the organization and its human owner together. Its native
+verification email is requested without a password, returned code or fabricated
+verification. The controller reports `OwnerVerificationPending` until that exact
+active human has the expected home organization and verified email; it grants no
+product access while waiting. Polling does not recreate the owner or resend a
+code. A changed-profile retry conflicts. Profiles remain in private runtime
+claims, never public GitOps or logs; cleartext names/email are removed from held
+archive payloads and replaced by an immutable spec fingerprint. Restoring a
+profile-bearing claim requires its authorized profile source as well as the
+archive fingerprint.
+
+This is a trusted provisioning capability. The public self-service signup
+journey, automatic hospital/pharmacy setup and owner security panel are separate
+integration gates and are not implemented by this endpoint. The intended public
+policy is automatic onboarding after verified signup, with the first registrant
+becoming the tenant owner; platform approval is not required. Identity completion
+does not certify a pharmacy licence, clinical authority or financial authority.
+
 The product backend must derive the initial subject from its authenticated
 user/workflow, rather than copying an untrusted browser's ownership assertion.
 The service derives a stable new tenant UUID from the authenticated caller and

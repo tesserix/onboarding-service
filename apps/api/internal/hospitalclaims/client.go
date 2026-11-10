@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	identity "github.com/tesserix/devai-sandbox-operator/operators/zitadel/api/v1alpha1"
 	"reflect"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -17,14 +18,8 @@ import (
 var resource = schema.GroupVersionResource{Group: "identity.tesserix.app", Version: "v1alpha1", Resource: "zitadelorganizations"}
 var ErrConflict = errors.New("hospital identity binding conflicts")
 
-type Spec struct {
-	Product             string `json:"product"`
-	TenantID            string `json:"tenantId"`
-	DisplayName         string `json:"displayName"`
-	OrganizationID      string `json:"organizationId,omitempty"`
-	PreserveLoginPolicy bool   `json:"preserveLoginPolicy,omitempty"`
-	InitialAdminUserID  string `json:"initialAdminUserId"`
-}
+type Spec = identity.ZitadelOrganizationSpec
+
 type Result struct {
 	Spec   Spec `json:"spec"`
 	Status struct {

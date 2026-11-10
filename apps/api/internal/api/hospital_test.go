@@ -153,3 +153,60 @@ func TestHospitalStatusIsScopedAndInternalRouteRejectsProductSessions(t *testing
 		t.Fatalf("product adoption decision=%v", e)
 	}
 }
+
+func TestHospitalFirstOwnerDoesNotRequireAPreexistingIdentity(t *testing.T) {
+	h := newHarness(t)
+	if err := h.store.CreateProduct(t.Context(), store.Product{Key: "helivanta", DisplayName: "Helivanta", ZitadelProjectID: "proj-helivanta", MachineUserID: "svc-helivanta", Identity: store.IdentityZitadel, TenantSecrets: store.TenantSecretsOpenBao, Tenancy: store.TenancyOrg, Roles: []string{}, DataResidency: "in"}); err != nil {
+		t.Fatal(err)
+	}
+	claims := hospitalclaims.New(fake.NewSimpleDynamicClient(runtime.NewScheme()), "identity-operator")
+	service := onboarding.New(h.store, h.identity, authz.New(h.store), nil, onboarding.WithHospitals(onboarding.HospitalConfig{Claims: claims, Product: "helivanta"}))
+	router := NewRouter(Deps{Service: service, Store: h.store, Tokens: stubTokens{claims: map[string]auth.Claims{"helivanta": {Subject: "svc-helivanta"}}}})
+	call := func(key, body string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, "/v1/hospital-onboardings", strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Authorization", "Bearer helivanta")
+		request.Header.Set("Idempotency-Key", key)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		return response
+	}
+	input := `{"product":"helivanta","displayName":"TEST Hospital","initialAdmin":{"givenName":"Test","familyName":"Owner","email":"owner@example.test"}}`
+	key := "TEST-first-owner-profile-1"
+	response := call(key, input)
+	if response.Code != 202 {
+		t.Fatalf("new owner rejected: %d %s", response.Code, response.Body.String())
+	}
+	var result hospitalclaims.Result
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	tenant := uuid.NewSHA1(uuid.NameSpaceURL, []byte("hospital-onboarding:helivanta:svc-helivanta:"+key)).String()
+	if result.Spec.TenantID != tenant || result.Spec.InitialAdminUserID != "owner-"+tenant || result.Spec.InitialAdmin == nil || result.Spec.InitialAdmin.Email != "owner@example.test" || result.Status.Activated {
+		t.Fatalf("unexpected first owner binding: %+v", result)
+	}
+	replay := call(key, input)
+	if replay.Code != 202 || replay.Body.String() != response.Body.String() {
+		t.Fatalf("first-owner replay changed binding: %d", replay.Code)
+	}
+	changed := call(key, strings.ReplaceAll(input, "owner@example.test", "other@example.test"))
+	if changed.Code != 409 {
+		t.Fatalf("owner replacement accepted: %d", changed.Code)
+	}
+	for name, body := range map[string]string{
+		"caller_selected_subject": strings.Replace(input, `"initialAdmin":`, `"initialAdminUserId":"foreign-subject","initialAdmin":`, 1),
+		"invalid_contact":         strings.ReplaceAll(input, "owner@example.test", "not-an-email"),
+		"missing_given_name":      strings.ReplaceAll(input, `"givenName":"Test"`, `"givenName":""`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			rejected := call("TEST-first-owner-invalid-"+name, body)
+			if rejected.Code != 400 {
+				t.Fatalf("unsafe first owner accepted: %d %s", rejected.Code, rejected.Body.String())
+			}
+		})
+	}
+	persisted, err := claims.Get(t.Context(), "helivanta", tenant)
+	if err != nil || persisted.Spec.InitialAdmin == nil || persisted.Spec.InitialAdmin.Email != "owner@example.test" {
+		t.Fatal("immutable first-owner profile lost")
+	}
+}
