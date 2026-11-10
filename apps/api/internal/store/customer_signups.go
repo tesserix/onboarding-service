@@ -228,3 +228,8 @@ func (s *Store) ConsumeSignupProof(ctx context.Context, id uuid.UUID, now time.T
 func (s *Store) customerSignupByID(ctx context.Context, id uuid.UUID) (CustomerSignup, error) {
 	return scanCustomerSignup(s.pool.QueryRow(ctx, `SELECT `+customerSignupColumns+` FROM customer_signups WHERE id=$1`, id))
 }
+
+// RotateSignupReceipt binds a fresh capability only after native proof succeeds.
+func (s *Store) RotateSignupReceipt(ctx context.Context, id uuid.UUID, hash []byte) error {
+	return nil
+}

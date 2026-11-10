@@ -173,3 +173,30 @@ func TestSignupProofBudgetIsSharedBoundedAndResetsAfterWindow(t *testing.T) {
 		t.Fatalf("unknown signup consumed proof budget: %v", err)
 	}
 }
+
+func TestSignupReceiptRotationRevokesOldCapabilityAndAuditsProof(t *testing.T) {
+	s := newStore(t)
+	seedProduct(t, s, "helivanta")
+	in := signupCommand(t)
+	if _, err := s.ReserveCustomerSignup(t.Context(), in, audit.Event{ActorType: audit.ActorSystem, ActorID: "signup-test", Outcome: audit.OutcomeSuccess}); err != nil {
+		t.Fatal(err)
+	}
+	next := digest("new-proof-bound-receipt")
+	if err := s.RotateSignupReceipt(t.Context(), in.ID, next); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CustomerSignup(t.Context(), in.ID, in.ReceiptHash); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("old receipt survived native proof: %v", err)
+	}
+	current, err := s.CustomerSignup(t.Context(), in.ID, next)
+	if err != nil || !current.ReceiptVerified {
+		t.Fatalf("native proof did not bind receipt: %v", err)
+	}
+	var count int
+	if err = s.pool.QueryRow(t.Context(), `SELECT count(*) FROM audit_events WHERE request_id=$1 AND action='customer.signup.proven'`, in.ID.String()).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("proof evidence missing: count=%d err=%v", count, err)
+	}
+	if err = s.RotateSignupReceipt(t.Context(), in.ID, nil); !errors.Is(err, ErrConflict) {
+		t.Fatalf("invalid capability persisted: %v", err)
+	}
+}
