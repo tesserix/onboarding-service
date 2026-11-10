@@ -467,3 +467,10 @@ func mustUUID(t *testing.T, s string) uuid.UUID {
 	}
 	return parsed
 }
+
+func (f *fakeIdentity) VerifyExistingHuman(_ context.Context, userID, email string) error {
+	if userID == "verified-owner" && email == "owner@example.test" {
+		return nil
+	}
+	return zitadel.ErrIdentityUnavailable
+}

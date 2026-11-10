@@ -79,6 +79,7 @@ func run(log *slog.Logger) error {
 	svc := onboarding.New(st, identity, authz.New(st), log,
 		onboarding.WithRegistryProjectID(cfg.RegistryProjectID))
 
+	var planningPokerWorkloads api.WorkloadVerifier
 	var hospitalWorkloads api.WorkloadVerifier
 	var customerWorkloads api.WorkloadVerifier
 	var ownerSecurityWorkloads api.WorkloadVerifier
@@ -109,6 +110,20 @@ func run(log *slog.Logger) error {
 			return errors.New("invalid Helivanta provisioning destination")
 		}
 		svc = onboarding.New(st, identity, authz.New(st), log, onboarding.WithRegistryProjectID(cfg.RegistryProjectID), onboarding.WithCustomerIdentity(client), onboarding.WithHospitals(onboarding.HospitalConfig{Claims: hospitalclaims.New(kube, "identity-operator"), Product: "helivanta", HelivantaURL: target, HelivantaTokenFile: "/var/run/helivanta-provisioning/token"}))
+	}
+
+	if cfg.PlanningPokerProjectID != "" {
+		kubeConfig, e := rest.InClusterConfig()
+		if e != nil {
+			return e
+		}
+		planningPokerWorkloads, e = workloadidentity.New(kubeConfig, "planning-poker-onboarding", "system:serviceaccount:planning-poker:planning-poker-api")
+		if e != nil {
+			return e
+		}
+		if e = svc.ConfigurePlanningPoker(ctx, cfg.PlanningPokerProjectID, cfg.PlanningPokerClientID); e != nil {
+			return e
+		}
 	}
 
 	verifier, err := auth.NewJWKSVerifier(ctx, cfg.ZitadelIssuer, cfg.ZitadelJWKSURL, cfg.Audience, http.DefaultClient)
@@ -155,7 +170,7 @@ func run(log *slog.Logger) error {
 	}
 	router := api.NewRouter(api.Deps{
 		MCPTokens: mcpTokens,
-		Service:   svc, Store: st, Tokens: verifier, RegistryTokens: registryVerifier, HospitalWorkloads: hospitalWorkloads, CustomerWorkloads: customerWorkloads, OwnerSecurityWorkloads: ownerSecurityWorkloads,
+		Service:   svc, Store: st, Tokens: verifier, RegistryTokens: registryVerifier, HospitalWorkloads: hospitalWorkloads, PlanningPokerWorkloads: planningPokerWorkloads, CustomerWorkloads: customerWorkloads, OwnerSecurityWorkloads: ownerSecurityWorkloads,
 		ConsoleTokens: legacyTokens, Sessions: sessions,
 		ConsoleAccessTokens:  consoleAccess,
 		DisableLegacyConsole: !cfg.LegacyConsoleEnabled,
