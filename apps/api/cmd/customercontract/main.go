@@ -39,6 +39,9 @@ func generateContracts() (string, error) {
 		name string
 		kind reflect.Type
 	}{
+		{"CustomerBusinessAddress", reflect.TypeFor[customercontract.BusinessAddress]()},
+		{"CustomerBusinessProfileView", reflect.TypeFor[customercontract.BusinessProfileView]()},
+		{"CustomerOrganizationProfile", reflect.TypeFor[customercontract.OrganizationProfile]()},
 		{"CustomerSignupInput", reflect.TypeFor[customercontract.Signup]()},
 		{"CustomerSignupReceipt", reflect.TypeFor[customercontract.Receipt]()},
 		{"CustomerSignupProof", reflect.TypeFor[customercontract.Proof]()},
@@ -126,6 +129,18 @@ func contractFields(kind reflect.Type) ([]string, error) {
 		schema, err := contractSchema(field.Type, field.Tag.Get("enum"))
 		if err != nil {
 			return nil, err
+		}
+		if field.Tag.Get("format") == "email" {
+			schema += ".email()"
+		}
+		if maximum := field.Tag.Get("max"); maximum != "" {
+			schema += ".max(" + maximum + ")"
+		}
+		if field.Tag.Get("clean") == "true" {
+			schema += ".refine(value=>value===value.trim()&&!/[\\u0000-\\u001f\\u007f-\\u009f]/.test(value),{message:'Use text without surrounding spaces or control characters'})"
+		}
+		if field.Tag.Get("nullable") == "true" {
+			schema += ".nullable()"
 		}
 		if field.Tag.Get("format") == "uuid" {
 			schema += ".uuid()"
