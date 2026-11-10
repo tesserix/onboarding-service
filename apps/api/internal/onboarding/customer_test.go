@@ -119,3 +119,16 @@ func TestBusinessInitializationRequiresCurrentNativeAuthorityBeforeCallingHeliva
 		t.Fatal("unverified owner reached business initialization")
 	}
 }
+
+func TestEmailProofDoesNotReportReadyBeforeNativePasswordSetup(t *testing.T) {
+	tenant := uuid.New()
+	row := store.CustomerSignup{State: "ready", ReceiptVerified: true, TenantID: tenant, ResourceID: uuid.Must(uuid.NewV7()), Input: customercontract.Signup{Setup: customercontract.Setup{Name: "TEST Hospital", Kind: customercontract.Hospital}}}
+	if customerReceipt(row).State == customercontract.Ready {
+		t.Fatal("email proof exposed a ready workspace before native password setup")
+	}
+	row.PasswordConfigured = true
+	if receipt := customerReceipt(row); receipt.State != customercontract.Ready || receipt.TenantID != tenant.String() || receipt.ResourceID != row.ResourceID.String() {
+		t.Fatal("completed native setup lost the ready workspace binding")
+	}
+
+}

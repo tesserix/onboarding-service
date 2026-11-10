@@ -64,14 +64,21 @@ func customerError(err error) error {
 	}
 }
 func customerReceipt(row store.CustomerSignup) customercontract.Receipt {
+	if row.ReceiptVerified && !row.PasswordConfigured && (row.State == "recorded" || row.State == "identity_requested" || row.State == "ready") {
+		return customercontract.Receipt{State: customercontract.PasswordActionRequired}
+	}
 	state := customercontract.Provisioning
 	switch row.State {
-	case "existing_account", "identity_requested":
+	case "existing_account":
 		state = customercontract.EmailActionRequired
+	case "identity_requested":
+		if !row.ReceiptVerified {
+			state = customercontract.EmailActionRequired
+		}
 	case "needs_support":
 		state = customercontract.NeedsSupport
 	case "ready":
-		if row.ReceiptVerified {
+		if row.ReceiptVerified && row.PasswordConfigured {
 			return customercontract.Receipt{State: customercontract.Ready, Name: row.Input.Name, Kind: row.Input.Kind, TenantID: row.TenantID.String(), ResourceID: row.ResourceID.String()}
 		}
 		state = customercontract.EmailActionRequired
@@ -131,10 +138,11 @@ func (s *Service) ProveCustomer(ctx context.Context, in customercontract.Proof, 
 	if err != nil || !verified {
 		return uuid.Nil, empty, ErrUnavailable
 	}
-	if err = s.store.RotateSignupReceipt(ctx, row.ID, nextHash); err != nil {
+	if err = s.store.RotateSignupReceipt(ctx, row.ID, nextHash, password); err != nil {
 		return uuid.Nil, empty, customerError(err)
 	}
 	row.ReceiptVerified = true
+	row.PasswordConfigured = row.PasswordConfigured || password
 	return row.ID, customerReceipt(row), nil
 }
 

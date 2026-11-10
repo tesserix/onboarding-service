@@ -182,7 +182,7 @@ func TestSignupReceiptRotationRevokesOldCapabilityAndAuditsProof(t *testing.T) {
 		t.Fatal(err)
 	}
 	next := digest("new-proof-bound-receipt")
-	if err := s.RotateSignupReceipt(t.Context(), in.ID, next); err != nil {
+	if err := s.RotateSignupReceipt(t.Context(), in.ID, next, false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.CustomerSignup(t.Context(), in.ID, in.ReceiptHash); !errors.Is(err, ErrNotFound) {
@@ -196,9 +196,26 @@ func TestSignupReceiptRotationRevokesOldCapabilityAndAuditsProof(t *testing.T) {
 	if err = s.pool.QueryRow(t.Context(), `SELECT count(*) FROM audit_events WHERE request_id=$1 AND action='customer.signup.proven'`, in.ID.String()).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("proof evidence missing: count=%d err=%v", count, err)
 	}
-	if err = s.RotateSignupReceipt(t.Context(), in.ID, nil); !errors.Is(err, ErrConflict) {
+	if err = s.RotateSignupReceipt(t.Context(), in.ID, nil, false); !errors.Is(err, ErrConflict) {
 		t.Fatalf("invalid capability persisted: %v", err)
 	}
+	passwordReceipt := digest("native-password-proof-receipt")
+	if err = s.RotateSignupReceipt(t.Context(), in.ID, passwordReceipt, true); err != nil {
+		t.Fatal(err)
+	}
+	current, err = s.CustomerSignup(t.Context(), in.ID, passwordReceipt)
+	if err != nil || !current.PasswordConfigured {
+		t.Fatalf("native credential completion was not durable: %v", err)
+	}
+	emailReceipt := digest("later-email-proof-receipt")
+	if err = s.RotateSignupReceipt(t.Context(), in.ID, emailReceipt, false); err != nil {
+		t.Fatal(err)
+	}
+	current, err = s.CustomerSignup(t.Context(), in.ID, emailReceipt)
+	if err != nil || !current.PasswordConfigured {
+		t.Fatalf("later email proof erased completed credential evidence: %v", err)
+	}
+
 }
 
 func TestSignupMailDeliveryCannotExceedSharedHourlyBudget(t *testing.T) {

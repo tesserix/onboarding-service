@@ -45,15 +45,16 @@ func (StateCode) Values() []string { return []string{string(Maharashtra), string
 type Status string
 
 const (
-	NotStarted          Status = "not_started"
-	EmailActionRequired Status = "email_action_required"
-	Provisioning        Status = "provisioning"
-	Ready               Status = "ready"
-	NeedsSupport        Status = "needs_support"
+	NotStarted             Status = "not_started"
+	EmailActionRequired    Status = "email_action_required"
+	PasswordActionRequired Status = "password_action_required"
+	Provisioning           Status = "provisioning"
+	Ready                  Status = "ready"
+	NeedsSupport           Status = "needs_support"
 )
 
 func (Status) Values() []string {
-	return []string{string(NotStarted), string(EmailActionRequired), string(Provisioning), string(Ready), string(NeedsSupport)}
+	return []string{string(NotStarted), string(EmailActionRequired), string(PasswordActionRequired), string(Provisioning), string(Ready), string(NeedsSupport)}
 }
 
 // Setup is the common initial business-resource intent.

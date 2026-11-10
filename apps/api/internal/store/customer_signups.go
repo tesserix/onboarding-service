@@ -15,23 +15,24 @@ import (
 
 // CustomerSignup is an immutable submitted command and its mutable delivery state.
 type CustomerSignup struct {
-	ID               uuid.UUID
-	TenantID         uuid.UUID
-	ResourceID       uuid.UUID
-	OwnerSubject     string
-	ReceiptHash      []byte
-	ReceiptExpiresAt time.Time
-	ReceiptVerified  bool
-	ReceiptActive    bool
-	LeaseID          *uuid.UUID
-	IntentHash       []byte
-	OwnerEmailHash   []byte
-	Input            customercontract.Signup
-	State            string
-	Attempts         int
-	RetryAt          time.Time
-	LeaseUntil       *time.Time
-	ErrorCode        string
+	ID                 uuid.UUID
+	TenantID           uuid.UUID
+	ResourceID         uuid.UUID
+	OwnerSubject       string
+	ReceiptHash        []byte
+	ReceiptExpiresAt   time.Time
+	ReceiptVerified    bool
+	PasswordConfigured bool
+	ReceiptActive      bool
+	LeaseID            *uuid.UUID
+	IntentHash         []byte
+	OwnerEmailHash     []byte
+	Input              customercontract.Signup
+	State              string
+	Attempts           int
+	RetryAt            time.Time
+	LeaseUntil         *time.Time
+	ErrorCode          string
 }
 
 // ReserveCustomerSignup persists intent and its audit before remote provisioning.
@@ -104,12 +105,12 @@ func (s *Store) ReserveCustomerSignup(ctx context.Context, in CustomerSignup, ev
 	return result, err
 }
 
-const customerSignupColumns = `id,tenant_id,resource_id,owner_subject,receipt_hash,intent_hash,owner_email_hash,input,state,attempts,retry_at,lease_until,error_code,receipt_expires_at,receipt_verified,receipt_expires_at>now(),lease_id`
+const customerSignupColumns = `id,tenant_id,resource_id,owner_subject,receipt_hash,intent_hash,owner_email_hash,input,state,attempts,retry_at,lease_until,error_code,receipt_expires_at,receipt_verified,receipt_expires_at>now(),lease_id,primary_credential_configured`
 
 func scanCustomerSignup(row pgx.Row) (CustomerSignup, error) {
 	var result CustomerSignup
 	var raw []byte
-	err := row.Scan(&result.ID, &result.TenantID, &result.ResourceID, &result.OwnerSubject, &result.ReceiptHash, &result.IntentHash, &result.OwnerEmailHash, &raw, &result.State, &result.Attempts, &result.RetryAt, &result.LeaseUntil, &result.ErrorCode, &result.ReceiptExpiresAt, &result.ReceiptVerified, &result.ReceiptActive, &result.LeaseID)
+	err := row.Scan(&result.ID, &result.TenantID, &result.ResourceID, &result.OwnerSubject, &result.ReceiptHash, &result.IntentHash, &result.OwnerEmailHash, &raw, &result.State, &result.Attempts, &result.RetryAt, &result.LeaseUntil, &result.ErrorCode, &result.ReceiptExpiresAt, &result.ReceiptVerified, &result.ReceiptActive, &result.LeaseID, &result.PasswordConfigured)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return result, ErrNotFound
 	}
@@ -240,14 +241,14 @@ func (s *Store) customerSignupByID(ctx context.Context, id uuid.UUID) (CustomerS
 }
 
 // RotateSignupReceipt binds a fresh capability only after native proof succeeds.
-func (s *Store) RotateSignupReceipt(ctx context.Context, id uuid.UUID, hash []byte) error {
+func (s *Store) RotateSignupReceipt(ctx context.Context, id uuid.UUID, hash []byte, passwordConfigured bool) error {
 	if len(hash) != 32 {
 		return ErrConflict
 	}
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		row, err := scanCustomerSignup(tx.QueryRow(ctx, `UPDATE customer_signups SET receipt_hash=$2,
-   receipt_verified=true,receipt_expires_at=now()+interval '7 days',updated_at=now()
-   WHERE id=$1 AND state NOT IN ('existing_account','needs_support') RETURNING `+customerSignupColumns, id, hash))
+   receipt_verified=true,primary_credential_configured=primary_credential_configured OR $3,receipt_expires_at=now()+interval '7 days',updated_at=now()
+   WHERE id=$1 AND state NOT IN ('existing_account','needs_support') RETURNING `+customerSignupColumns, id, hash, passwordConfigured))
 		if err != nil {
 			return err
 		}
