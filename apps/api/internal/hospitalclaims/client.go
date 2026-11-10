@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/google/uuid"
 	identity "github.com/tesserix/devai-sandbox-operator/operators/zitadel/api/v1alpha1"
+	"k8s.io/apimachinery/pkg/types"
 	"reflect"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -31,7 +33,9 @@ type Result struct {
 		ObservedGeneration int64              `json:"observedGeneration"`
 		Conditions         []metav1.Condition `json:"conditions"`
 	} `json:"status"`
-	Generation int64 `json:"-"`
+	Generation      int64  `json:"-"`
+	ResourceVersion string `json:"-"`
+	SecurityRequest string `json:"-"`
 }
 type Client struct{ resource dynamic.ResourceInterface }
 
@@ -101,5 +105,41 @@ func decode(obj *unstructured.Unstructured) (Result, error) {
 	}
 	e = json.Unmarshal(raw, &result)
 	result.Generation = obj.GetGeneration()
+	result.ResourceVersion = obj.GetResourceVersion()
+	result.SecurityRequest = obj.GetAnnotations()[SecurityReconcileAnnotation]
 	return result, e
+}
+
+const SecurityReconcileAnnotation = "identity.tesserix.app/reconcile-request"
+
+// RequestSecurityReconcile wakes the existing policy owner without changing its immutable spec.
+func (c *Client) RequestSecurityReconcile(ctx context.Context, before Result, requestID string) (Result, error) {
+	id, err := uuid.Parse(requestID)
+	if err != nil || id == uuid.Nil || id.String() != requestID || before.Spec.Product != "helivanta" || before.Spec.PreserveLoginPolicy || before.ResourceVersion == "" {
+		return Result{}, ErrConflict
+	}
+	if before.SecurityRequest == requestID {
+		return before, nil
+	}
+	current, err := c.resource.Get(ctx, before.Spec.Product+"-"+before.Spec.TenantID, metav1.GetOptions{})
+	if err != nil {
+		return Result{}, err
+	}
+	if current.GetResourceVersion() != before.ResourceVersion {
+		return Result{}, ErrConflict
+	}
+	annotations := current.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	annotations[SecurityReconcileAnnotation] = requestID
+	patch, err := json.Marshal([]map[string]any{{"op": "test", "path": "/metadata/resourceVersion", "value": before.ResourceVersion}, {"op": "add", "path": "/metadata/annotations", "value": annotations}})
+	if err != nil {
+		return Result{}, err
+	}
+	obj, err := c.resource.Patch(ctx, current.GetName(), types.JSONPatchType, patch, metav1.PatchOptions{})
+	if err != nil {
+		return Result{}, err
+	}
+	return decode(obj)
 }

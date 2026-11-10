@@ -44,6 +44,9 @@ func generateContracts() (string, error) {
 		{"CustomerSignupProof", reflect.TypeFor[customercontract.Proof]()},
 		{"CustomerSignupDelivery", reflect.TypeFor[customercontract.Delivery]()},
 		{"CustomerWorkspaceInput", reflect.TypeFor[customercontract.Workspace]()},
+		{"CustomerSecurityView", reflect.TypeFor[customercontract.SecurityView]()},
+		{"CustomerSecurityInput", reflect.TypeFor[customercontract.SecurityInput]()},
+		{"CustomerSecurityRequest", reflect.TypeFor[customercontract.SecurityRequest]()},
 	} {
 		schema, err := contractSchema(contract.kind, "")
 		if err != nil {
@@ -57,6 +60,9 @@ func generateContracts() (string, error) {
 func contractSchema(kind reflect.Type, choices string) (string, error) {
 	if kind.Kind() == reflect.Pointer {
 		return contractSchema(kind.Elem(), choices)
+	}
+	if kind.Kind() == reflect.Bool {
+		return "z.boolean()", nil
 	}
 	if kind.Kind() == reflect.String {
 		if values, ok := reflect.Zero(kind).Interface().(interface{ Values() []string }); ok {
@@ -124,6 +130,14 @@ func contractFields(kind reflect.Type) ([]string, error) {
 		if field.Tag.Get("format") == "uuid" {
 			schema += ".uuid()"
 		}
+		if field.Tag.Get("required") == "true" && field.Type.Kind() == reflect.String {
+			schema += ".min(1)"
+		}
+		if pattern := field.Tag.Get("pattern"); pattern != "" {
+			raw, _ := json.Marshal(pattern)
+			schema += ".regex(new RegExp(" + string(raw) + "))"
+		}
+
 		if len(tag) > 1 && tag[1] == "omitempty" {
 			schema += ".optional()"
 		}

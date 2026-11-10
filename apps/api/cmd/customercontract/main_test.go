@@ -1,6 +1,7 @@
 package main
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -20,5 +21,17 @@ func TestBrowserContractsPreserveFlattenedIntentAndNativeOwnerFields(t *testing.
 	}
 	if strings.Count(generated, ".strict()") < 5 {
 		t.Fatal("generated contracts permit undeclared authority fields")
+	}
+}
+
+func TestSecurityBooleanFieldsAreGeneratedFromTheOwnerContract(t *testing.T) {
+	schema, err := contractSchema(reflect.TypeFor[struct {
+		Required bool `json:"required"`
+	}](), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(schema, `"required":z.boolean()`) {
+		t.Fatal("native MFA booleans were not preserved in the browser contract")
 	}
 }

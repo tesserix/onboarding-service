@@ -41,3 +41,17 @@ func TestCustomerSignupEndpointsRequireUnambiguousExactWorkloadCredential(t *tes
 		t.Fatalf("ambiguous credential accepted: %d", response.Code)
 	}
 }
+
+func TestOwnerSecurityRequiresSeparateExactWorkloadAudience(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := NewRouter(Deps{CustomerWorkloads: customerCaller{}})
+	for _, path := range []string{"/internal/v1/owner-security/read", "/internal/v1/owner-security/reconcile"} {
+		request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+		request.Header.Set("Authorization", "Bearer workload")
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		if response.Code != http.StatusUnauthorized {
+			t.Fatalf("signup audience admitted to owner security: %d", response.Code)
+		}
+	}
+}

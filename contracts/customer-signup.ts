@@ -16,3 +16,12 @@ export type CustomerSignupDelivery = z.infer<typeof CustomerSignupDeliveryContra
 export const CustomerWorkspaceInputContract = z.object({"tenantId":z.string(),"organizationId":z.string(),"ownerSubject":z.string(),"resourceId":z.string(),"name":z.string(),"kind":z.enum(["hospital","pharmacy"]),"countryCode":z.enum(["IN"]),"stateCode":z.enum(["MH","OD"])}).strict();
 export type CustomerWorkspaceInput = z.infer<typeof CustomerWorkspaceInputContract>;
 
+export const CustomerSecurityViewContract = z.object({"state":z.enum(["applied","drifted","pending"]),"tenantId":z.string().uuid().min(1),"subject":z.string().min(1).regex(new RegExp("^[A-Za-z0-9_-]{1,200}$")),"revision":z.string().min(1).regex(new RegExp("^[a-f0-9]{64}$")),"requireMfa":z.boolean(),"externalMfa":z.boolean(),"noGrace":z.boolean(),"canReconcile":z.boolean()}).strict().superRefine((value,ctx)=>{if(value.state==="applied"&&!value["requireMfa"]){ctx.addIssue({code:'custom',path:["requireMfa"],message:'Complete initial workspace binding required'});}}).superRefine((value,ctx)=>{if(value.state==="applied"&&!value["externalMfa"]){ctx.addIssue({code:'custom',path:["externalMfa"],message:'Complete initial workspace binding required'});}}).superRefine((value,ctx)=>{if(value.state==="applied"&&!value["noGrace"]){ctx.addIssue({code:'custom',path:["noGrace"],message:'Complete initial workspace binding required'});}});
+export type CustomerSecurityView = z.infer<typeof CustomerSecurityViewContract>;
+
+export const CustomerSecurityInputContract = z.object({"requestId":z.string().uuid().min(1),"expectedRevision":z.string().min(1).regex(new RegExp("^[a-f0-9]{64}$"))}).strict();
+export type CustomerSecurityInput = z.infer<typeof CustomerSecurityInputContract>;
+
+export const CustomerSecurityRequestContract = z.object({"tenantId":z.string().uuid().min(1),"subject":z.string().min(1).regex(new RegExp("^[A-Za-z0-9_-]{1,200}$")),"requestId":z.string().uuid().min(1),"expectedRevision":z.string().regex(new RegExp("^[a-f0-9]{64}$")).optional()}).strict();
+export type CustomerSecurityRequest = z.infer<typeof CustomerSecurityRequestContract>;
+

@@ -2,6 +2,9 @@ package hospitalclaims_test
 
 import (
 	"encoding/json"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"reflect"
 	"strings"
 
 	"github.com/tesserix/onboarding-service/api/internal/hospitalclaims"
@@ -82,5 +85,45 @@ func TestCreateRejectsServerPruningOfFirstOwnerBinding(t *testing.T) {
 	}
 	if writes != 0 {
 		t.Fatalf("schema mismatch wrote an incomplete immutable claim: %d", writes)
+	}
+}
+
+func TestSecurityReconcilePreservesSpecAndFencesConcurrentChanges(t *testing.T) {
+	kube := fake.NewSimpleDynamicClient(runtime.NewScheme())
+	client := hospitalclaims.New(kube, "identity-operator")
+	var spec hospitalclaims.Spec
+	if err := json.Unmarshal([]byte(`{"product":"helivanta","tenantId":"11111111-1111-4111-8111-111111111111","displayName":"Hospital","initialAdminUserId":"owner"}`), &spec); err != nil {
+		t.Fatal(err)
+	}
+	_, err := client.Create(t.Context(), spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Fake clients do not assign resource versions; use a real-looking captured version.
+	object, err := kube.Resource(schema.GroupVersionResource{Group: "identity.tesserix.app", Version: "v1alpha1", Resource: "zitadelorganizations"}).Namespace("identity-operator").Get(t.Context(), "helivanta-"+spec.TenantID, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	object.SetResourceVersion("7")
+	if _, err = kube.Resource(schema.GroupVersionResource{Group: "identity.tesserix.app", Version: "v1alpha1", Resource: "zitadelorganizations"}).Namespace("identity-operator").Update(t.Context(), object, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := client.Get(t.Context(), "helivanta", spec.TenantID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := client.RequestSecurityReconcile(t.Context(), before, "11111111-1111-4111-8111-111111111112")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before.Spec, after.Spec) || after.SecurityRequest != "11111111-1111-4111-8111-111111111112" {
+		t.Fatal("reconcile mutated immutable identity binding")
+	}
+	if _, err = client.RequestSecurityReconcile(t.Context(), after, after.SecurityRequest); err != nil {
+		t.Fatal(err)
+	}
+	before.Spec.PreserveLoginPolicy = true
+	if _, err = client.RequestSecurityReconcile(t.Context(), before, "11111111-1111-4111-8111-111111111113"); err == nil {
+		t.Fatal("legacy policy cutover accepted")
 	}
 }

@@ -81,6 +81,7 @@ func run(log *slog.Logger) error {
 
 	var hospitalWorkloads api.WorkloadVerifier
 	var customerWorkloads api.WorkloadVerifier
+	var ownerSecurityWorkloads api.WorkloadVerifier
 	if os.Getenv("HOSPITAL_PROVISIONING_ENABLED") == "true" {
 		kubeConfig, err := rest.InClusterConfig()
 		if err != nil {
@@ -95,6 +96,10 @@ func run(log *slog.Logger) error {
 			return err
 		}
 		customerWorkloads, err = workloadidentity.New(kubeConfig, "helivanta-customer-onboarding", "system:serviceaccount:helivanta:helivanta-api")
+		if err != nil {
+			return err
+		}
+		ownerSecurityWorkloads, err = workloadidentity.New(kubeConfig, "helivanta-owner-security", "system:serviceaccount:helivanta:helivanta-api")
 		if err != nil {
 			return err
 		}
@@ -150,7 +155,7 @@ func run(log *slog.Logger) error {
 	}
 	router := api.NewRouter(api.Deps{
 		MCPTokens: mcpTokens,
-		Service:   svc, Store: st, Tokens: verifier, RegistryTokens: registryVerifier, HospitalWorkloads: hospitalWorkloads, CustomerWorkloads: customerWorkloads,
+		Service:   svc, Store: st, Tokens: verifier, RegistryTokens: registryVerifier, HospitalWorkloads: hospitalWorkloads, CustomerWorkloads: customerWorkloads, OwnerSecurityWorkloads: ownerSecurityWorkloads,
 		ConsoleTokens: legacyTokens, Sessions: sessions,
 		ConsoleAccessTokens:  consoleAccess,
 		DisableLegacyConsole: !cfg.LegacyConsoleEnabled,
