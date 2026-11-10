@@ -114,3 +114,38 @@ func TestExpiredSignupReceiptCannotResumeACommand(t *testing.T) {
 		t.Fatalf("expired receipt resumed the command: %v", err)
 	}
 }
+
+func TestSignupDeliveryLeaseRejectsStaleCompletionAfterRecovery(t *testing.T) {
+	s := newStore(t)
+	seedProduct(t, s, "helivanta")
+	in := signupCommand(t)
+	if _, err := s.ReserveCustomerSignup(t.Context(), in, audit.Event{ActorType: audit.ActorSystem, ActorID: "signup-test", Outcome: audit.OutcomeSuccess}); err != nil {
+		t.Fatal(err)
+	}
+	now := in.RetryAt
+	leased, err := s.LeaseCustomerSignups(t.Context(), 1, now)
+	if err != nil || len(leased) != 1 || leased[0].ID != in.ID || leased[0].LeaseID == nil {
+		t.Fatalf("command was not leased: count=%d err=%v", len(leased), err)
+	}
+	duplicate, err := s.LeaseCustomerSignups(t.Context(), 1, now)
+	if err != nil || len(duplicate) != 0 {
+		t.Fatalf("concurrent delivery duplicated: count=%d err=%v", len(duplicate), err)
+	}
+	recovered, err := s.LeaseCustomerSignups(t.Context(), 1, now.Add(2*time.Minute))
+	if err != nil || len(recovered) != 1 || recovered[0].LeaseID == nil || *recovered[0].LeaseID == *leased[0].LeaseID {
+		t.Fatalf("expired lease was not fenced: count=%d err=%v", len(recovered), err)
+	}
+	if err = s.FinishCustomerSignup(t.Context(), leased[0], "ready", "", now); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale worker completed new lease: %v", err)
+	}
+	if err = s.FinishCustomerSignup(t.Context(), recovered[0], "identity_requested", "", now.Add(3*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	current, err := s.CustomerSignupByTenant(t.Context(), in.TenantID)
+	if err != nil || current.State != "identity_requested" || current.LeaseID != nil || current.ResourceID != in.ResourceID {
+		t.Fatalf("delivery changed durable identity: state=%s err=%v", current.State, err)
+	}
+	if err = s.FinishCustomerSignup(t.Context(), recovered[0], "ready", "", now); !errors.Is(err, ErrConflict) {
+		t.Fatalf("reused completion accepted: %v", err)
+	}
+}

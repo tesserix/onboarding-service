@@ -42,6 +42,7 @@ func generateContracts() (string, error) {
 		{"CustomerSignupInput", reflect.TypeFor[customercontract.Signup]()},
 		{"CustomerSignupReceipt", reflect.TypeFor[customercontract.Receipt]()},
 		{"CustomerSignupProof", reflect.TypeFor[customercontract.Proof]()},
+		{"CustomerSignupDelivery", reflect.TypeFor[customercontract.Delivery]()},
 		{"CustomerWorkspaceInput", reflect.TypeFor[customercontract.Workspace]()},
 	} {
 		schema, err := contractSchema(contract.kind, "")

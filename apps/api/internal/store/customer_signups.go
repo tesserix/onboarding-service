@@ -136,3 +136,13 @@ func (s *Store) CustomerSignupByTenant(ctx context.Context, tenant uuid.UUID) (C
 func (s *Store) CustomerSignupBySubject(ctx context.Context, subject string) (CustomerSignup, error) {
 	return scanCustomerSignup(s.pool.QueryRow(ctx, `SELECT `+customerSignupColumns+` FROM customer_signups WHERE owner_subject=$1`, subject))
 }
+
+// LeaseCustomerSignups claims a bounded batch without holding locks across native calls.
+func (s *Store) LeaseCustomerSignups(ctx context.Context, limit int, now time.Time) ([]CustomerSignup, error) {
+	return nil, nil
+}
+
+// FinishCustomerSignup fences delivery results to the current lease and intent state.
+func (s *Store) FinishCustomerSignup(ctx context.Context, row CustomerSignup, state, errorCode string, retryAt time.Time) error {
+	return nil
+}

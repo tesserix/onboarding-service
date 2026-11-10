@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -113,4 +114,58 @@ func (c *Client) SignupIdentity(ctx context.Context, orgID, userID, email string
 		return false, ErrIdentityUnavailable
 	}
 	return user.Human.Email.Verified, nil
+}
+
+// OtherSignupIdentity detects an existing person without adopting them by email.
+func (c *Client) OtherSignupIdentity(ctx context.Context, email, expectedUserID string) (bool, error) {
+	if !identitySourceID.MatchString(expectedUserID) || email == "" || utf8.RuneCountInString(email) > 200 {
+		return false, ErrIdentityUnavailable
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	token, err := c.tokens.Token(ctx)
+	if err != nil || token == "" {
+		return false, ErrIdentityUnavailable
+	}
+	var result struct {
+		Details struct {
+			Total string `json:"totalResult"`
+		} `json:"details"`
+		Result []struct {
+			ID    string `json:"userId"`
+			Human *struct {
+				Email struct {
+					Address string `json:"email"`
+				} `json:"email"`
+			} `json:"human"`
+		} `json:"result"`
+	}
+	input := map[string]any{"query": map[string]string{"limit": "2"}, "queries": []map[string]any{{"emailQuery": map[string]string{"emailAddress": email, "method": "TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE"}}}}
+	client := *c.http
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	if err = c.readIdentity(ctx, &client, token, http.MethodPost, "/v2/users", "", input, &result); err != nil {
+		return false, err
+	}
+	total, err := strconv.ParseUint(result.Details.Total, 10, 64)
+	if err != nil || total < uint64(len(result.Result)) || len(result.Result) > 2 || uint64(len(result.Result)) != min(total, 2) {
+		return false, ErrIdentityUnavailable
+	}
+	other := total > 1
+	for _, user := range result.Result {
+		if user.ID == "" || user.Human == nil || !strings.EqualFold(user.Human.Email.Address, email) {
+			return false, ErrIdentityUnavailable
+		}
+		if user.ID != expectedUserID {
+			other = true
+		}
+	}
+	return other, nil
+}
+
+// SendSignupEmailLink resends native verification for the expected signup subject.
+func (c *Client) SendSignupEmailLink(ctx context.Context, userID string) error {
+	if !identitySourceID.MatchString(userID) {
+		return ErrSignupProof
+	}
+	return c.signupCommand(ctx, "/v2/users/"+userID+"/email/send", map[string]any{"sendCode": map[string]string{"urlTemplate": "https://helivanta.app/signup/verify#phase=email&userId={{.UserID}}&code={{.Code}}"}})
 }

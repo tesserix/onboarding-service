@@ -10,6 +10,9 @@ export type CustomerSignupReceipt = z.infer<typeof CustomerSignupReceiptContract
 export const CustomerSignupProofContract = z.object({"userId":z.string(),"code":z.string(),"password":z.string().optional()}).strict();
 export type CustomerSignupProof = z.infer<typeof CustomerSignupProofContract>;
 
+export const CustomerSignupDeliveryContract = z.object({"userId":z.string().optional()}).strict();
+export type CustomerSignupDelivery = z.infer<typeof CustomerSignupDeliveryContract>;
+
 export const CustomerWorkspaceInputContract = z.object({"tenantId":z.string(),"organizationId":z.string(),"ownerSubject":z.string(),"resourceId":z.string(),"name":z.string(),"kind":z.enum(["hospital","pharmacy"]),"countryCode":z.enum(["IN"]),"stateCode":z.enum(["MH","OD"])}).strict();
 export type CustomerWorkspaceInput = z.infer<typeof CustomerWorkspaceInputContract>;
 

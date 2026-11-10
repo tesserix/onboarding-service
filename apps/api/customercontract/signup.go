@@ -44,6 +44,11 @@ type Proof struct {
 	Password string `json:"password,omitempty"`
 }
 
+// Delivery selects a signup already bound by its receipt or native recovery link.
+type Delivery struct {
+	UserID string `json:"userId,omitempty"`
+}
+
 // Workspace is the workload-only command to the selected business owner.
 type Workspace struct {
 	TenantID       string `json:"tenantId"`

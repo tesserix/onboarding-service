@@ -90,3 +90,42 @@ func TestSignupProofBindsTheExactActiveHumanHomeOrganizationAndEmail(t *testing.
 		t.Fatalf("machine account accepted as human owner: %v", err)
 	}
 }
+
+func TestExistingEmailIsNotUsedToAdoptAnotherPersonAsTenantOwner(t *testing.T) {
+	rec := newRecorder()
+	client := newClient(t, rec)
+	rec.replies["/v2/users"] = map[string]any{"details": map[string]string{"totalResult": "1"}, "result": []map[string]any{{"userId": "other-person", "human": map[string]any{"email": map[string]string{"email": "owner@example.test"}}}}}
+	existing, err := client.OtherSignupIdentity(t.Context(), "owner@example.test", "owner-test")
+	if err != nil || !existing {
+		t.Fatalf("existing email was treated as a fresh owner: existing=%v err=%v", existing, err)
+	}
+	got := rec.find("POST", "/v2/users")
+	if got == nil {
+		t.Fatal("no exact bounded native email lookup")
+	}
+	query, _ := got.body["query"].(map[string]any)
+	if query["limit"] != "2" {
+		t.Fatal("unbounded directory lookup")
+	}
+	rec.replies["/v2/users"] = map[string]any{"details": map[string]string{"totalResult": "0"}, "result": []any{}}
+	existing, err = client.OtherSignupIdentity(t.Context(), "owner@example.test", "owner-test")
+	if err != nil || existing {
+		t.Fatalf("new email refused: %v", err)
+	}
+}
+
+func TestSignupEmailResendUsesTheSameNativeVerificationScreen(t *testing.T) {
+	rec := newRecorder()
+	client := newClient(t, rec)
+	if err := client.SendSignupEmailLink(t.Context(), "owner-test"); err != nil {
+		t.Fatal(err)
+	}
+	got := rec.find("POST", "/v2/users/owner-test/email/send")
+	if got == nil || got.body["returnCode"] != nil {
+		t.Fatal("email resend bypassed native delivery")
+	}
+	send, _ := got.body["sendCode"].(map[string]any)
+	if send["urlTemplate"] != "https://helivanta.app/signup/verify#phase=email&userId={{.UserID}}&code={{.Code}}" {
+		t.Fatal("email resend did not return to Helivanta")
+	}
+}
