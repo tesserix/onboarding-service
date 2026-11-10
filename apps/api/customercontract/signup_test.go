@@ -66,3 +66,24 @@ func TestReadyReceiptRequiresCompleteInitialWorkspaceBinding(t *testing.T) {
 		t.Fatal("ready accepted with malformed resource identity")
 	}
 }
+
+func TestWorkspaceRequiresExactNewOwnerBindingAndStableV7Resource(t *testing.T) {
+	tenant := uuid.New()
+	good := customercontract.Workspace{TenantID: tenant.String(), OrganizationID: "helivanta-" + tenant.String(), OwnerSubject: "owner-" + tenant.String(), ResourceID: uuid.Must(uuid.NewV7()).String(), Setup: customercontract.Setup{Name: "TEST Hospital", Kind: customercontract.Hospital, CountryCode: customercontract.India, StateCode: customercontract.Odisha}}
+	if err := good.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range []func(*customercontract.Workspace){
+		func(w *customercontract.Workspace) { w.OrganizationID = "other" },
+		func(w *customercontract.Workspace) { w.OwnerSubject = "other" },
+		func(w *customercontract.Workspace) { w.ResourceID = uuid.New().String() },
+		func(w *customercontract.Workspace) { w.TenantID = "bad" },
+		func(w *customercontract.Workspace) { w.StateCode = "XX" },
+	} {
+		changed := good
+		change(&changed)
+		if changed.Validate() == nil {
+			t.Fatal("foreign or invalid workspace binding accepted")
+		}
+	}
+}

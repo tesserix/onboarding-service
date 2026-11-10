@@ -147,3 +147,16 @@ func (r Receipt) Validate() error {
 	}
 	return nil
 }
+
+// Validate binds the initial resource to the exact new native owner and tenant.
+func (w Workspace) Validate() error {
+	tenant, err := uuid.Parse(w.TenantID)
+	if err != nil || tenant == uuid.Nil || tenant.String() != w.TenantID || w.OrganizationID != "helivanta-"+w.TenantID || w.OwnerSubject != "owner-"+w.TenantID {
+		return ErrInvalid
+	}
+	resource, err := uuid.Parse(w.ResourceID)
+	if err != nil || resource.Version() != 7 || resource.String() != w.ResourceID {
+		return ErrInvalid
+	}
+	return w.Setup.Validate()
+}

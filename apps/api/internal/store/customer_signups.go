@@ -206,5 +206,25 @@ func (s *Store) FinishCustomerSignup(ctx context.Context, row CustomerSignup, st
 
 // ConsumeSignupProof reserves a native proof attempt before contacting identity.
 func (s *Store) ConsumeSignupProof(ctx context.Context, id uuid.UUID, now time.Time) error {
-	return nil
+	result, err := s.pool.Exec(ctx, `UPDATE customer_signups SET
+      proof_attempts=CASE WHEN proof_window_at IS NULL OR proof_window_at <= $2-interval '15 minutes' THEN 1 ELSE proof_attempts+1 END,
+      proof_window_at=CASE WHEN proof_window_at IS NULL OR proof_window_at <= $2-interval '15 minutes' THEN $2 ELSE proof_window_at END,
+      updated_at=now()
+      WHERE id=$1 AND state NOT IN ('existing_account','needs_support')
+        AND (proof_window_at IS NULL OR proof_window_at <= $2-interval '15 minutes' OR proof_attempts<5)`, id, now)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 1 {
+		return nil
+	}
+	_, err = s.customerSignupByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	return ErrConflict
+}
+
+func (s *Store) customerSignupByID(ctx context.Context, id uuid.UUID) (CustomerSignup, error) {
+	return scanCustomerSignup(s.pool.QueryRow(ctx, `SELECT `+customerSignupColumns+` FROM customer_signups WHERE id=$1`, id))
 }
