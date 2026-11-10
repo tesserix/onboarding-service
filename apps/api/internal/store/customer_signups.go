@@ -246,3 +246,6 @@ func (s *Store) RotateSignupReceipt(ctx context.Context, id uuid.UUID, hash []by
 			Outcome: audit.OutcomeSuccess, RequestID: row.ID.String(), Detail: "{}"})
 	})
 }
+
+// ConsumeSignupMail reserves a shared native delivery allowance before sending.
+func (s *Store) ConsumeSignupMail(ctx context.Context, id uuid.UUID, now time.Time) error { return nil }

@@ -200,3 +200,24 @@ func TestSignupReceiptRotationRevokesOldCapabilityAndAuditsProof(t *testing.T) {
 		t.Fatalf("invalid capability persisted: %v", err)
 	}
 }
+
+func TestSignupMailDeliveryCannotExceedSharedHourlyBudget(t *testing.T) {
+	s := newStore(t)
+	seedProduct(t, s, "helivanta")
+	in := signupCommand(t)
+	if _, err := s.ReserveCustomerSignup(t.Context(), in, audit.Event{ActorType: audit.ActorSystem, ActorID: "signup-test", Outcome: audit.OutcomeSuccess}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
+	for range 3 {
+		if err := s.ConsumeSignupMail(t.Context(), in.ID, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.ConsumeSignupMail(t.Context(), in.ID, now); !errors.Is(err, ErrConflict) {
+		t.Fatalf("fourth email delivery allowed: %v", err)
+	}
+	if err := s.ConsumeSignupMail(t.Context(), in.ID, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+}
