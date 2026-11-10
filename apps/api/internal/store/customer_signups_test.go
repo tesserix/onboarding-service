@@ -95,3 +95,22 @@ func TestSignupReceiptCannotReadAnotherCommandOrItsOwnerDetails(t *testing.T) {
 		t.Fatalf("native proof lost command mapping: %v", err)
 	}
 }
+
+func TestExpiredSignupReceiptCannotResumeACommand(t *testing.T) {
+	s := newStore(t)
+	seedProduct(t, s, "helivanta")
+	in := signupCommand(t)
+	event := audit.Event{ActorType: audit.ActorSystem, ActorID: "signup-test", Outcome: audit.OutcomeSuccess}
+	if _, err := s.ReserveCustomerSignup(t.Context(), in, event); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(t.Context(), `UPDATE customer_signups SET receipt_expires_at=clock_timestamp()-interval '1 second' WHERE id=$1`, in.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CustomerSignup(t.Context(), in.ID, in.ReceiptHash); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expired receipt read private intent: %v", err)
+	}
+	if _, err := s.ReserveCustomerSignup(t.Context(), in, event); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expired receipt resumed the command: %v", err)
+	}
+}
