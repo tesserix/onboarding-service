@@ -172,14 +172,17 @@ func (s *Service) DeliverCustomer(ctx context.Context, id uuid.UUID, hash []byte
 	if row.Input.Owner == nil || row.ExistingOwnerSubject != "" || row.State == "existing_account" || row.State == "needs_support" {
 		return generic, nil
 	}
+	verified, err := s.signupIdentity.SignupIdentity(ctx, "helivanta-"+row.TenantID.String(), row.OwnerSubject, row.Input.Owner.Email)
+	if err != nil {
+		return customercontract.Receipt{}, ErrUnavailable
+	}
+	if (!password && verified) || (password && row.PasswordConfigured) {
+		return generic, nil
+	}
 	if err = s.store.ConsumeSignupMail(ctx, row.ID, time.Now().UTC()); err != nil {
 		if errors.Is(err, store.ErrConflict) {
 			return generic, nil
 		}
-		return customercontract.Receipt{}, ErrUnavailable
-	}
-	verified, err := s.signupIdentity.SignupIdentity(ctx, "helivanta-"+row.TenantID.String(), row.OwnerSubject, row.Input.Owner.Email)
-	if err != nil {
 		return customercontract.Receipt{}, ErrUnavailable
 	}
 	if s.hospitals == nil || s.hospitals.Claims == nil {

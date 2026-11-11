@@ -41,12 +41,25 @@ func (s *Service) deliverInitialCustomerEmail(ctx context.Context, row store.Cus
 	if err != nil {
 		return ErrUnavailable
 	}
+	if id == "" {
+		return nil
+	}
 	return s.store.AcceptCustomerEmail(ctx, row, id)
 }
 
 func (s *Service) sendCustomerEmail(ctx context.Context, row store.CustomerSignup, password bool) (string, error) {
 	if s.signupMail == nil || row.Input.Owner == nil || row.ExistingOwnerSubject != "" {
 		return "", ErrUnavailable
+	}
+	if s.signupIdentity == nil {
+		return "", ErrUnavailable
+	}
+	verified, err := s.signupIdentity.SignupIdentity(ctx, "helivanta-"+row.TenantID.String(), row.OwnerSubject, row.Input.Owner.Email)
+	if err != nil {
+		return "", ErrUnavailable
+	}
+	if (!password && verified) || (password && row.PasswordConfigured) {
+		return "", nil
 	}
 	code, err := s.signupIdentity.SignupCode(ctx, row.OwnerSubject, password)
 	if err != nil {
