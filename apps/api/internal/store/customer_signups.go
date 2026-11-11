@@ -260,7 +260,19 @@ func (s *Store) RotateSignupReceipt(ctx context.Context, id uuid.UUID, hash []by
 	})
 }
 
-// ConsumeSignupMail atomically reserves the shared hourly and rolling daily allowance.
+const signupMailBudgetQuery = `SELECT count(*),
+          count(*) FILTER (WHERE occurred_at > $2::timestamptz-interval '1 hour'),
+          count(*) FILTER (WHERE org_id=$3)
+         FROM (
+          SELECT a.org_id,a.occurred_at FROM audit_events a
+          JOIN customer_signups s ON s.tenant_id=a.org_id
+          WHERE s.owner_email_hash=$1 AND a.product_key='helivanta'
+           AND a.action='customer.signup.mail_reserved'
+           AND a.occurred_at > $2::timestamptz-interval '24 hours'
+          ORDER BY a.occurred_at DESC LIMIT 30
+         ) deliveries`
+
+// ConsumeSignupMail reserves per-workspace and cross-tenant recipient delivery budgets.
 func (s *Store) ConsumeSignupMail(ctx context.Context, id uuid.UUID, now time.Time) error {
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		row, err := scanCustomerSignup(tx.QueryRow(ctx, `SELECT `+customerSignupColumns+` FROM customer_signups WHERE id=$1 FOR UPDATE`, id))
@@ -270,15 +282,14 @@ func (s *Store) ConsumeSignupMail(ctx context.Context, id uuid.UUID, now time.Ti
 		if row.State == "existing_account" || row.State == "needs_support" {
 			return ErrConflict
 		}
-		var recent int
-		if err = tx.QueryRow(ctx, `SELECT count(*) FROM (
-   SELECT seq FROM audit_events WHERE org_id=$1 AND action='customer.signup.mail_reserved'
-    AND occurred_at > $2::timestamptz-interval '24 hours'
-   ORDER BY occurred_at DESC LIMIT 10
-  ) deliveries`, row.TenantID, now).Scan(&recent); err != nil {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('customer-mail:' || encode($1::bytea,'hex'),0))`, row.OwnerEmailHash); err != nil {
 			return err
 		}
-		if recent >= 10 {
+		var daily, hourly, workspaceDaily int
+		if err = tx.QueryRow(ctx, signupMailBudgetQuery, row.OwnerEmailHash, now, row.TenantID).Scan(&daily, &hourly, &workspaceDaily); err != nil {
+			return err
+		}
+		if daily >= 30 || hourly >= 10 || workspaceDaily >= 10 {
 			return ErrConflict
 		}
 		result, err := tx.Exec(ctx, `UPDATE customer_signups SET

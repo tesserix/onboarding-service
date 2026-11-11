@@ -133,39 +133,45 @@ func reserveSameRecipientSignups(t *testing.T, s *Store, count int) []CustomerSi
 func TestSignupMailRecipientHourlyBudgetSpansIndependentTenants(t *testing.T) {
 	s := newStore(t)
 	seedProduct(t, s, "helivanta")
-	inputs := reserveSameRecipientSignups(t, s, 2)
+	inputs := reserveSameRecipientSignups(t, s, 5)
 	now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
-	for n := range 3 {
-		if err := s.ConsumeSignupMail(t.Context(), inputs[0].ID, now.Add(time.Duration(n)*time.Minute)); err != nil {
+	for n := range 10 {
+		if err := s.ConsumeSignupMail(t.Context(), inputs[n/3].ID, now.Add(time.Duration(n)*time.Minute)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := s.ConsumeSignupMail(t.Context(), inputs[1].ID, now.Add(5*time.Minute)); !errors.Is(err, ErrConflict) {
+	if err := s.ConsumeSignupMail(t.Context(), inputs[4].ID, now.Add(15*time.Minute)); !errors.Is(err, ErrConflict) {
 		t.Fatalf("fresh tenant bypassed recipient hourly budget: %v", err)
 	}
 	other := signupCommand(t)
 	if _, err := s.ReserveCustomerSignup(t.Context(), other, audit.Event{ActorType: audit.ActorSystem, ActorID: "other-recipient", Outcome: audit.OutcomeSuccess}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ConsumeSignupMail(t.Context(), other.ID, now.Add(5*time.Minute)); err != nil {
+	if err := s.ConsumeSignupMail(t.Context(), other.ID, now.Add(15*time.Minute)); err != nil {
 		t.Fatalf("unrelated recipient consumed another recipient's allowance: %v", err)
 	}
-	if err := s.ConsumeSignupMail(t.Context(), inputs[1].ID, now.Add(time.Hour)); err != nil {
+	if err := s.ConsumeSignupMail(t.Context(), inputs[4].ID, now.Add(time.Hour)); err != nil {
 		t.Fatalf("hour boundary did not restore recipient allowance: %v", err)
 	}
+	var plan []byte
+	if err := s.pool.QueryRow(t.Context(), "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) "+signupMailBudgetQuery, inputs[0].OwnerEmailHash, now.Add(time.Hour), inputs[0].TenantID).Scan(&plan); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("recipient budget indexed-fixture plan: %s", plan)
+
 }
 
 func TestSignupMailRecipientDailyBudgetSpansIndependentTenants(t *testing.T) {
 	s := newStore(t)
 	seedProduct(t, s, "helivanta")
-	inputs := reserveSameRecipientSignups(t, s, 2)
+	inputs := reserveSameRecipientSignups(t, s, 4)
 	now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
-	for n := range 10 {
-		if err := s.ConsumeSignupMail(t.Context(), inputs[n%2].ID, now.Add(time.Duration(n)*time.Hour)); err != nil {
+	for n := range 30 {
+		if err := s.ConsumeSignupMail(t.Context(), inputs[n%4].ID, now.Add(time.Duration(n/2)*time.Hour)); err != nil {
 			t.Fatalf("delivery %d: %v", n+1, err)
 		}
 	}
-	if err := s.ConsumeSignupMail(t.Context(), inputs[0].ID, now.Add(10*time.Hour)); !errors.Is(err, ErrConflict) {
+	if err := s.ConsumeSignupMail(t.Context(), inputs[0].ID, now.Add(16*time.Hour)); !errors.Is(err, ErrConflict) {
 		t.Fatalf("separate tenant bypassed recipient daily budget: %v", err)
 	}
 	if err := s.ConsumeSignupMail(t.Context(), inputs[1].ID, now.Add(24*time.Hour)); err != nil {
@@ -178,16 +184,16 @@ func TestConcurrentIndependentTenantsShareRecipientMailAllowance(t *testing.T) {
 		t.Run(fmt.Sprintf("daily=%v", daily), func(t *testing.T) {
 			s := newStore(t)
 			seedProduct(t, s, "helivanta")
-			inputs := reserveSameRecipientSignups(t, s, 8)
+			inputs := reserveSameRecipientSignups(t, s, 12)
 			now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
-			expected := 3
+			expected := 10
 			if daily {
-				for n := range 9 {
-					if err := s.ConsumeSignupMail(t.Context(), inputs[0].ID, now.Add(time.Duration(n)*time.Hour)); err != nil {
+				for n := range 29 {
+					if err := s.ConsumeSignupMail(t.Context(), inputs[n%4].ID, now.Add(time.Duration(n/2)*time.Hour)); err != nil {
 						t.Fatal(err)
 					}
 				}
-				now = now.Add(10 * time.Hour)
+				now = now.Add(16 * time.Hour)
 				expected = 1
 			}
 			results := make(chan error, len(inputs))

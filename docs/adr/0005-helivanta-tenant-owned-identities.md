@@ -9,8 +9,8 @@ matching email. The operator supplies a tenant-unique native username.
 Public intake retains deterministic tenant/owner IDs, immutable resource/profile,
 durable receipt, replay/fencing and20-new-intents/hour capacity bound. The schema
 removes cross-tenant email uniqueness; it must be approved/applied before this
-worker/intake is released. Links retain native1h TTL,3/hour and10/rolling24h
-shared reservations, verification/no-op and no-secret audit evidence.
+worker/intake is released. Links retain native1h TTL and each workspace's
+3/hour and10/rolling24h reservations, verification/no-op and no-secret audit evidence.
 
 An active, unbound historic existing_account intent resumes creation of its own
 fresh owner through the same deterministic claim. Expired intents do not resume.
@@ -56,3 +56,16 @@ Unknown/ineligible target is404; invalid bounded input400; missing/wrong workloa
 or authentication. It has a10-second total budget, a5-second native lookup and
 at most2 candidates. No retry/cache/new service is added. Helivanta checks the
 actual password session's subject/org before proceeding to MFA/callback.
+
+## Recipient-wide delivery budgets
+
+A fresh signup receipt cannot reset delivery abuse controls. Retain each immutable
+workspace's3/hour and10/rolling24h reservations, including failures, and additionally
+limit the same immutable recipient hash across tenant intents to10/rolling hour
+and30/rolling24h. No email address, hash or remaining allowance is exposed in a
+public response or audit detail. A transaction-scoped recipient advisory lock
+serializes different signup rows before reading a bounded30-event audit window
+and appending the reservation. No remote call runs inside that transaction. A
+non-unique recipient/tenant index supports the join; it conveys no identity,
+account-adoption authority or cross-tenant access. Distinct tenant owners retain
+independent verification/password/MFA despite sharing a delivery budget.

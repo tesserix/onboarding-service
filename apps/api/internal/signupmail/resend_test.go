@@ -37,7 +37,7 @@ func TestResendUsesMountedKeyNativeCodeFragmentAndEscapedContent(t *testing.T) {
 		}
 		html := body["html"].(string)
 		for _, content := range []string{html, body["text"].(string)} {
-			if !strings.Contains(content, "expires after 1 hour") || !strings.Contains(content, "3 emails per hour and 10 per 24 hours") || !strings.Contains(content, "verified") {
+			if !strings.Contains(content, "expires after 1 hour") || !strings.Contains(content, "3 emails per hour and 10 per 24 hours") || !strings.Contains(content, "verified") || !strings.Contains(content, "Across workspaces") || !strings.Contains(content, "30 per 24 hours") {
 				t.Fatal("mail omitted expiry or resend limits")
 			}
 		}
