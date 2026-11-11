@@ -24,6 +24,24 @@ func (d Deps) registerCustomers(r *gin.Engine) {
 	group.POST("/password", func(c *gin.Context) { d.proveCustomer(c, true) })
 	group.POST("/email-link", func(c *gin.Context) { d.deliverCustomer(c, false) })
 	group.POST("/password-link", func(c *gin.Context) { d.deliverCustomer(c, true) })
+	group.POST("/login-target", d.customerLoginTarget)
+}
+
+func (d Deps) customerLoginTarget(c *gin.Context) {
+	var in customercontract.LoginTargetInput
+	if !decodeHospital(c, &in) {
+		return
+	}
+	if d.Service == nil {
+		abort(c, 503, "identity unavailable")
+		return
+	}
+	result, err := d.Service.CustomerLoginTarget(c.Request.Context(), in)
+	if err != nil {
+		respondErr(c, d.logger(), err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }
 func customerHash(c *gin.Context) ([]byte, bool) {
 	if len(c.Request.Header.Values("X-Signup-Receipt-Hash")) != 1 {

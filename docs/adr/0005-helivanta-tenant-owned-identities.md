@@ -36,3 +36,23 @@ Validation requires real PostgreSQL duplicate-email intake/replay and historic
 receipt recovery, native boundary rejection and operator lost-response tests,
 then Helivanta scoped login/UI and real deployment acceptance. PostgreSQL runs in
 CI; local applications, DB servers and containers are not started.
+
+## Private tenant login lookup
+
+Live read-only checks proved Helivanta's login-client PAT cannot ListUsers (403).
+Do not expand that credential. POST `/internal/v1/customer-signups/login-target`
+uses the existing exact Helivanta API workload/audience and mesh boundary. Its
+canonical Go-only LoginTargetInput contains tenant UUID, bounded email and request
+UUID; LoginTarget returns only tenant/org/subject. No browser route exposes it.
+The caller derives org from the active native OIDC request pinned to its web
+client, applies its existing password-attempt limit/equalised refusal and never
+passes a password to this broker.
+
+Onboarding checks active Helivanta-owned organisation and product enrolment,
+current native tenant/project proof, and exactly one active email-verified human
+inside that organisation. Audit must commit before returning the binding.
+Unknown/ineligible target is404; invalid bounded input400; missing/wrong workload
+401; native/store/audit failure503. This is a sensitive read, not account creation
+or authentication. It has a10-second total budget, a5-second native lookup and
+at most2 candidates. No retry/cache/new service is added. Helivanta checks the
+actual password session's subject/org before proceeding to MFA/callback.
