@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"github.com/google/uuid"
@@ -84,17 +83,7 @@ func (s *Store) ReserveCustomerSignup(ctx context.Context, in CustomerSignup, ev
 		if product.State != "active" || product.Identity != IdentityZitadel {
 			return ErrConflict
 		}
-		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "customer-email:"+hex.EncodeToString(in.OwnerEmailHash)); err != nil {
-			return err
-		}
-		var reserved bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM customer_signups WHERE product_key='helivanta' AND owner_email_hash=$1 AND state<>'existing_account')`, in.OwnerEmailHash).Scan(&reserved); err != nil {
-			return err
-		}
 		state := "recorded"
-		if reserved {
-			state = "existing_account"
-		}
 		result, err = scanCustomerSignup(tx.QueryRow(ctx, `INSERT INTO customer_signups(id,product_key,tenant_id,resource_id,owner_subject,receipt_hash,intent_hash,owner_email_hash,input,state,retry_at) VALUES($1,'helivanta',$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING `+customerSignupColumns, in.ID, in.TenantID, in.ResourceID, in.OwnerSubject, in.ReceiptHash, in.IntentHash, in.OwnerEmailHash, raw, state, in.RetryAt))
 		if err != nil {
 			return err
@@ -159,7 +148,7 @@ func (s *Store) LeaseCustomerSignups(ctx context.Context, limit int, now time.Ti
 	}
 	rows, err := s.pool.Query(ctx, `WITH due AS (
         SELECT id FROM customer_signups
-        WHERE state IN ('recorded','identity_requested') AND retry_at <= $1
+        WHERE (state IN ('recorded','identity_requested') OR (state='existing_account' AND existing_owner_subject='' AND receipt_expires_at>$1)) AND retry_at <= $1
           AND (lease_until IS NULL OR lease_until <= $1)
         ORDER BY retry_at,id LIMIT $2 FOR UPDATE SKIP LOCKED
     ) UPDATE customer_signups SET lease_until=$1+interval '1 minute',
@@ -176,7 +165,7 @@ func (s *Store) LeaseCustomerSignups(ctx context.Context, limit int, now time.Ti
 
 // FinishCustomerSignup fences delivery results to the current lease and intent state.
 func (s *Store) FinishCustomerSignup(ctx context.Context, row CustomerSignup, state, errorCode string, retryAt time.Time) error {
-	if row.LeaseID == nil || (row.State != "recorded" && row.State != "identity_requested") {
+	if row.LeaseID == nil || (row.State != "recorded" && row.State != "identity_requested" && row.State != "existing_account") {
 		return ErrConflict
 	}
 	switch state {
@@ -185,7 +174,7 @@ func (s *Store) FinishCustomerSignup(ctx context.Context, row CustomerSignup, st
 			return ErrConflict
 		}
 	case "existing_account":
-		if row.State != "recorded" {
+		if row.State != "recorded" && row.State != "existing_account" {
 			return ErrConflict
 		}
 	case "identity_requested", "needs_support":

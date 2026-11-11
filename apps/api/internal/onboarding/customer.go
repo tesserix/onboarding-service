@@ -205,7 +205,7 @@ func (s *Service) DeliverCustomer(ctx context.Context, id uuid.UUID, hash []byte
 	return generic, nil
 }
 
-// ContinueCustomer reuses only the receipt's current active, verified native human.
+// ContinueCustomer accepts only the receipt's fresh tenant-owned native human.
 func (s *Service) ContinueCustomer(ctx context.Context, id uuid.UUID, hash []byte, in customercontract.ExistingOwnerInput) (customercontract.Receipt, error) {
 	if s.signupIdentity == nil {
 		return customercontract.Receipt{}, ErrUnavailable
@@ -218,7 +218,7 @@ func (s *Service) ContinueCustomer(ctx context.Context, id uuid.UUID, hash []byt
 		return customercontract.Receipt{}, customerError(err)
 	}
 	newOwner := row.ExistingOwnerSubject == "" && row.OwnerSubject == in.Subject && (row.State == "identity_requested" || row.State == "ready")
-	if row.Input.Owner == nil || (!newOwner && ((row.ExistingOwnerSubject == "" && row.State != "existing_account") || (row.ExistingOwnerSubject != "" && row.ExistingOwnerSubject != in.Subject))) {
+	if row.Input.Owner == nil || (!newOwner && (row.ExistingOwnerSubject == "" || row.ExistingOwnerSubject != in.Subject)) {
 		return customercontract.Receipt{}, ErrConflict
 	}
 	if err = s.store.ConsumeSignupSignin(ctx, id, time.Now().UTC()); err != nil {
@@ -294,15 +294,8 @@ func (s *Service) deliverCustomer(ctx context.Context, row store.CustomerSignup)
 	if row.Input.Validate(row.ID) != nil || row.TenantID != customerTenantID(row.ID.String()) || row.OwnerSubject != "owner-"+row.TenantID.String() {
 		return "needs_support", ""
 	}
-	if row.State == "recorded" && row.ExistingOwnerSubject == "" {
-		other, err := s.signupIdentity.OtherSignupIdentity(ctx, row.Input.Owner.Email, row.OwnerSubject)
-		if err != nil {
-			return row.State, "identity_unavailable"
-		}
-		if other {
-			return "existing_account", ""
-		}
-		_, err = s.hospitals.Claims.Create(ctx, hospitalclaims.Spec{Product: "helivanta", TenantID: row.TenantID.String(), DisplayName: row.Input.Name, InitialAdminUserID: row.OwnerSubject, InitialAdmin: row.Input.Owner, ExternalInitialAdminEmail: s.signupMail != nil})
+	if (row.State == "recorded" || row.State == "existing_account") && row.ExistingOwnerSubject == "" {
+		_, err := s.hospitals.Claims.Create(ctx, hospitalclaims.Spec{Product: "helivanta", TenantID: row.TenantID.String(), DisplayName: row.Input.Name, InitialAdminUserID: row.OwnerSubject, InitialAdmin: row.Input.Owner, ExternalInitialAdminEmail: s.signupMail != nil})
 		if errors.Is(err, hospitalclaims.ErrConflict) {
 			return "needs_support", ""
 		}
