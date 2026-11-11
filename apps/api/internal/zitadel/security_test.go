@@ -25,9 +25,10 @@ func TestOwnerSecurityRequiresFreshNativeOwnerAndCurrentPolicy(t *testing.T) {
 func TestOwnerSecurityFailsClosedOnRevocationForeignBindingAndMissingPolicy(t *testing.T) {
 	for _, tc := range []struct{ path, from, to string }{
 		{"/v2/users/owner-1", "USER_STATE_ACTIVE", "USER_STATE_INACTIVE"},
-		{"/v2/users/owner-1", `"resourceOwner":"org-1"`, `"resourceOwner":"other"`},
+		{"/v2/users/owner-1", `"resourceOwner":"org-1"`, `"resourceOwner":""`},
 		{"/v2/users/owner-1", `"isVerified":true`, `"isVerified":false`},
 		{"/management/v1/orgs/me/members/_search", "ORG_OWNER", "ORG_USER_MANAGER"},
+		{"/management/v1/orgs/me/members/_search", `"resourceOwner":"org-1"`, `"resourceOwner":"other"`},
 		{"/management/v1/orgs/me/members/_search", `"userId":"owner-1"`, `"userId":"other"`},
 		{"/management/v1/orgs/me/members/_search", `"totalResult":"1"`, `"totalResult":"2"`},
 		{"/management/v1/policies/login", `"sequence":"13"`, `"sequence":"0"`},
@@ -85,4 +86,13 @@ func ownerSecurityClient(t *testing.T, replies map[string]string) *Client {
 	client := New(server.URL, StaticToken("source-token"), "platform-1", nil)
 	client.http = server.Client()
 	return client
+}
+
+func TestOwnerSecurityAcceptsVerifiedOwnerFromAnotherNativeOrganization(t *testing.T) {
+	replies := securityResponses()
+	replies["/v2/users/owner-1"] = strings.Replace(replies["/v2/users/owner-1"], `"resourceOwner":"org-1"`, `"resourceOwner":"platform-org"`, 1)
+	proof, err := ownerSecurityClient(t, replies).OwnerSecurity(t.Context(), "org-1", "owner-1")
+	if err != nil || !proof.RequireMFA || proof.Sequence != "13" {
+		t.Fatalf("current cross-organisation owner rejected: %+v %v", proof, err)
+	}
 }
