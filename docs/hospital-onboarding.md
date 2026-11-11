@@ -111,3 +111,65 @@ change retention/IAM, which requires separate organizational governance.
 Platform administrators can use `/orgs/hospital` to create a new hospital or adopt an existing one. Adoption requires the exact existing tenant UUID, Zitadel organization ID and existing Helivanta administrator subject. Preserve login policy is selected initially to avoid an unplanned MFA/domain cutover. Keep the resume link to check pending work after navigation. The console displays completion only after the server verifies activation and a retained receipt. A retry with the same unchanged form retains its idempotency key; after an uncertain response, retry in that form rather than starting a second new hospital request.
 
 Legacy organization creation, product grants and generic enrolment reject Helivanta. They remain available for other products. Product registration records reviewed metadata only and does not deploy infrastructure.
+
+## Existing Helivanta customer accounts
+
+The public receipt remains generic when a submitted owner email already exists.
+An existing account continues through a fresh native OIDC sign-in. The Helivanta
+workload calls `POST /internal/v1/customer-signups/:id/existing-owner` with the
+receipt hash and `ExistingOwnerInput` containing the verified subject,
+authentication time and next receipt hash. The workload verifies the ID token
+before this handoff. The onboarding owner independently verifies the current
+active native human and verified email against the immutable submitted intent.
+
+The database records an immutable existing-owner binding, rotates the receipt
+and resumes the original tenant/resource command. Reauthentication by the same
+bound subject can recover a lost response. Another subject cannot replace the
+binding. New-account email uniqueness remains enforced while one verified
+existing person can own multiple separate workspaces. Native tokens are never
+persisted in this ledger. The controller uses its existing-user organization
+membership path. Business initialization still checks current organization
+metadata, project grant and native ORG_OWNER membership.
+
+Deploy the reviewed existing-owner columns and guards in `onboarding_db.sql`
+before deploying the API version that reads them. The CI schema pin includes
+that change and exercises the real PostgreSQL continuation and replay tests.
+
+## Helivanta verification mail
+
+The optional `HELIVANTA_RESEND_API_KEY_FILE` and `HELIVANTA_EMAIL_FROM` settings
+activate product-scoped delivery. Configure both together; the sender is limited
+to `onboarding@helivanta.app` or `onboarding@helivanta.com` and its domain must be
+verified with Resend. Mount the key read-only from the namespace-scoped OpenBao
+reader. Never put the key in an environment value, frontend bundle or repository.
+
+New private claims set immutable `externalInitialAdminEmail: true`. Deploy the
+updated operator and CRD first: dry-run admission must retain the field. The
+operator creates an unverified human with native code-return mode, suppressing
+instance-wide SMTP. The onboarding worker independently checks the exact active
+human, home organization and retained email, requests a native code transiently,
+and sends through Resend. Native identity still validates every submitted code.
+Email links keep codes in URL fragments. Resend requests use a fixed HTTPS host,
+disabled redirects, bounded response parsing, sanitized failures and a five-second
+timeout. Mounted key changes are read on the next send.
+
+The worker records first acceptance timestamp and provider message ID atomically
+with audit under its current lease. Codes, passwords and keys are never stored.
+The acceptance evidence cannot be changed or erased. Acceptance is not delivery.
+A crash after provider acceptance and before the evidence commit may send another
+native link on retry; only the latest code is usable. Each regenerated code uses
+a new provider idempotency key. Shared first-send/resend quotas cap attempts at
+three per hour. Provider outages remain retryable. With product mail enabled the
+worker leases two commands with twenty-second budgets inside a one-minute lease.
+
+Existing claims that use native SMTP retain that delivery mode. An external-mail
+claim without its configured mailer fails closed rather than using shared SMTP.
+Existing-account continuation does not send privileged password resets or move
+the native user. Existing workspace business initialization retains exact native
+organization, project grant and ORG_OWNER verification.
+
+Deploy the email-evidence schema before this API, then the operator/CRD, the
+OpenBao reader/mount and mail configuration. The schema is additive; old API
+versions ignore these fields. Preserve acceptance evidence on rollback. The
+shared Zitadel SMTP provider is unchanged. Public signup, verification, resend
+and password APIs keep their existing non-enumerating contracts.

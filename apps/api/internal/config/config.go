@@ -12,6 +12,8 @@ import (
 )
 
 type Config struct {
+	HelivantaResendKeyFile string
+	HelivantaEmailFrom     string
 	PlanningPokerProjectID string
 	PlanningPokerClientID  string
 	MCPGatewayProjectID    string
@@ -45,6 +47,8 @@ type Config struct {
 
 func Load() (Config, error) {
 	c := Config{
+		HelivantaResendKeyFile: os.Getenv("HELIVANTA_RESEND_API_KEY_FILE"),
+		HelivantaEmailFrom:     os.Getenv("HELIVANTA_EMAIL_FROM"),
 		PlanningPokerProjectID: os.Getenv("PLANNING_POKER_PROJECT_ID"),
 		PlanningPokerClientID:  os.Getenv("PLANNING_POKER_CLIENT_ID"),
 		MCPGatewayProjectID:    os.Getenv("MCP_GATEWAY_PROJECT_ID"),
@@ -69,6 +73,9 @@ func Load() (Config, error) {
 		ShutdownGrace:          20 * time.Second,
 	}
 	c.ZitadelJWKSURL = env("ZITADEL_JWKS_URL", strings.TrimSuffix(c.ZitadelIssuer, "/")+"/oauth/v2/keys")
+	if (c.HelivantaResendKeyFile == "") != (c.HelivantaEmailFrom == "") || (c.HelivantaEmailFrom != "" && c.HelivantaEmailFrom != "onboarding@helivanta.app" && c.HelivantaEmailFrom != "onboarding@helivanta.com") {
+		return Config{}, fmt.Errorf("helivanta email requires a key file and product sender")
+	}
 	c.RedirectURI = env("OIDC_REDIRECT_URI", strings.TrimSuffix(c.ConsoleURL, "/")+"/api/auth/callback")
 	if (c.PlanningPokerProjectID == "") != (c.PlanningPokerClientID == "") {
 		return Config{}, fmt.Errorf("planning poker project and client must be configured together")

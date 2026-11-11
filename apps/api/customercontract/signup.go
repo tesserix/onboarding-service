@@ -6,8 +6,10 @@ import (
 	"github.com/google/uuid"
 	identity "github.com/tesserix/devai-sandbox-operator/operators/zitadel/api/v1alpha1"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 )
@@ -95,6 +97,7 @@ type Delivery struct {
 
 // Workspace is the workload-only command to the selected business owner.
 type Workspace struct {
+	ExistingOwner  bool   `json:"existingOwner,omitempty"`
 	TenantID       string `json:"tenantId"`
 	OrganizationID string `json:"organizationId"`
 	OwnerSubject   string `json:"ownerSubject"`
@@ -156,7 +159,7 @@ func (r Receipt) Validate() error {
 // Validate binds the initial resource to the exact new native owner and tenant.
 func (w Workspace) Validate() error {
 	tenant, err := uuid.Parse(w.TenantID)
-	if err != nil || tenant == uuid.Nil || tenant.String() != w.TenantID || w.OrganizationID != "helivanta-"+w.TenantID || w.OwnerSubject != "owner-"+w.TenantID {
+	if err != nil || tenant == uuid.Nil || tenant.String() != w.TenantID || w.OrganizationID != "helivanta-"+w.TenantID || (!w.ExistingOwner && w.OwnerSubject != "owner-"+w.TenantID) || (w.ExistingOwner && !nativeSubject.MatchString(w.OwnerSubject)) {
 		return ErrInvalid
 	}
 	resource, err := uuid.Parse(w.ResourceID)
@@ -164,4 +167,35 @@ func (w Workspace) Validate() error {
 		return ErrInvalid
 	}
 	return w.Setup.Validate()
+}
+
+var nativeSubject = regexp.MustCompile(`^[A-Za-z0-9_-]{1,200}$`)
+
+// SigninInput carries a transient native ID token for receipt-bound continuation.
+type SigninInput struct {
+	IDToken string `json:"idToken" required:"true" max:"8192" clean:"true"`
+}
+
+// Validate bounds a token before the native verifier parses it.
+func (in SigninInput) Validate() error {
+	if !profileStringsValid(in) {
+		return ErrInvalid
+	}
+	return nil
+}
+
+// ExistingOwnerInput is accepted only from the browser application's verified workload.
+type ExistingOwnerInput struct {
+	Subject         string `json:"subject"`
+	AuthTime        int64  `json:"authTime"`
+	NextReceiptHash string `json:"nextReceiptHash"`
+}
+
+// Validate requires a fresh native authentication and a rotated receipt hash.
+func (in ExistingOwnerInput) Validate(now time.Time) error {
+	authenticated := time.Unix(in.AuthTime, 0)
+	if !nativeSubject.MatchString(in.Subject) || in.AuthTime <= 0 || authenticated.Before(now.Add(-5*time.Minute)) || authenticated.After(now.Add(30*time.Second)) || len(in.NextReceiptHash) != 64 {
+		return ErrInvalid
+	}
+	return nil
 }

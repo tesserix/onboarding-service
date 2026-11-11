@@ -20,6 +20,7 @@ import (
 	"github.com/tesserix/onboarding-service/api/internal/config"
 	"github.com/tesserix/onboarding-service/api/internal/hospitalclaims"
 	"github.com/tesserix/onboarding-service/api/internal/onboarding"
+	"github.com/tesserix/onboarding-service/api/internal/signupmail"
 	"github.com/tesserix/onboarding-service/api/internal/store"
 	"github.com/tesserix/onboarding-service/api/internal/workloadidentity"
 	"github.com/tesserix/onboarding-service/api/internal/zitadel"
@@ -109,7 +110,14 @@ func run(log *slog.Logger) error {
 		if err != nil || u.Scheme != "https" || u.Host != "helivanta.app" || u.Path != "/api/internal/v1/hospital-enrolments" || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
 			return errors.New("invalid Helivanta provisioning destination")
 		}
-		svc = onboarding.New(st, identity, authz.New(st), log, onboarding.WithRegistryProjectID(cfg.RegistryProjectID), onboarding.WithCustomerIdentity(client), onboarding.WithHospitals(onboarding.HospitalConfig{Claims: hospitalclaims.New(kube, "identity-operator"), Product: "helivanta", HelivantaURL: target, HelivantaTokenFile: "/var/run/helivanta-provisioning/token"}))
+		var mailer *signupmail.Client
+		if cfg.HelivantaResendKeyFile != "" {
+			mailer, err = signupmail.New(cfg.HelivantaResendKeyFile, cfg.HelivantaEmailFrom, nil)
+			if err != nil {
+				return err
+			}
+		}
+		svc = onboarding.New(st, identity, authz.New(st), log, onboarding.WithRegistryProjectID(cfg.RegistryProjectID), onboarding.WithCustomerIdentity(client), onboarding.WithCustomerMail(mailer), onboarding.WithHospitals(onboarding.HospitalConfig{Claims: hospitalclaims.New(kube, "identity-operator"), Product: "helivanta", HelivantaURL: target, HelivantaTokenFile: "/var/run/helivanta-provisioning/token"}))
 	}
 
 	if cfg.PlanningPokerProjectID != "" {

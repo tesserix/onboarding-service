@@ -44,7 +44,7 @@ func (c *Client) OwnerSecurity(ctx context.Context, orgID, subject string) (Owne
 	if err = c.readIdentity(ctx, &client, token, http.MethodGet, "/v2/users/"+subject, orgID, nil, &user); err != nil {
 		return empty, err
 	}
-	if user.User.ID != subject || user.User.State != "USER_STATE_ACTIVE" || user.User.Details.ResourceOwner != orgID || user.User.Human == nil || !user.User.Human.Email.Verified {
+	if user.User.ID != subject || user.User.State != "USER_STATE_ACTIVE" || !identitySourceID.MatchString(user.User.Details.ResourceOwner) || user.User.Human == nil || !user.User.Human.Email.Verified {
 		return empty, ErrIdentityMissing
 	}
 	var members struct {

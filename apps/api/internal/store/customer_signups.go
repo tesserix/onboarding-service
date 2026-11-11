@@ -15,30 +15,34 @@ import (
 
 // CustomerSignup is an immutable submitted command and its mutable delivery state.
 type CustomerSignup struct {
-	ID                 uuid.UUID
-	TenantID           uuid.UUID
-	ResourceID         uuid.UUID
-	OwnerSubject       string
-	ReceiptHash        []byte
-	ReceiptExpiresAt   time.Time
-	ReceiptVerified    bool
-	PasswordConfigured bool
-	ReceiptActive      bool
-	LeaseID            *uuid.UUID
-	IntentHash         []byte
-	OwnerEmailHash     []byte
-	Input              customercontract.Signup
-	State              string
-	Attempts           int
-	RetryAt            time.Time
-	LeaseUntil         *time.Time
-	ErrorCode          string
+	ID                    uuid.UUID
+	TenantID              uuid.UUID
+	ResourceID            uuid.UUID
+	OwnerSubject          string
+	ExistingOwnerSubject  string
+	ExistingOwnerAuthTime *time.Time
+	EmailAcceptedAt       *time.Time
+	EmailProviderID       string
+	ReceiptHash           []byte
+	ReceiptExpiresAt      time.Time
+	ReceiptVerified       bool
+	PasswordConfigured    bool
+	ReceiptActive         bool
+	LeaseID               *uuid.UUID
+	IntentHash            []byte
+	OwnerEmailHash        []byte
+	Input                 customercontract.Signup
+	State                 string
+	Attempts              int
+	RetryAt               time.Time
+	LeaseUntil            *time.Time
+	ErrorCode             string
 }
 
 // ReserveCustomerSignup persists intent and its audit before remote provisioning.
 func (s *Store) ReserveCustomerSignup(ctx context.Context, in CustomerSignup, event audit.Event) (CustomerSignup, error) {
 	var result CustomerSignup
-	if in.ID == uuid.Nil || in.TenantID == uuid.Nil || in.ResourceID.Version() != 7 || in.OwnerSubject != "owner-"+in.TenantID.String() || len(in.ReceiptHash) != 32 || len(in.IntentHash) != 32 || len(in.OwnerEmailHash) != 32 || in.Input.Validate(in.ID) != nil {
+	if in.ExistingOwnerSubject != "" || in.ExistingOwnerAuthTime != nil || in.ID == uuid.Nil || in.TenantID == uuid.Nil || in.ResourceID.Version() != 7 || in.OwnerSubject != "owner-"+in.TenantID.String() || len(in.ReceiptHash) != 32 || len(in.IntentHash) != 32 || len(in.OwnerEmailHash) != 32 || in.Input.Validate(in.ID) != nil {
 		return result, ErrConflict
 	}
 	raw, err := json.Marshal(in.Input)
@@ -105,12 +109,12 @@ func (s *Store) ReserveCustomerSignup(ctx context.Context, in CustomerSignup, ev
 	return result, err
 }
 
-const customerSignupColumns = `id,tenant_id,resource_id,owner_subject,receipt_hash,intent_hash,owner_email_hash,input,state,attempts,retry_at,lease_until,error_code,receipt_expires_at,receipt_verified,receipt_expires_at>now(),lease_id,primary_credential_configured`
+const customerSignupColumns = `id,tenant_id,resource_id,owner_subject,receipt_hash,intent_hash,owner_email_hash,input,state,attempts,retry_at,lease_until,error_code,receipt_expires_at,receipt_verified,receipt_expires_at>now(),lease_id,primary_credential_configured,existing_owner_subject,existing_owner_auth_time,email_accepted_at,email_provider_id`
 
 func scanCustomerSignup(row pgx.Row) (CustomerSignup, error) {
 	var result CustomerSignup
 	var raw []byte
-	err := row.Scan(&result.ID, &result.TenantID, &result.ResourceID, &result.OwnerSubject, &result.ReceiptHash, &result.IntentHash, &result.OwnerEmailHash, &raw, &result.State, &result.Attempts, &result.RetryAt, &result.LeaseUntil, &result.ErrorCode, &result.ReceiptExpiresAt, &result.ReceiptVerified, &result.ReceiptActive, &result.LeaseID, &result.PasswordConfigured)
+	err := row.Scan(&result.ID, &result.TenantID, &result.ResourceID, &result.OwnerSubject, &result.ReceiptHash, &result.IntentHash, &result.OwnerEmailHash, &raw, &result.State, &result.Attempts, &result.RetryAt, &result.LeaseUntil, &result.ErrorCode, &result.ReceiptExpiresAt, &result.ReceiptVerified, &result.ReceiptActive, &result.LeaseID, &result.PasswordConfigured, &result.ExistingOwnerSubject, &result.ExistingOwnerAuthTime, &result.EmailAcceptedAt, &result.EmailProviderID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return result, ErrNotFound
 	}
@@ -194,7 +198,7 @@ func (s *Store) FinishCustomerSignup(ctx context.Context, row CustomerSignup, st
 	}
 	attempts := row.Attempts
 	if errorCode != "" {
-		if errorCode != "identity_unavailable" && errorCode != "provisioning_unavailable" {
+		if errorCode != "identity_unavailable" && errorCode != "provisioning_unavailable" && errorCode != "email_unavailable" {
 			return ErrConflict
 		}
 		attempts++
@@ -217,12 +221,21 @@ func (s *Store) FinishCustomerSignup(ctx context.Context, row CustomerSignup, st
 
 // ConsumeSignupProof reserves a native proof attempt before contacting identity.
 func (s *Store) ConsumeSignupProof(ctx context.Context, id uuid.UUID, now time.Time) error {
+	return s.consumeSignupProof(ctx, id, now, false)
+}
+
+// ConsumeSignupSignin reserves the same bounded proof budget for existing-account authentication.
+func (s *Store) ConsumeSignupSignin(ctx context.Context, id uuid.UUID, now time.Time) error {
+	return s.consumeSignupProof(ctx, id, now, true)
+}
+
+func (s *Store) consumeSignupProof(ctx context.Context, id uuid.UUID, now time.Time, existing bool) error {
 	result, err := s.pool.Exec(ctx, `UPDATE customer_signups SET
       proof_attempts=CASE WHEN proof_attempts=0 OR proof_window_at IS NULL OR proof_window_at <= $2::timestamptz-interval '15 minutes' THEN 1 ELSE proof_attempts+1 END,
       proof_window_at=CASE WHEN proof_attempts=0 OR proof_window_at IS NULL OR proof_window_at <= $2::timestamptz-interval '15 minutes' THEN $2 ELSE proof_window_at END,
       updated_at=now()
-      WHERE id=$1 AND state NOT IN ('existing_account','needs_support')
-        AND (proof_attempts=0 OR proof_window_at IS NULL OR proof_window_at <= $2::timestamptz-interval '15 minutes' OR proof_attempts<5)`, id, now)
+      WHERE id=$1 AND state<>'needs_support' AND (state<>'existing_account' OR $3)
+        AND (proof_attempts=0 OR proof_window_at IS NULL OR proof_window_at <= $2::timestamptz-interval '15 minutes' OR proof_attempts<5)`, id, now, existing)
 	if err != nil {
 		return err
 	}

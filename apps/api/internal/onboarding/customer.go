@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"github.com/google/uuid"
@@ -168,7 +169,7 @@ func (s *Service) DeliverCustomer(ctx context.Context, id uuid.UUID, hash []byte
 	if err != nil {
 		return customercontract.Receipt{}, ErrUnavailable
 	}
-	if row.Input.Owner == nil || row.State == "existing_account" || row.State == "needs_support" {
+	if row.Input.Owner == nil || row.ExistingOwnerSubject != "" || row.State == "existing_account" || row.State == "needs_support" {
 		return generic, nil
 	}
 	if err = s.store.ConsumeSignupMail(ctx, row.ID, time.Now().UTC()); err != nil {
@@ -181,7 +182,16 @@ func (s *Service) DeliverCustomer(ctx context.Context, id uuid.UUID, hash []byte
 	if err != nil {
 		return customercontract.Receipt{}, ErrUnavailable
 	}
-	if password && verified {
+	if s.hospitals == nil || s.hospitals.Claims == nil {
+		return customercontract.Receipt{}, ErrUnavailable
+	}
+	claim, claimErr := s.hospitals.Claims.Get(ctx, "helivanta", row.TenantID.String())
+	if claimErr != nil || claim.Spec.InitialAdminUserID != row.OwnerSubject || claim.Spec.TenantID != row.TenantID.String() {
+		return customercontract.Receipt{}, ErrUnavailable
+	}
+	if claim.Spec.ExternalInitialAdminEmail {
+		_, err = s.sendCustomerEmail(ctx, row, password && verified)
+	} else if password && verified {
 		err = s.signupIdentity.SendSignupPasswordLink(ctx, row.OwnerSubject)
 	} else {
 		err = s.signupIdentity.SendSignupEmailLink(ctx, row.OwnerSubject)
@@ -192,17 +202,78 @@ func (s *Service) DeliverCustomer(ctx context.Context, id uuid.UUID, hash []byte
 	return generic, nil
 }
 
+// ContinueCustomer reuses only the receipt's current active, verified native human.
+func (s *Service) ContinueCustomer(ctx context.Context, id uuid.UUID, hash []byte, in customercontract.ExistingOwnerInput) (customercontract.Receipt, error) {
+	if s.signupIdentity == nil {
+		return customercontract.Receipt{}, ErrUnavailable
+	}
+	if in.Validate(time.Now().UTC()) != nil {
+		return customercontract.Receipt{}, ErrInvalid
+	}
+	row, err := s.store.CustomerSignupForExistingOwner(ctx, id, hash, in.Subject)
+	if err != nil {
+		return customercontract.Receipt{}, customerError(err)
+	}
+	newOwner := row.ExistingOwnerSubject == "" && row.OwnerSubject == in.Subject && (row.State == "identity_requested" || row.State == "ready")
+	if row.Input.Owner == nil || (!newOwner && ((row.ExistingOwnerSubject == "" && row.State != "existing_account") || (row.ExistingOwnerSubject != "" && row.ExistingOwnerSubject != in.Subject))) {
+		return customercontract.Receipt{}, ErrConflict
+	}
+	if err = s.store.ConsumeSignupSignin(ctx, id, time.Now().UTC()); err != nil {
+		return customercontract.Receipt{}, customerError(err)
+	}
+	if newOwner {
+		verified, err := s.signupIdentity.SignupIdentity(ctx, "helivanta-"+row.TenantID.String(), row.OwnerSubject, row.Input.Owner.Email)
+		if err != nil {
+			return customercontract.Receipt{}, ErrUnavailable
+		}
+		if !verified {
+			return customercontract.Receipt{}, ErrInvalid
+		}
+		next, err := hex.DecodeString(in.NextReceiptHash)
+		if err != nil || bytes.Equal(next, hash) {
+			return customercontract.Receipt{}, ErrInvalid
+		}
+		if err = s.store.RotateSignupReceipt(ctx, row.ID, next, true); err != nil {
+			return customercontract.Receipt{}, customerError(err)
+		}
+		row.ReceiptVerified, row.PasswordConfigured = true, true
+		return customerReceipt(row), nil
+	}
+	if err = s.signupIdentity.VerifyExistingHuman(ctx, in.Subject, row.Input.Owner.Email); err != nil {
+		if errors.Is(err, zitadel.ErrSignupProof) {
+			return customercontract.Receipt{}, ErrInvalid
+		}
+		return customercontract.Receipt{}, ErrUnavailable
+	}
+	row, err = s.store.ConfirmExistingOwner(ctx, id, hash, in)
+	if err != nil {
+		return customercontract.Receipt{}, customerError(err)
+	}
+	return customerReceipt(row), nil
+}
+
+func customerOwner(row store.CustomerSignup) string {
+	if row.ExistingOwnerSubject != "" {
+		return row.ExistingOwnerSubject
+	}
+	return row.OwnerSubject
+}
+
 // DeliverCustomers advances a bounded batch of durable identity deliveries.
 func (s *Service) DeliverCustomers(ctx context.Context, now time.Time) error {
 	if s.signupIdentity == nil || s.hospitals == nil || s.hospitals.Claims == nil {
 		return ErrUnavailable
 	}
-	rows, err := s.store.LeaseCustomerSignups(ctx, 5, now)
+	batch, budget := 5, 8*time.Second
+	if s.signupMail != nil {
+		batch, budget = 2, 20*time.Second
+	}
+	rows, err := s.store.LeaseCustomerSignups(ctx, batch, now)
 	if err != nil {
 		return ErrUnavailable
 	}
 	for _, row := range rows {
-		current, cancel := context.WithTimeout(ctx, 8*time.Second)
+		current, cancel := context.WithTimeout(ctx, budget)
 		state, code := s.deliverCustomer(current, row)
 		cancel()
 		retry := now.Add(30 * time.Second)
@@ -220,7 +291,7 @@ func (s *Service) deliverCustomer(ctx context.Context, row store.CustomerSignup)
 	if row.Input.Validate(row.ID) != nil || row.TenantID != customerTenantID(row.ID.String()) || row.OwnerSubject != "owner-"+row.TenantID.String() {
 		return "needs_support", ""
 	}
-	if row.State == "recorded" {
+	if row.State == "recorded" && row.ExistingOwnerSubject == "" {
 		other, err := s.signupIdentity.OtherSignupIdentity(ctx, row.Input.Owner.Email, row.OwnerSubject)
 		if err != nil {
 			return row.State, "identity_unavailable"
@@ -228,7 +299,20 @@ func (s *Service) deliverCustomer(ctx context.Context, row store.CustomerSignup)
 		if other {
 			return "existing_account", ""
 		}
-		_, err = s.hospitals.Claims.Create(ctx, hospitalclaims.Spec{Product: "helivanta", TenantID: row.TenantID.String(), DisplayName: row.Input.Name, InitialAdminUserID: row.OwnerSubject, InitialAdmin: row.Input.Owner})
+		_, err = s.hospitals.Claims.Create(ctx, hospitalclaims.Spec{Product: "helivanta", TenantID: row.TenantID.String(), DisplayName: row.Input.Name, InitialAdminUserID: row.OwnerSubject, InitialAdmin: row.Input.Owner, ExternalInitialAdminEmail: s.signupMail != nil})
+		if errors.Is(err, hospitalclaims.ErrConflict) {
+			return "needs_support", ""
+		}
+		if err != nil {
+			return row.State, "identity_unavailable"
+		}
+		return "identity_requested", ""
+	}
+	if row.State == "recorded" && row.ExistingOwnerSubject != "" {
+		if err := s.signupIdentity.VerifyExistingHuman(ctx, row.ExistingOwnerSubject, row.Input.Owner.Email); err != nil {
+			return row.State, "identity_unavailable"
+		}
+		_, err := s.hospitals.Claims.Create(ctx, hospitalclaims.Spec{Product: "helivanta", TenantID: row.TenantID.String(), DisplayName: row.Input.Name, InitialAdminUserID: row.ExistingOwnerSubject})
 		if errors.Is(err, hospitalclaims.ErrConflict) {
 			return "needs_support", ""
 		}
@@ -241,8 +325,13 @@ func (s *Service) deliverCustomer(ctx context.Context, row store.CustomerSignup)
 	if err != nil {
 		return row.State, "identity_unavailable"
 	}
-	if claim.Spec.InitialAdminUserID != row.OwnerSubject || claim.Spec.TenantID != row.TenantID.String() || claim.Spec.Product != "helivanta" {
+	if claim.Spec.InitialAdminUserID != customerOwner(row) || claim.Spec.TenantID != row.TenantID.String() || claim.Spec.Product != "helivanta" {
 		return "needs_support", ""
+	}
+	if claim.Spec.ExternalInitialAdminEmail {
+		if err = s.deliverInitialCustomerEmail(ctx, row); err != nil {
+			return row.State, "email_unavailable"
+		}
 	}
 	if !HospitalReady(claim) {
 		return row.State, ""
@@ -254,7 +343,7 @@ func (s *Service) deliverCustomer(ctx context.Context, row store.CustomerSignup)
 }
 
 func (s *Service) initializeCustomer(ctx context.Context, row store.CustomerSignup) error {
-	workspace := customercontract.Workspace{TenantID: row.TenantID.String(), OrganizationID: "helivanta-" + row.TenantID.String(), OwnerSubject: row.OwnerSubject, ResourceID: row.ResourceID.String(), Setup: row.Input.Setup}
+	workspace := customercontract.Workspace{TenantID: row.TenantID.String(), OrganizationID: "helivanta-" + row.TenantID.String(), OwnerSubject: customerOwner(row), ExistingOwner: row.ExistingOwnerSubject != "", ResourceID: row.ResourceID.String(), Setup: row.Input.Setup}
 	if workspace.Validate() != nil {
 		return ErrConflict
 	}
@@ -268,9 +357,15 @@ func (s *Service) initializeCustomer(ctx context.Context, row store.CustomerSign
 	if err != nil || !currentIdentityProof(proof, org, product, started, time.Now().UTC()) || proof.State != "active" {
 		return ErrUnavailable
 	}
-	verified, err := s.signupIdentity.SignupIdentity(ctx, workspace.OrganizationID, row.OwnerSubject, row.Input.Owner.Email)
-	if err != nil || !verified {
-		return ErrUnavailable
+	if row.ExistingOwnerSubject != "" {
+		if s.signupIdentity.VerifyExistingHuman(ctx, row.ExistingOwnerSubject, row.Input.Owner.Email) != nil {
+			return ErrUnavailable
+		}
+	} else {
+		verified, err := s.signupIdentity.SignupIdentity(ctx, workspace.OrganizationID, row.OwnerSubject, row.Input.Owner.Email)
+		if err != nil || !verified {
+			return ErrUnavailable
+		}
 	}
 	members, err := s.idp.OrgMembers(ctx, workspace.OrganizationID)
 	if err != nil {
@@ -278,7 +373,7 @@ func (s *Service) initializeCustomer(ctx context.Context, row store.CustomerSign
 	}
 	owner := false
 	for _, member := range members {
-		if member.UserID == row.OwnerSubject {
+		if member.UserID == customerOwner(row) {
 			for _, role := range member.Roles {
 				if role == "ORG_OWNER" {
 					owner = true

@@ -43,6 +43,7 @@ func generateContracts() (string, error) {
 		{"CustomerBusinessProfileView", reflect.TypeFor[customercontract.BusinessProfileView]()},
 		{"CustomerOrganizationProfile", reflect.TypeFor[customercontract.OrganizationProfile]()},
 		{"CustomerSignupInput", reflect.TypeFor[customercontract.Signup]()},
+		{"CustomerSignupSigninInput", reflect.TypeFor[customercontract.SigninInput]()},
 		{"CustomerSignupReceipt", reflect.TypeFor[customercontract.Receipt]()},
 		{"CustomerSignupProof", reflect.TypeFor[customercontract.Proof]()},
 		{"CustomerSignupDelivery", reflect.TypeFor[customercontract.Delivery]()},
