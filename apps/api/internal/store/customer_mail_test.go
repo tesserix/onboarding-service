@@ -1,7 +1,9 @@
 package store
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/google/uuid"
 	"github.com/tesserix/onboarding-service/api/internal/audit"
 	"testing"
@@ -105,5 +107,105 @@ func TestConcurrentSignupMailCannotExceedLastDailyAllowance(t *testing.T) {
 	}
 	if accepted != 1 {
 		t.Fatalf("last daily allowance admitted %d concurrent requests", accepted)
+	}
+}
+
+func reserveSameRecipientSignups(t *testing.T, s *Store, count int) []CustomerSignup {
+	t.Helper()
+	inputs := make([]CustomerSignup, count)
+	email := uuid.NewString() + "@example.test"
+	for i := range inputs {
+		inputs[i] = signupCommand(t)
+		inputs[i].Input.Owner.Email = email
+		inputs[i].OwnerEmailHash = digest(email)
+		raw, err := json.Marshal(inputs[i].Input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		inputs[i].IntentHash = digest(string(raw))
+		if _, err = s.ReserveCustomerSignup(t.Context(), inputs[i], audit.Event{ActorType: audit.ActorSystem, ActorID: "recipient-budget-test", Outcome: audit.OutcomeSuccess}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return inputs
+}
+
+func TestSignupMailRecipientHourlyBudgetSpansIndependentTenants(t *testing.T) {
+	s := newStore(t)
+	seedProduct(t, s, "helivanta")
+	inputs := reserveSameRecipientSignups(t, s, 2)
+	now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
+	for n := range 3 {
+		if err := s.ConsumeSignupMail(t.Context(), inputs[0].ID, now.Add(time.Duration(n)*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.ConsumeSignupMail(t.Context(), inputs[1].ID, now.Add(5*time.Minute)); !errors.Is(err, ErrConflict) {
+		t.Fatalf("fresh tenant bypassed recipient hourly budget: %v", err)
+	}
+	other := signupCommand(t)
+	if _, err := s.ReserveCustomerSignup(t.Context(), other, audit.Event{ActorType: audit.ActorSystem, ActorID: "other-recipient", Outcome: audit.OutcomeSuccess}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConsumeSignupMail(t.Context(), other.ID, now.Add(5*time.Minute)); err != nil {
+		t.Fatalf("unrelated recipient consumed another recipient's allowance: %v", err)
+	}
+	if err := s.ConsumeSignupMail(t.Context(), inputs[1].ID, now.Add(time.Hour)); err != nil {
+		t.Fatalf("hour boundary did not restore recipient allowance: %v", err)
+	}
+}
+
+func TestSignupMailRecipientDailyBudgetSpansIndependentTenants(t *testing.T) {
+	s := newStore(t)
+	seedProduct(t, s, "helivanta")
+	inputs := reserveSameRecipientSignups(t, s, 2)
+	now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
+	for n := range 10 {
+		if err := s.ConsumeSignupMail(t.Context(), inputs[n%2].ID, now.Add(time.Duration(n)*time.Hour)); err != nil {
+			t.Fatalf("delivery %d: %v", n+1, err)
+		}
+	}
+	if err := s.ConsumeSignupMail(t.Context(), inputs[0].ID, now.Add(10*time.Hour)); !errors.Is(err, ErrConflict) {
+		t.Fatalf("separate tenant bypassed recipient daily budget: %v", err)
+	}
+	if err := s.ConsumeSignupMail(t.Context(), inputs[1].ID, now.Add(24*time.Hour)); err != nil {
+		t.Fatalf("daily recipient allowance did not recover: %v", err)
+	}
+}
+
+func TestConcurrentIndependentTenantsShareRecipientMailAllowance(t *testing.T) {
+	for _, daily := range []bool{false, true} {
+		t.Run(fmt.Sprintf("daily=%v", daily), func(t *testing.T) {
+			s := newStore(t)
+			seedProduct(t, s, "helivanta")
+			inputs := reserveSameRecipientSignups(t, s, 8)
+			now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
+			expected := 3
+			if daily {
+				for n := range 9 {
+					if err := s.ConsumeSignupMail(t.Context(), inputs[0].ID, now.Add(time.Duration(n)*time.Hour)); err != nil {
+						t.Fatal(err)
+					}
+				}
+				now = now.Add(10 * time.Hour)
+				expected = 1
+			}
+			results := make(chan error, len(inputs))
+			for _, input := range inputs {
+				go func() { results <- s.ConsumeSignupMail(t.Context(), input.ID, now) }()
+			}
+			accepted := 0
+			for range inputs {
+				err := <-results
+				if err == nil {
+					accepted++
+				} else if !errors.Is(err, ErrConflict) {
+					t.Fatal(err)
+				}
+			}
+			if accepted != expected {
+				t.Fatalf("recipient budget admitted %d concurrent requests; want %d", accepted, expected)
+			}
+		})
 	}
 }
