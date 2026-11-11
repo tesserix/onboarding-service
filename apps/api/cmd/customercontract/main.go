@@ -150,7 +150,7 @@ func contractFields(kind reflect.Type) ([]string, error) {
 		if field.Tag.Get("format") == "uuid" {
 			schema += ".uuid()"
 		}
-		if field.Tag.Get("required") == "true" && field.Type.Kind() == reflect.String {
+		if field.Tag.Get("required") == "true" && strings.HasPrefix(schema, "z.string()") {
 			schema += ".min(1)"
 		}
 		if pattern := field.Tag.Get("pattern"); pattern != "" {
