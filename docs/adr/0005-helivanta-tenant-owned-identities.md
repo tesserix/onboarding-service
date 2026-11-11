@@ -102,3 +102,23 @@ tenant/enrolment, refusal, malformed data, native outage or audit failure are
 unavailable, never a fabricated inactive result that revokes a clinician's
 credentials. Profile absence remains explicitly unavailable. The service audits
 opaque subject/purpose, without names, email, password, token or factor data.
+
+### Local consumer acceptance dependency
+
+Helivanta's browser CI uses the same private identity-read handlers and native
+projection adapter as production. The separate `helivanta-identity-fixture`
+command is compiled only with the `identityfixture` build tag; the production
+API image neither contains nor enables it. It requires an explicit fixture flag,
+the exact local native issuer, development database credentials and an isolated
+`onboarding_fixture` database on a loopback address. It binds only to
+`127.0.0.1:18787` and accepts a committed synthetic workload credential only in
+this separately built command. All signup, password and policy routes are
+unavailable through the fixture listener.
+
+The consumer seeds two synthetic native organisations, metadata and project
+grants, then supplies public project/organisation identifiers in a manifest.
+The fixture verifies live native scope before recording its isolated projection
+and enrolment. Every read still traverses the normal workload route, active
+product/tenant/enrolment proof, live native adapter and durable audit ledger.
+This does not simulate successful onboarding or email delivery. Production
+retains its projected workload token and private service destination.

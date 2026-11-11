@@ -26,6 +26,7 @@ jobs:
         with:
           go-version: 1.27.4
           cache-dependency-path: apps/api/go.sum
+      - run: go -C apps/api test -race -tags identityfixture ./cmd/helivanta-identity-fixture
       - run: go -C apps/api run ./cmd/customercontract -check
       - run: python3 -m unittest discover -s tests -v
       - id: images
