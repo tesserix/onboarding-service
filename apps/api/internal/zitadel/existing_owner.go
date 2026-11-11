@@ -29,7 +29,7 @@ func (c *Client) VerifyExistingHuman(ctx context.Context, userID, email string) 
 	}
 	u := out.User
 	if u.ID != userID || u.State != "USER_STATE_ACTIVE" || u.Human == nil || !u.Human.Email.Verified || !strings.EqualFold(u.Human.Email.Address, email) {
-		return fmt.Errorf("%w: existing owner is not an active verified human", ErrIdentityUnavailable)
+		return fmt.Errorf("%w: existing owner is not an active verified human: %w", ErrIdentityUnavailable, ErrSignupProof)
 	}
 	return nil
 }

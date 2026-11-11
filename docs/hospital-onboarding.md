@@ -111,3 +111,26 @@ change retention/IAM, which requires separate organizational governance.
 Platform administrators can use `/orgs/hospital` to create a new hospital or adopt an existing one. Adoption requires the exact existing tenant UUID, Zitadel organization ID and existing Helivanta administrator subject. Preserve login policy is selected initially to avoid an unplanned MFA/domain cutover. Keep the resume link to check pending work after navigation. The console displays completion only after the server verifies activation and a retained receipt. A retry with the same unchanged form retains its idempotency key; after an uncertain response, retry in that form rather than starting a second new hospital request.
 
 Legacy organization creation, product grants and generic enrolment reject Helivanta. They remain available for other products. Product registration records reviewed metadata only and does not deploy infrastructure.
+
+## Existing Helivanta customer accounts
+
+The public receipt remains generic when a submitted owner email already exists.
+An existing account continues through a fresh native OIDC sign-in. The Helivanta
+workload calls `POST /internal/v1/customer-signups/:id/existing-owner` with the
+receipt hash and `ExistingOwnerInput` containing the verified subject,
+authentication time and next receipt hash. The workload verifies the ID token
+before this handoff. The onboarding owner independently verifies the current
+active native human and verified email against the immutable submitted intent.
+
+The database records an immutable existing-owner binding, rotates the receipt
+and resumes the original tenant/resource command. Reauthentication by the same
+bound subject can recover a lost response. Another subject cannot replace the
+binding. New-account email uniqueness remains enforced while one verified
+existing person can own multiple separate workspaces. Native tokens are never
+persisted in this ledger. The controller uses its existing-user organization
+membership path. Business initialization still checks current organization
+metadata, project grant and native ORG_OWNER membership.
+
+Deploy the reviewed existing-owner columns and guards in `onboarding_db.sql`
+before deploying the API version that reads them. The CI schema pin includes
+that change and exercises the real PostgreSQL continuation and replay tests.

@@ -19,6 +19,7 @@ func (d Deps) registerCustomers(r *gin.Engine) {
 	})
 	group.POST("", d.startCustomer)
 	group.GET("/:id", d.getCustomer)
+	group.POST("/:id/existing-owner", d.continueCustomer)
 	group.POST("/verify-email", func(c *gin.Context) { d.proveCustomer(c, false) })
 	group.POST("/password", func(c *gin.Context) { d.proveCustomer(c, true) })
 	group.POST("/email-link", func(c *gin.Context) { d.deliverCustomer(c, false) })
@@ -118,4 +119,26 @@ func (d Deps) deliverCustomer(c *gin.Context, password bool) {
 		return
 	}
 	c.JSON(http.StatusAccepted, receipt)
+}
+
+func (d Deps) continueCustomer(c *gin.Context) {
+	hash, ok := customerHash(c)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil || id == uuid.Nil || id.String() != c.Param("id") {
+		abort(c, 400, "invalid signup command")
+		return
+	}
+	var in customercontract.ExistingOwnerInput
+	if !decodeHospital(c, &in) {
+		return
+	}
+	receipt, err := d.Service.ContinueCustomer(c.Request.Context(), id, hash, in)
+	if err != nil {
+		respondErr(c, d.logger(), err)
+		return
+	}
+	c.JSON(http.StatusOK, receipt)
 }
