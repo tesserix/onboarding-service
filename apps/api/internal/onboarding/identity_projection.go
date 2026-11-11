@@ -2,6 +2,7 @@ package onboarding
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/tesserix/onboarding-service/api/customercontract"
@@ -26,7 +27,13 @@ func (s *Service) CustomerIdentityProjection(ctx context.Context, in customercon
 	if err != nil || result.Validate() != nil || result.TenantID != in.TenantID || result.Subject != in.Subject || result.OrganizationID != org || result.Purpose != in.Purpose {
 		return empty, ErrUnavailable
 	}
-	if err = s.store.AppendAudit(ctx, audit.Event{ActorType: audit.ActorSystem, ActorID: customerWorkload, ProductKey: "helivanta", OrgID: in.TenantID, Action: "customer.identity.read", Outcome: audit.OutcomeSuccess, RequestID: in.RequestID, Target: in.Subject, Detail: in.Purpose}); err != nil {
+	detail, err := json.Marshal(struct {
+		Purpose string `json:"purpose"`
+	}{Purpose: in.Purpose})
+	if err != nil {
+		return empty, ErrUnavailable
+	}
+	if err = s.store.AppendAudit(ctx, audit.Event{ActorType: audit.ActorSystem, ActorID: customerWorkload, ProductKey: "helivanta", OrgID: in.TenantID, Action: "customer.identity.read", Outcome: audit.OutcomeSuccess, RequestID: in.RequestID, Target: in.Subject, Detail: string(detail)}); err != nil {
 		return empty, ErrUnavailable
 	}
 	return result, nil

@@ -66,7 +66,7 @@ func TestCustomerIdentityProjectionScopesAdmissionAndAuditsBeforeDisclosure(t *t
 	}
 	defer auditPool.Close()
 	var count int
-	if err = auditPool.QueryRow(t.Context(), `SELECT count(*) FROM audit_events WHERE action='customer.identity.read' AND request_id=$1 AND target='fresh-staff'`, in.RequestID).Scan(&count); err != nil || count != 1 {
+	if err = auditPool.QueryRow(t.Context(), `SELECT count(*) FROM audit_events WHERE action='customer.identity.read' AND request_id=$1 AND target='fresh-staff' AND detail->>'purpose'='membership'`, in.RequestID).Scan(&count); err != nil || count != 1 {
 		t.Fatal("projection was disclosed without audit", err, count)
 	}
 	foreign.Store(true)
