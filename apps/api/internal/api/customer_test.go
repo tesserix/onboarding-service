@@ -21,7 +21,7 @@ func (customerCaller) Verify(_ context.Context, token string) error {
 func TestCustomerSignupEndpointsRequireUnambiguousExactWorkloadCredential(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := NewRouter(Deps{CustomerWorkloads: customerCaller{}})
-	for _, path := range []string{"/internal/v1/customer-signups", "/internal/v1/customer-signups/verify-email", "/internal/v1/customer-signups/password", "/internal/v1/customer-signups/email-link", "/internal/v1/customer-signups/password-link", "/internal/v1/customer-signups/login-target"} {
+	for _, path := range []string{"/internal/v1/customer-signups", "/internal/v1/customer-signups/verify-email", "/internal/v1/customer-signups/password", "/internal/v1/customer-signups/email-link", "/internal/v1/customer-signups/password-link", "/internal/v1/customer-signups/login-target", "/internal/v1/customer-signups/identity-projection"} {
 		for _, token := range []string{"", "Bearer browser", "Bearer foreign-workload"} {
 			request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
 			request.Header.Set("Authorization", token)

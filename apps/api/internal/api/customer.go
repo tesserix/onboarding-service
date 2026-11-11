@@ -25,6 +25,7 @@ func (d Deps) registerCustomers(r *gin.Engine) {
 	group.POST("/email-link", func(c *gin.Context) { d.deliverCustomer(c, false) })
 	group.POST("/password-link", func(c *gin.Context) { d.deliverCustomer(c, true) })
 	group.POST("/login-target", d.customerLoginTarget)
+	group.POST("/identity-projection", d.customerIdentityProjection)
 }
 
 func (d Deps) customerLoginTarget(c *gin.Context) {
@@ -159,4 +160,21 @@ func (d Deps) continueCustomer(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, receipt)
+}
+
+func (d Deps) customerIdentityProjection(c *gin.Context) {
+	var in customercontract.IdentityProjectionInput
+	if !decodeHospital(c, &in) {
+		return
+	}
+	if d.Service == nil {
+		abort(c, 503, "identity unavailable")
+		return
+	}
+	result, err := d.Service.CustomerIdentityProjection(c.Request.Context(), in)
+	if err != nil {
+		respondErr(c, d.logger(), err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }

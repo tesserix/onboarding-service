@@ -69,3 +69,36 @@ and appending the reservation. No remote call runs inside that transaction. A
 non-unique recipient/tenant index supports the join; it conveys no identity,
 account-adoption authority or cross-tenant access. Distinct tenant owners retain
 independent verification/password/MFA despite sharing a delivery budget.
+
+## Private identity projections and native credential authority
+
+Read-only deployed probes confirmed the Helivanta `IAM_LOGIN_CLIENT` credential
+returns403 for native user search and direct user reads. Do not expand it to
+user-management privileges. Alongside scoped login-target lookup, add workload-only
+`POST /internal/v1/customer-signups/identity-projection` using the existing
+identity-management credential and canonical `IdentityProjectionInput` /
+`IdentityProjection` Go/Zod contracts. The server validates active Helivanta org,
+product enrolment and live native tenant/project proof before reading an exact
+subject, and commits sensitive-read audit before returning any projection.
+
+The caller supplies an explicit purpose. `status` returns recognized active or
+inactive state only; `membership` additionally assesses active human, verified
+email and exact native resourceOwner before admitting any new role; `profile`
+returns only the authenticated current user's display name/email. Status/profile
+subjects and tenant must come solely from the verified current principal.
+Membership target IDs may come from an authorized role-management command. The
+verified product workload is trusted to attest its own current principal; no
+public target-profile lookup is added. These current-user self reads preserve
+accepted legacy memberships without granting foreign subjects new roles.
+
+Status/membership responses never contain presentation PII. Only profile-purpose
+responses may contain profile fields, with no new identity master or durable
+profile cache. Requests and results bind purpose, tenant, scoped org and subject;
+strict canonical decoding rejects duplicate/recased/unknown fields and malformed
+state/admission combinations. The consumer limits each response to8KiB.
+
+Only an authoritative native inactive/missing subject becomes inactive. Unknown
+tenant/enrolment, refusal, malformed data, native outage or audit failure are
+unavailable, never a fabricated inactive result that revokes a clinician's
+credentials. Profile absence remains explicitly unavailable. The service audits
+opaque subject/purpose, without names, email, password, token or factor data.
