@@ -132,3 +132,31 @@ func newCustomerMailRow(t *testing.T, svc *Service, st *store.Store) store.Custo
 	}
 	return row
 }
+
+func TestPublicVerificationResendIsANoOpAfterNativeVerification(t *testing.T) {
+	svc, _, st := newService(t)
+	seedProduct(t, st, "helivanta")
+	row := newCustomerMailRow(t, svc, st)
+	native := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" || r.URL.Path != "/v2/users/"+row.OwnerSubject {
+			t.Error("verified owner requested another identity command")
+			w.WriteHeader(500)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"user": map[string]any{"userId": row.OwnerSubject, "state": "USER_STATE_ACTIVE", "details": map[string]string{"resourceOwner": "helivanta-" + row.TenantID.String()}, "human": map[string]any{"email": map[string]any{"email": row.Input.Owner.Email, "isVerified": true}}}})
+	}))
+	t.Cleanup(native.Close)
+	svc.signupIdentity = zitadel.New(native.URL, zitadel.StaticToken("synthetic"), "platform", nil)
+	for _, delivery := range []customercontract.Delivery{{}, {UserID: row.OwnerSubject}} {
+		got, err := svc.DeliverCustomer(t.Context(), row.ID, row.ReceiptHash, delivery, false)
+		if err != nil || got.State != customercontract.EmailActionRequired {
+			t.Fatalf("completed verification response disclosed state: %v %v", got, err)
+		}
+	}
+	for range 3 {
+		if err := st.ConsumeSignupMail(t.Context(), row.ID, time.Now().UTC()); err != nil {
+			t.Fatalf("verified resend spent mail budget: %v", err)
+		}
+	}
+}

@@ -181,3 +181,18 @@ are returned. Missing metadata, invalid timestamps for omitted counts, explicit
 malformed counts and inconsistent nonempty results remain unavailable. Existing
 users still require exact native subject, human and email checks; empty search
 results never authorize adopting an existing person.
+
+## Signup email expiry and resend policy
+
+Native verification and password setup links expire after one hour in the current
+identity configuration; expiry is enforced by Zitadel, not the browser. Request a
+fresh link on the verification page or workspace setup page. Email verification
+resends stop once the current native email is verified. Password setup remains a
+separate explicit request until credential completion has been recorded.
+
+Initial delivery and both resend actions share three delivery attempts per hour
+and ten per rolling 24 hours per immutable signup, including provider failures.
+Unknown, completed and quota-limited requests retain the same public response;
+a requested email is not a promise of provider acceptance or inbox delivery.
+See [delivery decision](adr/0004-customer-signup-email-limits.md) for concurrency,
+accounting boundaries and the initial rollout window.

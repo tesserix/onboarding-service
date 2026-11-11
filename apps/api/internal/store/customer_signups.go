@@ -271,23 +271,38 @@ func (s *Store) RotateSignupReceipt(ctx context.Context, id uuid.UUID, hash []by
 	})
 }
 
-// ConsumeSignupMail reserves a shared native delivery allowance before sending.
+// ConsumeSignupMail atomically reserves the shared hourly and rolling daily allowance.
 func (s *Store) ConsumeSignupMail(ctx context.Context, id uuid.UUID, now time.Time) error {
-	result, err := s.pool.Exec(ctx, `UPDATE customer_signups SET
-  mail_attempts=CASE WHEN mail_attempts=0 OR mail_window_at <= $2::timestamptz-interval '1 hour' THEN 1 ELSE mail_attempts+1 END,
-  mail_window_at=CASE WHEN mail_attempts=0 OR mail_window_at <= $2::timestamptz-interval '1 hour' THEN $2 ELSE mail_window_at END,
-  updated_at=now()
-  WHERE id=$1 AND state NOT IN ('existing_account','needs_support')
-   AND (mail_attempts=0 OR mail_window_at <= $2::timestamptz-interval '1 hour' OR mail_attempts<3)`, id, now)
-	if err != nil {
-		return err
-	}
-	if result.RowsAffected() == 1 {
-		return nil
-	}
-	_, err = s.customerSignupByID(ctx, id)
-	if err != nil {
-		return err
-	}
-	return ErrConflict
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		row, err := scanCustomerSignup(tx.QueryRow(ctx, `SELECT `+customerSignupColumns+` FROM customer_signups WHERE id=$1 FOR UPDATE`, id))
+		if err != nil {
+			return err
+		}
+		if row.State == "existing_account" || row.State == "needs_support" {
+			return ErrConflict
+		}
+		var recent int
+		if err = tx.QueryRow(ctx, `SELECT count(*) FROM (
+   SELECT seq FROM audit_events WHERE org_id=$1 AND action='customer.signup.mail_reserved'
+    AND occurred_at > $2::timestamptz-interval '24 hours'
+   ORDER BY occurred_at DESC LIMIT 10
+  ) deliveries`, row.TenantID, now).Scan(&recent); err != nil {
+			return err
+		}
+		if recent >= 10 {
+			return ErrConflict
+		}
+		result, err := tx.Exec(ctx, `UPDATE customer_signups SET
+   mail_attempts=CASE WHEN mail_attempts=0 OR mail_window_at <= $2::timestamptz-interval '1 hour' THEN 1 ELSE mail_attempts+1 END,
+   mail_window_at=CASE WHEN mail_attempts=0 OR mail_window_at <= $2::timestamptz-interval '1 hour' THEN $2 ELSE mail_window_at END,
+   updated_at=now()
+   WHERE id=$1 AND (mail_attempts=0 OR mail_window_at <= $2::timestamptz-interval '1 hour' OR mail_attempts<3)`, id, now)
+		if err != nil {
+			return err
+		}
+		if result.RowsAffected() != 1 {
+			return ErrConflict
+		}
+		return appendAudit(ctx, tx, audit.Event{OccurredAt: now, ActorType: audit.ActorSystem, ActorID: row.OwnerSubject, ProductKey: "helivanta", OrgID: row.TenantID.String(), Action: "customer.signup.mail_reserved", Outcome: audit.OutcomeSuccess, RequestID: row.ID.String(), Detail: "{}"})
+	})
 }
