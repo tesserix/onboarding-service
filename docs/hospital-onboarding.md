@@ -173,3 +173,11 @@ OpenBao reader/mount and mail configuration. The schema is additive; old API
 versions ignore these fields. Preserve acceptance evidence on rollback. The
 shared Zitadel SMTP provider is unchanged. Public signup, verification, resend
 and password APIs keep their existing non-enumerating contracts.
+
+Native user search uses ProtoJSON defaults: when no human matches, Zitadel may
+return only `details.timestamp` and omit both `totalResult` and `result`. This
+represents zero matches only when valid list metadata is present and no users
+are returned. Missing metadata, invalid timestamps for omitted counts, explicit
+malformed counts and inconsistent nonempty results remain unavailable. Existing
+users still require exact native subject, human and email checks; empty search
+results never authorize adopting an existing person.

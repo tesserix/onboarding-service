@@ -128,8 +128,9 @@ func (c *Client) OtherSignupIdentity(ctx context.Context, email, expectedUserID 
 		return false, ErrIdentityUnavailable
 	}
 	var result struct {
-		Details struct {
-			Total string `json:"totalResult"`
+		Details *struct {
+			Total     *string `json:"totalResult"`
+			Timestamp string  `json:"timestamp"`
 		} `json:"details"`
 		Result []struct {
 			ID    string `json:"userId"`
@@ -146,7 +147,19 @@ func (c *Client) OtherSignupIdentity(ctx context.Context, email, expectedUserID 
 	if err = c.readIdentity(ctx, &client, token, http.MethodPost, "/v2/users", "", input, &result); err != nil {
 		return false, err
 	}
-	total, err := strconv.ParseUint(result.Details.Total, 10, 64)
+	if result.Details == nil {
+		return false, ErrIdentityUnavailable
+	}
+	count := "0"
+	if result.Details.Total != nil {
+		count = *result.Details.Total
+	} else {
+		// ProtoJSON omits scalar zero and empty repeated fields in native search results.
+		if _, err := time.Parse(time.RFC3339Nano, result.Details.Timestamp); err != nil || len(result.Result) != 0 {
+			return false, ErrIdentityUnavailable
+		}
+	}
+	total, err := strconv.ParseUint(count, 10, 64)
 	if err != nil || total < uint64(len(result.Result)) || len(result.Result) > 2 || uint64(len(result.Result)) != min(total, 2) {
 		return false, ErrIdentityUnavailable
 	}
