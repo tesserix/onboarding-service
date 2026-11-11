@@ -37,7 +37,7 @@ func TestCustomerInitialMailWaitsForNativeIdentityAndRecordsOnlyProviderAcceptan
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/v2/users":
-			_, _ = io.WriteString(w, `{"details":{"totalResult":"0"},"result":[]}`)
+			_, _ = io.WriteString(w, `{"details":{"timestamp":"2026-11-11T05:36:41.870629Z"}}`)
 		case "/v2/users/" + row.OwnerSubject:
 			if !userPresent {
 				w.WriteHeader(404)
