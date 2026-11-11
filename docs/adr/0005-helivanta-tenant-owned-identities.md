@@ -42,7 +42,7 @@ CI; local applications, DB servers and containers are not started.
 Live read-only checks proved Helivanta's login-client PAT cannot ListUsers (403).
 Do not expand that credential. POST `/internal/v1/customer-signups/login-target`
 uses the existing exact Helivanta API workload/audience and mesh boundary. Its
-canonical Go-only LoginTargetInput contains tenant UUID, bounded email and request
+canonical generated LoginTargetInput contains tenant UUID, bounded email and request
 UUID; LoginTarget returns only tenant/org/subject. No browser route exposes it.
 The caller derives org from the active native OIDC request pinned to its web
 client, applies its existing password-attempt limit/equalised refusal and never

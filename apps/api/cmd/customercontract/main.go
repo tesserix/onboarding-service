@@ -48,6 +48,8 @@ func generateContracts() (string, error) {
 		{"CustomerSignupProof", reflect.TypeFor[customercontract.Proof]()},
 		{"CustomerSignupDelivery", reflect.TypeFor[customercontract.Delivery]()},
 		{"CustomerWorkspaceInput", reflect.TypeFor[customercontract.Workspace]()},
+		{"CustomerLoginTargetInput", reflect.TypeFor[customercontract.LoginTargetInput]()},
+		{"CustomerLoginTarget", reflect.TypeFor[customercontract.LoginTarget]()},
 		{"CustomerSecurityView", reflect.TypeFor[customercontract.SecurityView]()},
 		{"CustomerSecurityInput", reflect.TypeFor[customercontract.SecurityInput]()},
 		{"CustomerSecurityRequest", reflect.TypeFor[customercontract.SecurityRequest]()},

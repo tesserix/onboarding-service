@@ -8,7 +8,7 @@ import (
 // LoginTargetInput is workload-only; the caller derives tenant from native OIDC.
 type LoginTargetInput struct {
 	TenantID  string `json:"tenantId" format:"uuid" required:"true"`
-	Email     string `json:"email"`
+	Email     string `json:"email" required:"true" maxLength:"200"`
 	RequestID string `json:"requestId" format:"uuid" required:"true"`
 }
 
