@@ -16,6 +16,7 @@ import (
 
 	"github.com/tesserix/onboarding-service/api/internal/audit"
 	"github.com/tesserix/onboarding-service/api/internal/authz"
+	"github.com/tesserix/onboarding-service/api/internal/signupmail"
 	"github.com/tesserix/onboarding-service/api/internal/store"
 	"github.com/tesserix/onboarding-service/api/internal/zitadel"
 )
@@ -75,6 +76,7 @@ type Service struct {
 	registryProjectID string
 	hospitals         *HospitalConfig
 	signupIdentity    *zitadel.Client
+	signupMail        *signupmail.Client
 }
 
 type Option func(*Service)

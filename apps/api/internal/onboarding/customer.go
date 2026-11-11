@@ -168,7 +168,7 @@ func (s *Service) DeliverCustomer(ctx context.Context, id uuid.UUID, hash []byte
 	if err != nil {
 		return customercontract.Receipt{}, ErrUnavailable
 	}
-	if row.Input.Owner == nil || row.State == "existing_account" || row.State == "needs_support" {
+	if row.Input.Owner == nil || row.ExistingOwnerSubject != "" || row.State == "existing_account" || row.State == "needs_support" {
 		return generic, nil
 	}
 	if err = s.store.ConsumeSignupMail(ctx, row.ID, time.Now().UTC()); err != nil {
@@ -181,7 +181,16 @@ func (s *Service) DeliverCustomer(ctx context.Context, id uuid.UUID, hash []byte
 	if err != nil {
 		return customercontract.Receipt{}, ErrUnavailable
 	}
-	if password && verified {
+	if s.hospitals == nil || s.hospitals.Claims == nil {
+		return customercontract.Receipt{}, ErrUnavailable
+	}
+	claim, claimErr := s.hospitals.Claims.Get(ctx, "helivanta", row.TenantID.String())
+	if claimErr != nil || claim.Spec.InitialAdminUserID != row.OwnerSubject || claim.Spec.TenantID != row.TenantID.String() {
+		return customercontract.Receipt{}, ErrUnavailable
+	}
+	if claim.Spec.ExternalInitialAdminEmail {
+		_, err = s.sendCustomerEmail(ctx, row, password && verified)
+	} else if password && verified {
 		err = s.signupIdentity.SendSignupPasswordLink(ctx, row.OwnerSubject)
 	} else {
 		err = s.signupIdentity.SendSignupEmailLink(ctx, row.OwnerSubject)
@@ -235,12 +244,16 @@ func (s *Service) DeliverCustomers(ctx context.Context, now time.Time) error {
 	if s.signupIdentity == nil || s.hospitals == nil || s.hospitals.Claims == nil {
 		return ErrUnavailable
 	}
-	rows, err := s.store.LeaseCustomerSignups(ctx, 5, now)
+	batch, budget := 5, 8*time.Second
+	if s.signupMail != nil {
+		batch, budget = 2, 20*time.Second
+	}
+	rows, err := s.store.LeaseCustomerSignups(ctx, batch, now)
 	if err != nil {
 		return ErrUnavailable
 	}
 	for _, row := range rows {
-		current, cancel := context.WithTimeout(ctx, 8*time.Second)
+		current, cancel := context.WithTimeout(ctx, budget)
 		state, code := s.deliverCustomer(current, row)
 		cancel()
 		retry := now.Add(30 * time.Second)
@@ -266,7 +279,7 @@ func (s *Service) deliverCustomer(ctx context.Context, row store.CustomerSignup)
 		if other {
 			return "existing_account", ""
 		}
-		_, err = s.hospitals.Claims.Create(ctx, hospitalclaims.Spec{Product: "helivanta", TenantID: row.TenantID.String(), DisplayName: row.Input.Name, InitialAdminUserID: row.OwnerSubject, InitialAdmin: row.Input.Owner})
+		_, err = s.hospitals.Claims.Create(ctx, hospitalclaims.Spec{Product: "helivanta", TenantID: row.TenantID.String(), DisplayName: row.Input.Name, InitialAdminUserID: row.OwnerSubject, InitialAdmin: row.Input.Owner, ExternalInitialAdminEmail: s.signupMail != nil})
 		if errors.Is(err, hospitalclaims.ErrConflict) {
 			return "needs_support", ""
 		}
@@ -294,6 +307,11 @@ func (s *Service) deliverCustomer(ctx context.Context, row store.CustomerSignup)
 	}
 	if claim.Spec.InitialAdminUserID != customerOwner(row) || claim.Spec.TenantID != row.TenantID.String() || claim.Spec.Product != "helivanta" {
 		return "needs_support", ""
+	}
+	if claim.Spec.ExternalInitialAdminEmail {
+		if err = s.deliverInitialCustomerEmail(ctx, row); err != nil {
+			return row.State, "email_unavailable"
+		}
 	}
 	if !HospitalReady(claim) {
 		return row.State, ""

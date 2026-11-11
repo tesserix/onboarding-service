@@ -82,4 +82,4 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-replace github.com/tesserix/devai-sandbox-operator => github.com/tesserix/tesserix-operators v0.0.0-20261110093052-570466713c6c
+replace github.com/tesserix/devai-sandbox-operator => github.com/tesserix/tesserix-operators v0.0.0-20261111042344-fe1127b299d6

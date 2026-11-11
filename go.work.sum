@@ -26,6 +26,8 @@ github.com/prometheus/common v0.66.1/go.mod h1:gcaUsgf3KfRSwHY4dIMXLPV0K/Wg1oZ8+
 github.com/prometheus/procfs v0.16.1/go.mod h1:teAbpZRB1iIAJYREa1LsoWUXykVXA1KlTmWl8x/U+Is=
 github.com/sirupsen/logrus v1.9.4/go.mod h1:ftWc9WdOfJ0a92nsE2jF5u5ZwH8Bv2zdeOC42RjbV2g=
 github.com/tesserix/tesserix-operators v0.0.0-20261110092126-ddcb19553d2b/go.mod h1:YlcESlK6m4LvescFWOjGpcB0QtiApKOX0yxW6K3+V5Y=
+github.com/tesserix/tesserix-operators v0.0.0-20261111042344-fe1127b299d6 h1:UDTmG4BecDoNI3V8Zme5upaC/62ipJnQRfAbhxdpcwY=
+github.com/tesserix/tesserix-operators v0.0.0-20261111042344-fe1127b299d6/go.mod h1:RBAnrbc/MwNRz7Gl2yFw1lFrN3beRj+XZwkdk2ly+tg=
 github.com/xdg-go/pbkdf2 v1.0.0/go.mod h1:jrpuAogTd400dnrH08LKmI/xc1MbPOebTwRqcT5RDeI=
 github.com/xdg-go/scram v1.2.0/go.mod h1:3dlrS0iBaWKYVt2ZfA4cj48umJZ+cAEbR6/SjLA88I8=
 github.com/xdg-go/stringprep v1.0.4/go.mod h1:mPGuuIYwz7CmR2bT9j4GbQqutWS1zV24gijq1dTyGkM=

@@ -21,6 +21,8 @@ type CustomerSignup struct {
 	OwnerSubject          string
 	ExistingOwnerSubject  string
 	ExistingOwnerAuthTime *time.Time
+	EmailAcceptedAt       *time.Time
+	EmailProviderID       string
 	ReceiptHash           []byte
 	ReceiptExpiresAt      time.Time
 	ReceiptVerified       bool
@@ -107,12 +109,12 @@ func (s *Store) ReserveCustomerSignup(ctx context.Context, in CustomerSignup, ev
 	return result, err
 }
 
-const customerSignupColumns = `id,tenant_id,resource_id,owner_subject,receipt_hash,intent_hash,owner_email_hash,input,state,attempts,retry_at,lease_until,error_code,receipt_expires_at,receipt_verified,receipt_expires_at>now(),lease_id,primary_credential_configured,existing_owner_subject,existing_owner_auth_time`
+const customerSignupColumns = `id,tenant_id,resource_id,owner_subject,receipt_hash,intent_hash,owner_email_hash,input,state,attempts,retry_at,lease_until,error_code,receipt_expires_at,receipt_verified,receipt_expires_at>now(),lease_id,primary_credential_configured,existing_owner_subject,existing_owner_auth_time,email_accepted_at,email_provider_id`
 
 func scanCustomerSignup(row pgx.Row) (CustomerSignup, error) {
 	var result CustomerSignup
 	var raw []byte
-	err := row.Scan(&result.ID, &result.TenantID, &result.ResourceID, &result.OwnerSubject, &result.ReceiptHash, &result.IntentHash, &result.OwnerEmailHash, &raw, &result.State, &result.Attempts, &result.RetryAt, &result.LeaseUntil, &result.ErrorCode, &result.ReceiptExpiresAt, &result.ReceiptVerified, &result.ReceiptActive, &result.LeaseID, &result.PasswordConfigured, &result.ExistingOwnerSubject, &result.ExistingOwnerAuthTime)
+	err := row.Scan(&result.ID, &result.TenantID, &result.ResourceID, &result.OwnerSubject, &result.ReceiptHash, &result.IntentHash, &result.OwnerEmailHash, &raw, &result.State, &result.Attempts, &result.RetryAt, &result.LeaseUntil, &result.ErrorCode, &result.ReceiptExpiresAt, &result.ReceiptVerified, &result.ReceiptActive, &result.LeaseID, &result.PasswordConfigured, &result.ExistingOwnerSubject, &result.ExistingOwnerAuthTime, &result.EmailAcceptedAt, &result.EmailProviderID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return result, ErrNotFound
 	}
