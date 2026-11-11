@@ -21,7 +21,7 @@ func pendingExistingSignup(t *testing.T, s *Store) CustomerSignup {
 	}
 	in.IntentHash = digest(string(raw))
 	in.OwnerEmailHash = digest(in.Input.Owner.Email)
-	_, err := s.ReserveCustomerSignup(t.Context(), in, audit.Event{ActorType: audit.ActorSystem, ActorID: "signup-test", Outcome: audit.OutcomeSuccess})
+	_, err = s.ReserveCustomerSignup(t.Context(), in, audit.Event{ActorType: audit.ActorSystem, ActorID: "signup-test", Outcome: audit.OutcomeSuccess})
 	if err != nil {
 		t.Fatal(err)
 	}
