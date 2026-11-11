@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -26,6 +27,8 @@ func TestCustomerIntakeIsDurableReplayableAndNeverCreatesIdentityInline(t *testi
 	id := uuid.New()
 	hash := sha256.Sum256([]byte("test-private-receipt"))
 	in := customercontract.Signup{Setup: customercontract.Setup{Name: "TEST Pharmacy", Kind: customercontract.Pharmacy, CountryCode: customercontract.India, StateCode: customercontract.Odisha}, Owner: &identity.OrganizationInitialAdmin{GivenName: "Test", FamilyName: "Owner", Email: "owner@example.test"}}
+	address := customercontract.BusinessAddress{Line1: "10 Test Road", City: "Bhubaneswar", District: "Khordha", PostalCode: "751001", StateCode: customercontract.Odisha, CountryCode: customercontract.India}
+	in.Profile = &customercontract.OrganizationProfile{Contact: customercontract.BusinessContact{Phone: "+919876543210", Email: "office@example.test"}, HeadOffice: address, MainBranch: customercontract.MainBranch{Name: "Main branch", Address: address}}
 	receipt, err := svc.StartCustomer(t.Context(), id, hash[:], in)
 	if err != nil || receipt.State != customercontract.Provisioning {
 		t.Fatalf("intake not durably accepted: %v %v", receipt, err)
@@ -33,6 +36,9 @@ func TestCustomerIntakeIsDurableReplayableAndNeverCreatesIdentityInline(t *testi
 	row, err := st.CustomerSignup(t.Context(), id, hash[:])
 	if err != nil || row.Input.Kind != customercontract.Pharmacy || row.ResourceID.Version() != 7 {
 		t.Fatalf("immutable workspace intent missing: %v", err)
+	}
+	if !reflect.DeepEqual(row.Input.Profile, in.Profile) {
+		t.Fatal("durable intake lost the submitted contacts or addresses")
 	}
 	before := row.ResourceID
 	if _, err = svc.StartCustomer(t.Context(), id, hash[:], in); err != nil {

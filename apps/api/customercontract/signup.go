@@ -59,10 +59,11 @@ func (Status) Values() []string {
 
 // Setup is the common initial business-resource intent.
 type Setup struct {
-	Name        string    `json:"name"`
-	Kind        Kind      `json:"kind"`
-	CountryCode Country   `json:"countryCode"`
-	StateCode   StateCode `json:"stateCode"`
+	Profile     *OrganizationProfile `json:"profile,omitempty" nullable:"true"`
+	Name        string               `json:"name"`
+	Kind        Kind                 `json:"kind"`
+	CountryCode Country              `json:"countryCode"`
+	StateCode   StateCode            `json:"stateCode"`
 }
 
 // Signup is submitted intent, never a verified identity or licence.
@@ -115,6 +116,9 @@ func (s Signup) Validate(requestID uuid.UUID) error {
 
 // Validate enforces the supported geographic and business setup before creation.
 func (s Setup) Validate() error {
+	if s.Profile != nil && (s.Profile.Validate() != nil || s.Profile.HeadOffice.CountryCode != s.CountryCode || s.Profile.HeadOffice.StateCode != s.StateCode) {
+		return ErrInvalid
+	}
 	if !utf8.ValidString(s.Name) || s.Name == "" || strings.TrimSpace(s.Name) != s.Name || utf8.RuneCountInString(s.Name) > 150 || strings.ContainsFunc(s.Name, unicode.IsControl) {
 		return ErrInvalid
 	}
