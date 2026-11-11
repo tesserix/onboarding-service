@@ -35,3 +35,15 @@ func TestSecurityBooleanFieldsAreGeneratedFromTheOwnerContract(t *testing.T) {
 		t.Fatal("native MFA booleans were not preserved in the browser contract")
 	}
 }
+
+func TestMaximumLengthUsesUnicodeCodePoints(t *testing.T) {
+	schema, err := contractSchema(reflect.TypeFor[struct {
+		City string `json:"city" max:"100"`
+	}](), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(schema, "[...value].length<=100") {
+		t.Fatal("browser maximum must count Unicode code points", schema)
+	}
+}

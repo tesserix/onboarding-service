@@ -14,6 +14,8 @@ func TestSignupValidatesBusinessContactAndBothAddresses(t *testing.T) {
 	for _, tc := range []struct{ name, before, after string }{
 		{"phone", "+919876543210", "invalid"},
 		{"business_email", "office@example.test", "invalid"},
+		{"email_without_public_domain", "office@example.test", "office@example"},
+		{"address_bom", "10 Test Road", "\ufeff10 Test Road"},
 		{"postal_code", "411001", "000000"},
 		{"main_branch_postal", "411002", "41100"},
 		{"empty_hq", "10 Test Road", ""},
@@ -67,5 +69,20 @@ func TestProfileSurvivesWireRoundTripAndLegacyIntentsRemainReadable(t *testing.T
 	legacy := validSignup()
 	if err = legacy.Validate(uuid.New()); err != nil {
 		t.Fatal("historic intent cannot be replayed", err)
+	}
+}
+
+func TestAddressMaximumCountsUnicodeCodePoints(t *testing.T) {
+	var in customercontract.Signup
+	if err := json.Unmarshal([]byte(profileSignup), &in); err != nil {
+		t.Fatal(err)
+	}
+	in.Profile.HeadOffice.City = strings.Repeat("😀", 100)
+	if err := in.Validate(uuid.New()); err != nil {
+		t.Fatal("100 Unicode code points rejected", err)
+	}
+	in.Profile.HeadOffice.City += "😀"
+	if in.Validate(uuid.New()) == nil {
+		t.Fatal("101 Unicode code points accepted")
 	}
 }
