@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/google/uuid"
 	identity "github.com/tesserix/devai-sandbox-operator/operators/zitadel/api/v1alpha1"
 	"github.com/tesserix/onboarding-service/api/customercontract"
@@ -42,9 +43,16 @@ func TestCustomerSignupKeepsIntentResourceAndReceiptImmutableAcrossReplay(t *tes
 	}
 	duplicate := signupCommand(t)
 	duplicate.OwnerEmailHash = in.OwnerEmailHash
+	duplicate.Input.Owner.Email = in.Input.Owner.Email
+	duplicate.Input.Kind = customercontract.Pharmacy
+	rawDuplicate, err := json.Marshal(duplicate.Input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	duplicate.IntentHash = digest(string(rawDuplicate))
 	got, err = s.ReserveCustomerSignup(t.Context(), duplicate, event)
-	if err != nil || got.State != "existing_account" {
-		t.Fatalf("duplicate email reserved a second identity: state=%s err=%v", got.State, err)
+	if err != nil || got.State != "recorded" || got.OwnerSubject == in.OwnerSubject || got.TenantID == in.TenantID {
+		t.Fatalf("same email could not reserve independent tenant identity: state=%s err=%v", got.State, err)
 	}
 	var events int
 	if err = s.pool.QueryRow(t.Context(), `SELECT count(*) FROM audit_events WHERE request_id=$1 AND action='customer.signup.requested'`, in.ID.String()).Scan(&events); err != nil || events != 1 {
@@ -257,5 +265,81 @@ func TestNewSignupIntakeIsGloballyBoundedWithoutChargingReplays(t *testing.T) {
 	}
 	if _, err := s.ReserveCustomerSignup(t.Context(), first, event); err != nil {
 		t.Fatalf("capacity limit rejected durable replay: %v", err)
+	}
+}
+
+func TestSameEmailTenantIntakeRemainsIndependentUnderConcurrentRequests(t *testing.T) {
+	s := newStore(t)
+	seedProduct(t, s, "helivanta")
+	inputs := []CustomerSignup{signupCommand(t), signupCommand(t), signupCommand(t)}
+	for i := range inputs {
+		inputs[i].Input.Owner.Email = "shared@example.test"
+		raw, err := json.Marshal(inputs[i].Input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		inputs[i].IntentHash = digest(string(raw))
+		inputs[i].OwnerEmailHash = digest("shared@example.test")
+	}
+	results := make(chan CustomerSignup, len(inputs))
+	errs := make(chan error, len(inputs))
+	for _, in := range inputs {
+		go func() {
+			row, err := s.ReserveCustomerSignup(t.Context(), in, audit.Event{ActorType: audit.ActorSystem, ActorID: "signup-test", Outcome: audit.OutcomeSuccess})
+			results <- row
+			errs <- err
+		}()
+	}
+	seen := map[string]bool{}
+	for range inputs {
+		row := <-results
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+		if row.State != "recorded" || row.ExistingOwnerSubject != "" || seen[row.OwnerSubject] || row.OwnerSubject != "owner-"+row.TenantID.String() {
+			t.Fatal("same email shared a native identity")
+		}
+		seen[row.OwnerSubject] = true
+	}
+}
+
+func TestOnlyActiveUnboundLegacySignupCanResumeFreshIdentityDelivery(t *testing.T) {
+	for _, expired := range []bool{false, true} {
+		t.Run(fmt.Sprint(expired), func(t *testing.T) {
+			s := newStore(t)
+			seedProduct(t, s, "helivanta")
+			in := signupCommand(t)
+			if _, err := s.ReserveCustomerSignup(t.Context(), in, audit.Event{ActorType: audit.ActorSystem, ActorID: "signup-test", Outcome: audit.OutcomeSuccess}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.pool.Exec(t.Context(), `UPDATE customer_signups SET state='existing_account' WHERE id=$1`, in.ID); err != nil {
+				t.Fatal(err)
+			}
+			if expired {
+				if _, err := s.pool.Exec(t.Context(), `UPDATE customer_signups SET receipt_expires_at=clock_timestamp()-interval '1 second' WHERE id=$1`, in.ID); err != nil {
+					t.Fatal(err)
+				}
+			}
+			rows, err := s.LeaseCustomerSignups(t.Context(), 1, time.Now().UTC())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if expired {
+				if len(rows) != 0 {
+					t.Fatal("expired legacy intent resumed")
+				}
+				return
+			}
+			if len(rows) != 1 || rows[0].ID != in.ID {
+				t.Fatal("active legacy intent not recovered")
+			}
+			if err = s.FinishCustomerSignup(t.Context(), rows[0], "identity_requested", "", time.Now()); err != nil {
+				t.Fatal(err)
+			}
+			row, err := s.CustomerSignup(t.Context(), in.ID, in.ReceiptHash)
+			if err != nil || row.State != "identity_requested" || row.OwnerSubject != in.OwnerSubject || row.ExistingOwnerSubject != "" || row.ResourceID != in.ResourceID {
+				t.Fatalf("legacy recovery replaced original intent: %v", err)
+			}
+		})
 	}
 }

@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"github.com/google/uuid"
@@ -84,17 +83,7 @@ func (s *Store) ReserveCustomerSignup(ctx context.Context, in CustomerSignup, ev
 		if product.State != "active" || product.Identity != IdentityZitadel {
 			return ErrConflict
 		}
-		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "customer-email:"+hex.EncodeToString(in.OwnerEmailHash)); err != nil {
-			return err
-		}
-		var reserved bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM customer_signups WHERE product_key='helivanta' AND owner_email_hash=$1 AND state<>'existing_account')`, in.OwnerEmailHash).Scan(&reserved); err != nil {
-			return err
-		}
 		state := "recorded"
-		if reserved {
-			state = "existing_account"
-		}
 		result, err = scanCustomerSignup(tx.QueryRow(ctx, `INSERT INTO customer_signups(id,product_key,tenant_id,resource_id,owner_subject,receipt_hash,intent_hash,owner_email_hash,input,state,retry_at) VALUES($1,'helivanta',$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING `+customerSignupColumns, in.ID, in.TenantID, in.ResourceID, in.OwnerSubject, in.ReceiptHash, in.IntentHash, in.OwnerEmailHash, raw, state, in.RetryAt))
 		if err != nil {
 			return err
@@ -159,7 +148,7 @@ func (s *Store) LeaseCustomerSignups(ctx context.Context, limit int, now time.Ti
 	}
 	rows, err := s.pool.Query(ctx, `WITH due AS (
         SELECT id FROM customer_signups
-        WHERE state IN ('recorded','identity_requested') AND retry_at <= $1
+        WHERE (state IN ('recorded','identity_requested') OR (state='existing_account' AND existing_owner_subject='' AND receipt_expires_at>$1)) AND retry_at <= $1
           AND (lease_until IS NULL OR lease_until <= $1)
         ORDER BY retry_at,id LIMIT $2 FOR UPDATE SKIP LOCKED
     ) UPDATE customer_signups SET lease_until=$1+interval '1 minute',
@@ -176,7 +165,7 @@ func (s *Store) LeaseCustomerSignups(ctx context.Context, limit int, now time.Ti
 
 // FinishCustomerSignup fences delivery results to the current lease and intent state.
 func (s *Store) FinishCustomerSignup(ctx context.Context, row CustomerSignup, state, errorCode string, retryAt time.Time) error {
-	if row.LeaseID == nil || (row.State != "recorded" && row.State != "identity_requested") {
+	if row.LeaseID == nil || (row.State != "recorded" && row.State != "identity_requested" && row.State != "existing_account") {
 		return ErrConflict
 	}
 	switch state {
@@ -185,7 +174,7 @@ func (s *Store) FinishCustomerSignup(ctx context.Context, row CustomerSignup, st
 			return ErrConflict
 		}
 	case "existing_account":
-		if row.State != "recorded" {
+		if row.State != "recorded" && row.State != "existing_account" {
 			return ErrConflict
 		}
 	case "identity_requested", "needs_support":
@@ -271,7 +260,19 @@ func (s *Store) RotateSignupReceipt(ctx context.Context, id uuid.UUID, hash []by
 	})
 }
 
-// ConsumeSignupMail atomically reserves the shared hourly and rolling daily allowance.
+const signupMailBudgetQuery = `SELECT count(*),
+          count(*) FILTER (WHERE occurred_at > $2::timestamptz-interval '1 hour'),
+          count(*) FILTER (WHERE org_id=$3)
+         FROM (
+          SELECT a.org_id,a.occurred_at FROM audit_events a
+          JOIN customer_signups s ON s.tenant_id=a.org_id
+          WHERE s.owner_email_hash=$1 AND a.product_key='helivanta'
+           AND a.action='customer.signup.mail_reserved'
+           AND a.occurred_at > $2::timestamptz-interval '24 hours'
+          ORDER BY a.occurred_at DESC LIMIT 30
+         ) deliveries`
+
+// ConsumeSignupMail reserves per-workspace and cross-tenant recipient delivery budgets.
 func (s *Store) ConsumeSignupMail(ctx context.Context, id uuid.UUID, now time.Time) error {
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		row, err := scanCustomerSignup(tx.QueryRow(ctx, `SELECT `+customerSignupColumns+` FROM customer_signups WHERE id=$1 FOR UPDATE`, id))
@@ -281,15 +282,14 @@ func (s *Store) ConsumeSignupMail(ctx context.Context, id uuid.UUID, now time.Ti
 		if row.State == "existing_account" || row.State == "needs_support" {
 			return ErrConflict
 		}
-		var recent int
-		if err = tx.QueryRow(ctx, `SELECT count(*) FROM (
-   SELECT seq FROM audit_events WHERE org_id=$1 AND action='customer.signup.mail_reserved'
-    AND occurred_at > $2::timestamptz-interval '24 hours'
-   ORDER BY occurred_at DESC LIMIT 10
-  ) deliveries`, row.TenantID, now).Scan(&recent); err != nil {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('customer-mail:' || encode($1::bytea,'hex'),0))`, row.OwnerEmailHash); err != nil {
 			return err
 		}
-		if recent >= 10 {
+		var daily, hourly, workspaceDaily int
+		if err = tx.QueryRow(ctx, signupMailBudgetQuery, row.OwnerEmailHash, now, row.TenantID).Scan(&daily, &hourly, &workspaceDaily); err != nil {
+			return err
+		}
+		if daily >= 30 || hourly >= 10 || workspaceDaily >= 10 {
 			return ErrConflict
 		}
 		result, err := tx.Exec(ctx, `UPDATE customer_signups SET

@@ -21,21 +21,15 @@ func pendingExistingSignup(t *testing.T, s *Store) CustomerSignup {
 	}
 	in.IntentHash = digest(string(raw))
 	in.OwnerEmailHash = digest(in.Input.Owner.Email)
-	row, err := s.ReserveCustomerSignup(t.Context(), in, audit.Event{ActorType: audit.ActorSystem, ActorID: "signup-test", Outcome: audit.OutcomeSuccess})
+	_, err = s.ReserveCustomerSignup(t.Context(), in, audit.Event{ActorType: audit.ActorSystem, ActorID: "signup-test", Outcome: audit.OutcomeSuccess})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if row.State == "existing_account" {
-		return row
-	}
-	rows, err := s.LeaseCustomerSignups(t.Context(), 1, time.Now().UTC())
-	if err != nil || len(rows) != 1 {
-		t.Fatalf("lease: %v %d", err, len(rows))
-	}
-	if err = s.FinishCustomerSignup(t.Context(), rows[0], "existing_account", "", time.Now()); err != nil {
+	// Retain a pre-change unbound intake to exercise legacy evidence guards.
+	if _, err = s.pool.Exec(t.Context(), `UPDATE customer_signups SET state='existing_account' WHERE id=$1`, in.ID); err != nil {
 		t.Fatal(err)
 	}
-	row, err = s.CustomerSignup(t.Context(), in.ID, in.ReceiptHash)
+	row, err := s.CustomerSignup(t.Context(), in.ID, in.ReceiptHash)
 	if err != nil {
 		t.Fatal(err)
 	}

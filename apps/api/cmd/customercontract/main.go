@@ -48,6 +48,10 @@ func generateContracts() (string, error) {
 		{"CustomerSignupProof", reflect.TypeFor[customercontract.Proof]()},
 		{"CustomerSignupDelivery", reflect.TypeFor[customercontract.Delivery]()},
 		{"CustomerWorkspaceInput", reflect.TypeFor[customercontract.Workspace]()},
+		{"CustomerLoginTargetInput", reflect.TypeFor[customercontract.LoginTargetInput]()},
+		{"CustomerLoginTarget", reflect.TypeFor[customercontract.LoginTarget]()},
+		{"CustomerIdentityProjectionInput", reflect.TypeFor[customercontract.IdentityProjectionInput]()},
+		{"CustomerIdentityProjection", reflect.TypeFor[customercontract.IdentityProjection]()},
 		{"CustomerSecurityView", reflect.TypeFor[customercontract.SecurityView]()},
 		{"CustomerSecurityInput", reflect.TypeFor[customercontract.SecurityInput]()},
 		{"CustomerSecurityRequest", reflect.TypeFor[customercontract.SecurityRequest]()},
@@ -146,7 +150,7 @@ func contractFields(kind reflect.Type) ([]string, error) {
 		if field.Tag.Get("format") == "uuid" {
 			schema += ".uuid()"
 		}
-		if field.Tag.Get("required") == "true" && field.Type.Kind() == reflect.String {
+		if field.Tag.Get("required") == "true" && strings.HasPrefix(schema, "z.string()") {
 			schema += ".min(1)"
 		}
 		if pattern := field.Tag.Get("pattern"); pattern != "" {

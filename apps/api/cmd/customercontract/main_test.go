@@ -47,3 +47,18 @@ func TestMaximumLengthUsesUnicodeCodePoints(t *testing.T) {
 		t.Fatal("browser maximum must count Unicode code points", schema)
 	}
 }
+
+func TestRequiredEnumsRemainValidZodSchemas(t *testing.T) {
+	schema, err := contractSchema(reflect.TypeFor[struct {
+		Purpose string `json:"purpose" required:"true" enum:"status,membership,profile"`
+	}](), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(schema, ".min(") {
+		t.Fatal("Zod enum cannot use string-only validators", schema)
+	}
+	if !strings.Contains(schema, `z.enum(["status","membership","profile"])`) {
+		t.Fatal("required enum lost its value constraint", schema)
+	}
+}
