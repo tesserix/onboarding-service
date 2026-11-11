@@ -122,3 +122,12 @@ and enrolment. Every read still traverses the normal workload route, active
 product/tenant/enrolment proof, live native adapter and durable audit ledger.
 This does not simulate successful onboarding or email delivery. Production
 retains its projected workload token and private service destination.
+
+Native missing-user evidence is explicit: an empty/HTML/generic gateway404 is
+unavailable, not inactive. The adapter recognises the pinned native GetUserByID
+`scanUser` not-found detail (`zitadel.v1.ErrorDetail`, `QUERY-Dfbg2`, gRPC code5)
+before accepting missing-user state. This is verified against native fork
+`29986e1b8b3e606d20871a2e73874b91f9b5b695`. Unknown or changed error contracts
+fail closed and require review during native upgrades; HTTP status alone must
+never globally revoke a valid account. The browser fixture preflight checks this
+against an actual missing synthetic native subject.

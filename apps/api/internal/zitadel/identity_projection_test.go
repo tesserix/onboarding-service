@@ -20,6 +20,8 @@ func newProjectionClient(t *testing.T, handler http.HandlerFunc) *Client {
 
 const membershipTestTenant = "11111111-1111-4111-8111-111111111111"
 
+const confirmedMissingUserResponse = `{"code":5,"message":"User not found","details":[{"@type":"type.googleapis.com/zitadel.v1.ErrorDetail","id":"QUERY-Dfbg2","message":"Errors.User.NotFound"}]}`
+
 const verifiedMembershipHuman = `{"user":{"userId":"synthetic-human","state":"USER_STATE_ACTIVE","details":{"resourceOwner":"helivanta-11111111-1111-4111-8111-111111111111"},"human":{"email":{"email":"private-contact@example.invalid","isVerified":true}}}}`
 
 func TestNativeIdentityProjectionRequiresOneMatchingVerifiedHumanProof(t *testing.T) {
@@ -37,7 +39,13 @@ func TestNativeIdentityProjectionRequiresOneMatchingVerifiedHumanProof(t *testin
 		{name: "initial", body: strings.Replace(verifiedMembershipHuman, "USER_STATE_ACTIVE", "USER_STATE_INITIAL", 1)},
 		{name: "deleted", body: strings.Replace(verifiedMembershipHuman, "USER_STATE_ACTIVE", "USER_STATE_DELETED", 1)},
 		{name: "machine", body: `{"user":{"userId":"synthetic-human","state":"USER_STATE_ACTIVE","machine":{"name":"synthetic service"}}}`},
-		{name: "missing_identity", status: http.StatusNotFound, body: `{}`},
+		{name: "confirmed_missing_identity", status: http.StatusNotFound, body: confirmedMissingUserResponse},
+		{name: "wrong_missing_proof", status: http.StatusNotFound, body: strings.Replace(confirmedMissingUserResponse, "QUERY-Dfbg2", "QUERY-other", 1), unavailable: true},
+		{name: "wrong_missing_code", status: http.StatusNotFound, body: strings.Replace(confirmedMissingUserResponse, `"code":5`, `"code":7`, 1), unavailable: true},
+		{name: "duplicate_missing_proof", status: http.StatusNotFound, body: strings.Replace(confirmedMissingUserResponse, `"id":`, `"id":"QUERY-other","id":`, 1), unavailable: true},
+		{name: "unproven_missing_identity", status: http.StatusNotFound, body: `{}`, unavailable: true},
+		{name: "gateway_missing_route", status: http.StatusNotFound, body: `{"code":5,"message":"Not Found"}`, unavailable: true},
+		{name: "html_missing_route", status: http.StatusNotFound, body: `<html>Not Found</html>`, unavailable: true},
 		{name: "provider_outage", status: http.StatusServiceUnavailable, body: `{"message":"private-contact@example.invalid"}`, unavailable: true},
 		{name: "provider_refusal", status: http.StatusForbidden, body: `{"message":"private-contact@example.invalid"}`, unavailable: true},
 		{name: "wrong_subject", body: strings.Replace(verifiedMembershipHuman, "synthetic-human", "another-human", 1), unavailable: true},

@@ -192,3 +192,26 @@ func identityObject(raw json.RawMessage, names ...string) (map[string]json.RawMe
 	}
 	return fields, nil
 }
+
+// confirmedMissingUser recognises the GetUserByID scanUser error from the pinned
+// native API. A gateway's generic404 is not evidence of a deleted identity.
+func confirmedMissingUser(raw json.RawMessage) bool {
+	root, err := identityObject(raw, "code", "details")
+	if err != nil {
+		return false
+	}
+	var code int
+	if json.Unmarshal(root["code"], &code) != nil || code != 5 {
+		return false
+	}
+	var details []json.RawMessage
+	if json.Unmarshal(root["details"], &details) != nil || len(details) != 1 {
+		return false
+	}
+	proof, err := identityObject(details[0], "@type", "id")
+	if err != nil {
+		return false
+	}
+	var kind, id string
+	return json.Unmarshal(proof["@type"], &kind) == nil && json.Unmarshal(proof["id"], &id) == nil && kind == "type.googleapis.com/zitadel.v1.ErrorDetail" && id == "QUERY-Dfbg2"
+}

@@ -33,6 +33,9 @@ func TestCustomerIdentityProjectionScopesAdmissionAndAuditsBeforeDisclosure(t *t
 		}
 		if status := nativeStatus.Load(); status != 0 {
 			w.WriteHeader(int(status))
+			if status == http.StatusNotFound {
+				_, _ = w.Write([]byte(`{"code":5,"details":[{"@type":"type.googleapis.com/zitadel.v1.ErrorDetail","id":"QUERY-Dfbg2"}]}`))
+			}
 			return
 		}
 		owner := org
