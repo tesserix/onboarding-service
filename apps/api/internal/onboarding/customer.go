@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"github.com/google/uuid"
@@ -213,11 +214,30 @@ func (s *Service) ContinueCustomer(ctx context.Context, id uuid.UUID, hash []byt
 	if err != nil {
 		return customercontract.Receipt{}, customerError(err)
 	}
-	if row.Input.Owner == nil || (row.ExistingOwnerSubject == "" && row.State != "existing_account") || (row.ExistingOwnerSubject != "" && row.ExistingOwnerSubject != in.Subject) {
+	newOwner := row.ExistingOwnerSubject == "" && row.OwnerSubject == in.Subject && (row.State == "identity_requested" || row.State == "ready")
+	if row.Input.Owner == nil || (!newOwner && ((row.ExistingOwnerSubject == "" && row.State != "existing_account") || (row.ExistingOwnerSubject != "" && row.ExistingOwnerSubject != in.Subject))) {
 		return customercontract.Receipt{}, ErrConflict
 	}
 	if err = s.store.ConsumeSignupSignin(ctx, id, time.Now().UTC()); err != nil {
 		return customercontract.Receipt{}, customerError(err)
+	}
+	if newOwner {
+		verified, err := s.signupIdentity.SignupIdentity(ctx, "helivanta-"+row.TenantID.String(), row.OwnerSubject, row.Input.Owner.Email)
+		if err != nil {
+			return customercontract.Receipt{}, ErrUnavailable
+		}
+		if !verified {
+			return customercontract.Receipt{}, ErrInvalid
+		}
+		next, err := hex.DecodeString(in.NextReceiptHash)
+		if err != nil || bytes.Equal(next, hash) {
+			return customercontract.Receipt{}, ErrInvalid
+		}
+		if err = s.store.RotateSignupReceipt(ctx, row.ID, next, true); err != nil {
+			return customercontract.Receipt{}, customerError(err)
+		}
+		row.ReceiptVerified, row.PasswordConfigured = true, true
+		return customerReceipt(row), nil
 	}
 	if err = s.signupIdentity.VerifyExistingHuman(ctx, in.Subject, row.Input.Owner.Email); err != nil {
 		if errors.Is(err, zitadel.ErrSignupProof) {

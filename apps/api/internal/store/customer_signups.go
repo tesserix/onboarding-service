@@ -198,7 +198,7 @@ func (s *Store) FinishCustomerSignup(ctx context.Context, row CustomerSignup, st
 	}
 	attempts := row.Attempts
 	if errorCode != "" {
-		if errorCode != "identity_unavailable" && errorCode != "provisioning_unavailable" {
+		if errorCode != "identity_unavailable" && errorCode != "provisioning_unavailable" && errorCode != "email_unavailable" {
 			return ErrConflict
 		}
 		attempts++
