@@ -134,7 +134,7 @@ func contractFields(kind reflect.Type) ([]string, error) {
 			schema += ".email()"
 		}
 		if maximum := field.Tag.Get("max"); maximum != "" {
-			schema += ".max(" + maximum + ")"
+			schema += ".refine(value=>[...value].length<=" + maximum + ",{message:'Use up to " + maximum + " characters'})"
 		}
 		if field.Tag.Get("clean") == "true" {
 			schema += ".refine(value=>value===value.trim()&&!/[\\u0000-\\u001f\\u007f-\\u009f]/.test(value),{message:'Use text without surrounding spaces or control characters'})"

@@ -14,7 +14,7 @@ import (
 // BusinessContact is the organisation's business contact, independent of its login owner.
 type BusinessContact struct {
 	Phone string `json:"phone" required:"true" max:"16" clean:"true" pattern:"^\\+[1-9][0-9]{7,14}$"`
-	Email string `json:"email" required:"true" max:"200" clean:"true" format:"email"`
+	Email string `json:"email" required:"true" max:"200" clean:"true" format:"email" pattern:"^[A-Za-z0-9_+-]+(\\.[A-Za-z0-9_+-]+)*@([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\\.)+[A-Za-z]{2,}$"`
 }
 
 // BusinessAddress is a physical headquarters or initial branch address.
@@ -77,7 +77,7 @@ func profileStringsValid(input any) bool {
 		if field.Tag.Get("required") == "true" && text == "" {
 			return false
 		}
-		if field.Tag.Get("clean") == "true" && (!utf8.ValidString(text) || strings.TrimSpace(text) != text || strings.ContainsFunc(text, unicode.IsControl)) {
+		if field.Tag.Get("clean") == "true" && (!utf8.ValidString(text) || strings.TrimSpace(text) != text || strings.HasPrefix(text, "\ufeff") || strings.HasSuffix(text, "\ufeff") || strings.ContainsFunc(text, unicode.IsControl)) {
 			return false
 		}
 		if limit := field.Tag.Get("max"); limit != "" {
