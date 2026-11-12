@@ -24,12 +24,15 @@ func TestCustomerOwnerStatusKeepsReceiptAndOwnerScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := st.RotateSignupReceipt(ctx, id, hash[:], false); err != nil {
+		t.Fatal(err)
+	}
 	row, err := st.CustomerSignup(ctx, id, hash[:])
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.CustomerForOwner(ctx, id, hash[:], row.OwnerSubject); err != nil {
-		t.Fatal(err)
+	if receipt, err := svc.CustomerForOwner(ctx, id, hash[:], row.OwnerSubject); err != nil || receipt.State != customercontract.PasswordActionRequired {
+		t.Fatalf("verified owner status missing: %v %v", receipt, err)
 	}
 	for _, owner := range []string{"owner-foreign", "", "../other"} {
 		if _, err := svc.CustomerForOwner(ctx, id, hash[:], owner); !errors.Is(err, ErrNotFound) {
