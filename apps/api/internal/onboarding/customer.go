@@ -345,6 +345,11 @@ func (s *Service) deliverCustomer(ctx context.Context, row store.CustomerSignup)
 		}
 	}
 	if !HospitalReady(claim) {
+		if row.ReceiptVerified && row.ExistingOwnerSubject == "" && claim.SecurityRequest != row.ID.String() {
+			if _, err = s.hospitals.Claims.RequestSecurityReconcile(ctx, claim, row.ID.String()); err != nil {
+				return row.State, "identity_unavailable"
+			}
+		}
 		return row.State, ""
 	}
 	if err = s.initializeCustomer(ctx, row); err != nil {
