@@ -46,7 +46,11 @@ func (f *recoverySubjectFixture) client(t *testing.T) *Client {
 				t.Error("recovery subject mutated source")
 			}
 			w.WriteHeader(f.status)
-			_, _ = w.Write([]byte(f.user))
+			body := f.user
+			if f.status == http.StatusNotFound && body == "" {
+				body = confirmedMissingUserResponse
+			}
+			_, _ = w.Write([]byte(body))
 		case "/management/v1/users/TEST-staff-account/metadata/onboarding_staff_command":
 			if r.Method != http.MethodGet {
 				t.Error("recovery metadata mutated source")

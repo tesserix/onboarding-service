@@ -122,7 +122,7 @@ func newHarness(t *testing.T, options ...onboarding.Option) *harness {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
-	for _, table := range []string{"idps", "domains", "org_products", "organizations", "products", "idempotency_keys"} {
+	for _, table := range []string{"customer_signups", "idps", "domains", "org_products", "organizations", "products", "idempotency_keys"} {
 		if _, err := pool.Exec(context.Background(), "DELETE FROM "+table); err != nil {
 			t.Fatalf("clean %s: %v", table, err)
 		}
@@ -468,4 +468,11 @@ func mustUUID(t *testing.T, s string) uuid.UUID {
 		t.Fatal(err)
 	}
 	return parsed
+}
+
+func (f *fakeIdentity) VerifyExistingHuman(_ context.Context, userID, email string) error {
+	if userID == "verified-owner" && email == "owner@example.test" {
+		return nil
+	}
+	return zitadel.ErrIdentityUnavailable
 }

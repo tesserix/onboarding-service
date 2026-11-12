@@ -72,7 +72,13 @@ func observationClient(t *testing.T, replies map[string]string, visit func(*http
 		body, ok := replies[path]
 		mu.Unlock()
 		if !ok {
-			http.NotFound(w, r)
+			if r.URL.Path == "/v2/users/TEST-staff-account" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(confirmedMissingUserResponse))
+			} else {
+				http.NotFound(w, r)
+			}
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")

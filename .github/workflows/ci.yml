@@ -22,6 +22,12 @@ jobs:
       release_images: ${{ steps.images.outputs.release_images }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: 1.27.4
+          cache-dependency-path: apps/api/go.sum
+      - run: go -C apps/api test -race -tags identityfixture ./cmd/helivanta-identity-fixture
+      - run: go -C apps/api run ./cmd/customercontract -check
       - run: python3 -m unittest discover -s tests -v
       - id: images
         run: |
@@ -29,10 +35,10 @@ jobs:
           echo "release_images=$(jq -c '{include: .}' .github/container-images.json)" >> "$GITHUB_OUTPUT"
 
   api:
-    uses: tesserix/tesserix-workflows/.github/workflows/go-ci.yml@c0ec4ef9c59252c140310c66390cd40d65650fe9
+    uses: tesserix/tesserix-workflows/.github/workflows/go-ci.yml@34703a2632c5daedd99e3f423c603fedbf757f59
     with:
       working_directory: apps/api
-      go_version: 1.27.3
+      go_version: 1.27.4
       # Measured with PostgreSQL: 47.4%. Prevent regression while raising coverage.
       coverage_min_lines: 47
       database_enabled: true

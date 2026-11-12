@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -221,6 +222,12 @@ func (c *Client) readIdentity(ctx context.Context, client *http.Client, token, m
 	}
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode == http.StatusNotFound {
+		if method == http.MethodGet && strings.HasPrefix(path, "/v2/users/") && !strings.Contains(strings.TrimPrefix(path, "/v2/users/"), "/") {
+			raw, readErr := io.ReadAll(io.LimitReader(response.Body, identityReadLimit+1))
+			if readErr != nil || len(raw) > identityReadLimit || !confirmedMissingUser(raw) {
+				return ErrIdentityUnavailable
+			}
+		}
 		return ErrIdentityMissing
 	}
 	if response.StatusCode != http.StatusOK {

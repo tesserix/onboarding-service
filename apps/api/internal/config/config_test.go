@@ -6,6 +6,27 @@ import (
 	"testing"
 )
 
+func TestHelivantaEmailRequiresPairedFileAndProductSender(t *testing.T) {
+	for _, tc := range []struct {
+		file, from string
+		valid      bool
+	}{
+		{"", "", true}, {"/var/run/helivanta-email/api-key", "onboarding@helivanta.app", true},
+		{"/key", "", false}, {"", "onboarding@helivanta.app", false}, {"/key", "attacker@example.test", false},
+	} {
+		setRequired(t)
+		t.Setenv("HELIVANTA_RESEND_API_KEY_FILE", tc.file)
+		t.Setenv("HELIVANTA_EMAIL_FROM", tc.from)
+		cfg, err := Load()
+		if (err == nil) != tc.valid {
+			t.Fatalf("incorrect mail config validation: %+v %v", tc, err)
+		}
+		if err == nil && (cfg.HelivantaResendKeyFile != tc.file || cfg.HelivantaEmailFrom != tc.from) {
+			t.Fatal("mail config lost")
+		}
+	}
+}
+
 func setRequired(t *testing.T) {
 	t.Helper()
 	t.Setenv("DATABASE_URL", "postgres://localhost/onboarding_db")

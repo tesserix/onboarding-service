@@ -13,14 +13,18 @@ import (
 )
 
 type Config struct {
-	MCPGatewayProjectID  string
-	LegacyConsoleEnabled bool
-	Port                 string
-	DatabaseURL          string
-	ZitadelIssuer        string
-	ZitadelJWKSURL       string
-	ZitadelPAT           string
-	ZitadelMachineKey    string
+	HelivantaResendKeyFile string
+	HelivantaEmailFrom     string
+	PlanningPokerProjectID string
+	PlanningPokerClientID  string
+	MCPGatewayProjectID    string
+	LegacyConsoleEnabled   bool
+	Port                   string
+	DatabaseURL            string
+	ZitadelIssuer          string
+	ZitadelJWKSURL         string
+	ZitadelPAT             string
+	ZitadelMachineKey      string
 	// PlatformOrgID is optional: an empty value is resolved from
 	// PlatformOrgName at boot.
 	PlatformOrgID           string
@@ -45,6 +49,10 @@ type Config struct {
 
 func Load() (Config, error) {
 	c := Config{
+		HelivantaResendKeyFile:  os.Getenv("HELIVANTA_RESEND_API_KEY_FILE"),
+		HelivantaEmailFrom:      os.Getenv("HELIVANTA_EMAIL_FROM"),
+		PlanningPokerProjectID:  os.Getenv("PLANNING_POKER_PROJECT_ID"),
+		PlanningPokerClientID:   os.Getenv("PLANNING_POKER_CLIENT_ID"),
 		MCPGatewayProjectID:     os.Getenv("MCP_GATEWAY_PROJECT_ID"),
 		LegacyConsoleEnabled:    env("LEGACY_CONSOLE_ENABLED", "true") == "true",
 		Port:                    env("PORT", "8080"),
@@ -59,18 +67,24 @@ func Load() (Config, error) {
 		ConsoleClientID:         os.Getenv("CONSOLE_CLIENT_ID"),
 		RegistryTokenAudience:   os.Getenv("REGISTRY_TOKEN_AUDIENCE"),
 		RegistryProjectID:       os.Getenv("REGISTRY_PROJECT_ID"),
-		StaffIdentityProductKey: os.Getenv("STAFF_IDENTITY_PRODUCT_KEY"),
 		GoogleClientID:          os.Getenv("GOOGLE_CLIENT_ID"),
 		GoogleClientSecret:      os.Getenv("GOOGLE_CLIENT_SECRET"),
 		PlatformAdminEmails:     os.Getenv("PLATFORM_ADMIN_EMAILS"),
 		ConsoleURL:              env("CONSOLE_URL", "https://onboard.tesserix.app"),
 		SecureCookies:           env("SECURE_COOKIES", "true") == "true",
 		ShutdownGrace:           20 * time.Second,
+		StaffIdentityProductKey: os.Getenv("STAFF_IDENTITY_PRODUCT_KEY"),
 	}
 	c.ZitadelJWKSURL = env("ZITADEL_JWKS_URL", strings.TrimSuffix(c.ZitadelIssuer, "/")+"/oauth/v2/keys")
+	if (c.HelivantaResendKeyFile == "") != (c.HelivantaEmailFrom == "") || (c.HelivantaEmailFrom != "" && c.HelivantaEmailFrom != "onboarding@helivanta.app" && c.HelivantaEmailFrom != "onboarding@helivanta.com") {
+		return Config{}, fmt.Errorf("helivanta email requires a key file and product sender")
+	}
 	c.RedirectURI = env("OIDC_REDIRECT_URI", strings.TrimSuffix(c.ConsoleURL, "/")+"/api/auth/callback")
 	if c.StaffIdentityProductKey != "" && !regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`).MatchString(c.StaffIdentityProductKey) {
 		return Config{}, fmt.Errorf("STAFF_IDENTITY_PRODUCT_KEY must be a registered product identifier")
+	}
+	if (c.PlanningPokerProjectID == "") != (c.PlanningPokerClientID == "") {
+		return Config{}, fmt.Errorf("planning poker project and client must be configured together")
 	}
 	if (c.ConsoleProjectID == "") != (c.ConsoleClientID == "") {
 		return Config{}, fmt.Errorf("CONSOLE_PROJECT_ID and CONSOLE_CLIENT_ID must be configured together")

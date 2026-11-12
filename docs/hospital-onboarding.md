@@ -15,6 +15,49 @@ receive that service credential.
 }
 ```
 
+For a first customer without an existing identity, the same trusted API accepts
+an `initialAdmin` profile instead of `initialAdminUserId`:
+
+```json
+{
+  "product": "helivanta",
+  "displayName": "Example Hospital Group",
+  "initialAdmin": {
+    "givenName": "Example",
+    "familyName": "Owner",
+    "email": "owner@example.test"
+  }
+}
+```
+
+The API derives `initialAdminUserId` as `owner-<tenantId>`. Before writing a new
+profile-bearing claim, a server-side dry run verifies that the installed schema
+preserves the complete binding. Schema pruning fails without writing an
+incomplete immutable claim. The real creation response is checked as well. Sending both owner
+modes, an invalid profile or a new-owner profile with adoption fields is rejected.
+The profile uses the operator's canonical Go type, pinned by commit from the
+public `tesserix/tesserix-operators` repository. Its legacy Go module path is
+resolved with an explicit versioned module replacement; there is no local path
+replacement or independently copied claim model.
+
+Zitadel creates the organization and its human owner together. Its native
+verification email is requested without a password, returned code or fabricated
+verification. The controller reports `OwnerVerificationPending` until that exact
+active human has the expected home organization and verified email; it grants no
+product access while waiting. Polling does not recreate the owner or resend a
+code. A changed-profile retry conflicts. Profiles remain in private runtime
+claims, never public GitOps or logs; cleartext names/email are removed from held
+archive payloads and replaced by an immutable spec fingerprint. Restoring a
+profile-bearing claim requires its authorized profile source as well as the
+archive fingerprint.
+
+This is a trusted provisioning capability. The public self-service signup
+journey, automatic hospital/pharmacy setup and owner security panel are separate
+integration gates and are not implemented by this endpoint. The intended public
+policy is automatic onboarding after verified signup, with the first registrant
+becoming the tenant owner; platform approval is not required. Identity completion
+does not certify a pharmacy licence, clinical authority or financial authority.
+
 The product backend must derive the initial subject from its authenticated
 user/workflow, rather than copying an untrusted browser's ownership assertion.
 The service derives a stable new tenant UUID from the authenticated caller and
@@ -68,3 +111,137 @@ change retention/IAM, which requires separate organizational governance.
 Platform administrators can use `/orgs/hospital` to create a new hospital or adopt an existing one. Adoption requires the exact existing tenant UUID, Zitadel organization ID and existing Helivanta administrator subject. Preserve login policy is selected initially to avoid an unplanned MFA/domain cutover. Keep the resume link to check pending work after navigation. The console displays completion only after the server verifies activation and a retained receipt. A retry with the same unchanged form retains its idempotency key; after an uncertain response, retry in that form rather than starting a second new hospital request.
 
 Legacy organization creation, product grants and generic enrolment reject Helivanta. They remain available for other products. Product registration records reviewed metadata only and does not deploy infrastructure.
+
+## Existing Helivanta customer accounts
+
+The public receipt remains generic when a submitted owner email already exists.
+An existing account continues through a fresh native OIDC sign-in. The Helivanta
+workload calls `POST /internal/v1/customer-signups/:id/existing-owner` with the
+receipt hash and `ExistingOwnerInput` containing the verified subject,
+authentication time and next receipt hash. The workload verifies the ID token
+before this handoff. The onboarding owner independently verifies the current
+active native human and verified email against the immutable submitted intent.
+
+The database records an immutable existing-owner binding, rotates the receipt
+and resumes the original tenant/resource command. Reauthentication by the same
+bound subject can recover a lost response. Another subject cannot replace the
+binding. New-account email uniqueness remains enforced while one verified
+existing person can own multiple separate workspaces. Native tokens are never
+persisted in this ledger. The controller uses its existing-user organization
+membership path. Business initialization still checks current organization
+metadata, project grant and native ORG_OWNER membership.
+
+Deploy the reviewed existing-owner columns and guards in `onboarding_db.sql`
+before deploying the API version that reads them. The CI schema pin includes
+that change and exercises the real PostgreSQL continuation and replay tests.
+
+## Helivanta verification mail
+
+The optional `HELIVANTA_RESEND_API_KEY_FILE` and `HELIVANTA_EMAIL_FROM` settings
+activate product-scoped delivery. Configure both together; the sender is limited
+to `onboarding@helivanta.app` or `onboarding@helivanta.com` and its domain must be
+verified with Resend. Mount the key read-only from the namespace-scoped OpenBao
+reader. Never put the key in an environment value, frontend bundle or repository.
+
+New private claims set immutable `externalInitialAdminEmail: true`. Deploy the
+updated operator and CRD first: dry-run admission must retain the field. The
+operator creates an unverified human with native code-return mode, suppressing
+instance-wide SMTP. The onboarding worker independently checks the exact active
+human, home organization and retained email, requests a native code transiently,
+and sends through Resend. Native identity still validates every submitted code.
+Email links keep codes in URL fragments. Resend requests use a fixed HTTPS host,
+disabled redirects, bounded response parsing, sanitized failures and a five-second
+timeout. Mounted key changes are read on the next send.
+
+The worker records first acceptance timestamp and provider message ID atomically
+with audit under its current lease. Codes, passwords and keys are never stored.
+The acceptance evidence cannot be changed or erased. Acceptance is not delivery.
+A crash after provider acceptance and before the evidence commit may send another
+native link on retry; only the latest code is usable. Each regenerated code uses
+a new provider idempotency key. Shared first-send/resend quotas cap attempts at
+three per hour. Provider outages remain retryable. With product mail enabled the
+worker leases two commands with twenty-second budgets inside a one-minute lease.
+
+After native email proof has verified the private signup receipt, the durable
+worker wakes its exact pending organisation through the existing reconcile-request
+annotation. Hospital and independent pharmacy signups use the same path. The
+immutable signup command ID makes the wakeup idempotent; retries after a crash
+observe the existing annotation instead of repeatedly scheduling the controller.
+Claim owner, tenant and product must match before any annotation is written.
+Unverified signups and historical existing-owner adoption do not use this path.
+Kubernetes failures retain the pending intent and use the worker's existing
+durable retry. This removes the normal wait for the operator's five-minute drift
+check; readiness still requires native identity, owner membership, archive and
+business initialization. The wakeup itself does not grant access or report ready.
+
+Existing claims that use native SMTP retain that delivery mode. An external-mail
+claim without its configured mailer fails closed rather than using shared SMTP.
+Existing-account continuation does not send privileged password resets or move
+the native user. Existing workspace business initialization retains exact native
+organization, project grant and ORG_OWNER verification.
+
+Deploy the email-evidence schema before this API, then the operator/CRD, the
+OpenBao reader/mount and mail configuration. The schema is additive; old API
+versions ignore these fields. Preserve acceptance evidence on rollback. The
+shared Zitadel SMTP provider is unchanged. Public signup, verification, resend
+and password APIs keep their existing non-enumerating contracts.
+
+Native user search uses ProtoJSON defaults: when no human matches, Zitadel may
+return only `details.timestamp` and omit both `totalResult` and `result`. This
+represents zero matches only when valid list metadata is present and no users
+are returned. Missing metadata, invalid timestamps for omitted counts, explicit
+malformed counts and inconsistent nonempty results remain unavailable. Existing
+users still require exact native subject, human and email checks; empty search
+results never authorize adopting an existing person.
+
+## Signup email expiry and resend policy
+
+Native verification and password setup links expire after one hour in the current
+identity configuration; expiry is enforced by Zitadel, not the browser. Request a
+fresh link on the verification page or workspace setup page. Email verification
+resends stop once the current native email is verified. Password setup remains a
+separate explicit request until credential completion has been recorded.
+
+Initial delivery and both resend actions share three delivery attempts per hour
+and ten per rolling 24 hours per immutable signup, including provider failures.
+Unknown, completed and quota-limited requests retain the same public response;
+a requested email is not a promise of provider acceptance or inbox delivery.
+See [delivery decision](adr/0004-customer-signup-email-limits.md) for concurrency,
+accounting boundaries and the initial rollout window.
+
+## Separate-account discovery (candidate, not deployed)
+
+Helivanta's email-first login calls workload-only account-discovery/start,
+account-discovery/verify and account-discovery/choices under customer-signups.
+Contracts live in customercontract/account_discovery.go and generate the public
+Zod models. The existing workload/audience boundary applies to all three; none
+is a public identity-directory API. Browser traffic must use Global API.
+
+Start sends a generic eight-digit mailbox code without querying identity.
+Codes last ten minutes with five atomic submissions, and success is one-use.
+The exact browser capability is required; list recovery may reuse its verified
+proof only until original expiry. Recipient limits are 3/hour and 10/24h,
+source limits 10/hour and 30/24h, global limit 1000/hour. Reservations precede
+provider I/O; ambiguous email sends consume budget. No signup proof or budget
+is reused. Hashes, not codes/browser secrets, are stored in the separate
+account_discovery_challenges schema, owned by tesserix-k8s.
+
+Choices search all matching native humans, including staff, capped at twenty
+raw results. Overflow/malformed/ambiguous results refuse discovery. Active
+verified native ownership and current active customer/product enrollment plus
+native project grants are required. An unaffiliated supply partnership creates
+no account choice. Each selected account still authenticates its own password
+and MFA; Helivanta independently verifies current IAM membership at exchange.
+Names come from current customer records. Email is never an account merge key.
+
+The existing hourly sweeper removes up to 5000 challenges older than 24 hours,
+about 25 hours retention at the 1000/hour cap when housekeeping is healthy.
+Expiry checks never depend on sweeping. Audit preserves identifiers/actions,
+without recipient/code payloads. Roll out additive GitOps schema before this
+service and its consumer; rollback leaves expiring challenge storage in place.
+Actual PostgreSQL tests run in CI; local apps/databases were not started.
+
+Discovery display names use the same 200-Unicode-code-point limit as signup,
+including Marathi, Odia and other multibyte names. The shared contract validates
+that limit; the service does not apply a second byte-length restriction or
+truncate valid organisation names.

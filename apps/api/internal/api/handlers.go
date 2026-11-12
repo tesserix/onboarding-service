@@ -391,15 +391,16 @@ func (d Deps) addMember(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Email string `json:"email" binding:"required,email"`
-		Name  string `json:"name" binding:"omitempty,max=200"`
-		Role  string `json:"role" binding:"omitempty,oneof=ORG_OWNER ORG_USER_MANAGER ORG_OWNER_VIEWER"`
+		ExistingUserID string `json:"existingUserId,omitempty" binding:"omitempty,max=200"`
+		Email          string `json:"email" binding:"required,email"`
+		Name           string `json:"name" binding:"omitempty,max=200"`
+		Role           string `json:"role" binding:"omitempty,oneof=ORG_OWNER ORG_USER_MANAGER ORG_OWNER_VIEWER"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		abort(c, http.StatusBadRequest, "a valid email and role are required")
 		return
 	}
-	member, err := d.Service.AddMember(c.Request.Context(), principalOf(c), id, req.Email, req.Name, req.Role)
+	member, err := d.Service.AddMember(c.Request.Context(), principalOf(c), id, req.Email, req.Name, req.Role, req.ExistingUserID)
 	if err != nil {
 		respondErr(c, d.logger(), err)
 		return

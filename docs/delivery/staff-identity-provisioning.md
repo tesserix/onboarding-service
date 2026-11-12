@@ -697,3 +697,30 @@ consumer activation, schema deployment or production release is claimed.
 - Full owner/consumer failure, restart, race, isolation and UI acceptance, then
   exact approved SQL/source rollout and deployed acceptance. Do not close
   Helivanta A01/A02/A11 or tag a release from protocol/store tests alone.
+
+## Current-main integration — 2026-11-13
+
+The draft candidate now incorporates current main, preserving customer signup,
+Resend delivery, email-first discovery and Planning Poker configuration alongside
+Staff creation/recovery options. Go/toolchain and shared CI workflow pins follow
+current main. Its canonical schema input is chart 0.3.63 at
+`a0d2afd85ded11483b1af7fb3b6be0caacb42b29`, SHA-256
+`ef4405eac8a79b3f567f86365fabdd7f78867ae9283774b162620f08511c7551`.
+
+The first merged provider-unit run failed four older missing-user fixtures:
+current main requires the pinned native structured QUERY-Dfbg2 not-found proof,
+while those fixtures returned generic or empty HTTP 404 bodies. The fixtures now
+emit the existing canonical provider error. Production absence validation and
+all original assertions remain unchanged. Config, provider, auth and contract
+command race tests pass; full build, vet, golangci-lint, contract artifact check
+and four delivery tests pass locally. Schema Helm lint/render and 11 selected
+schema/chart regression tests pass. One initial chart test failed because the
+isolated worktree lacked its local common dependency; fetching it resolved the
+failure without changing assertions.
+
+No local application, container or database was started. Real-database and
+full owner integration acceptance must run in CI; the above unit evidence does
+not replace it. This refresh is still draft and undeployed. Recipient invitation
+mail/setup, the normal HMS Admin consumer and independent-reviewer bootstrap
+remain required. No native account, membership, Staff link, business grant or
+live schema mutation is authorized or proved by this merge refresh.

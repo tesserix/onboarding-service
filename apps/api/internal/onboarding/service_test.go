@@ -199,7 +199,7 @@ func newService(t *testing.T) (*Service, *fakeIdentity, *store.Store) {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
-	for _, table := range []string{"idps", "domains", "org_products", "organizations", "products", "idempotency_keys"} {
+	for _, table := range []string{"account_discovery_challenges", "customer_signups", "idps", "domains", "org_products", "organizations", "products", "idempotency_keys"} {
 		if _, err := pool.Exec(context.Background(), "DELETE FROM "+table); err != nil {
 			t.Fatalf("clean %s: %v", table, err)
 		}
@@ -644,5 +644,66 @@ func TestAcknowledgingProductManifestsIsPlatformOnlyAndLandsInTheLedger(t *testi
 	}
 	if len(events) == 0 || events[0].Target != "planning-poker" {
 		t.Fatalf("acknowledgement not in the ledger: %+v", events)
+	}
+}
+
+func (f *fakeIdentity) VerifyExistingHuman(_ context.Context, userID, email string) error {
+	if userID == "verified-owner" && email == "owner@example.test" {
+		return nil
+	}
+	return zitadel.ErrIdentityUnavailable
+}
+
+func TestProductOrganizationKeepsExistingVerifiedWorkspaceOwner(t *testing.T) {
+	svc, id, st := newService(t)
+	seedProduct(t, st, "planning-poker")
+	org, err := svc.CreateOrganization(t.Context(), product("planning-poker"), CreateOrgInput{Name: "Workspace company", OwnerEmail: "owner@example.test", ExistingOwnerUserID: "verified-owner", ExternalRef: "workspace-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id.did("CreateHumanUser") {
+		t.Fatal("existing owner was replaced by a new identity")
+	}
+	if !id.did("AddOrgMember") {
+		t.Fatal("existing owner did not get organization ownership")
+	}
+	if _, err := svc.AddMember(t.Context(), product("planning-poker"), org.ID, "owner@example.test", "Owner", "ORG_OWNER", "verified-owner"); err != nil {
+		t.Fatal(err)
+	}
+	members, err := id.OrgMembers(t.Context(), org.ZitadelOrgID)
+	if err != nil || len(members) != 1 {
+		t.Fatalf("owner recovery duplicated membership: %#v %v", members, err)
+	}
+	if org.ExternalRef != "workspace-1" {
+		t.Fatal("workspace recovery binding lost")
+	}
+}
+
+func TestProductCannotAdoptAnUnverifiedOrDifferentEmailOwner(t *testing.T) {
+	svc, id, st := newService(t)
+	seedProduct(t, st, "planning-poker")
+	_, err := svc.CreateOrganization(t.Context(), product("planning-poker"), CreateOrgInput{Name: "Workspace company", OwnerEmail: "other@example.test", ExistingOwnerUserID: "verified-owner"})
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("owner proof failure: %v", err)
+	}
+	if id.did("CreateOrg") {
+		t.Fatal("invalid owner proof still created an organization")
+	}
+}
+
+func TestPlanningPokerWorkloadRegistrationNeverOverwritesAnotherProductBinding(t *testing.T) {
+	svc, _, st := newService(t)
+	if err := svc.ConfigurePlanningPoker(t.Context(), "399002496946668546", "399002497852638210"); err != nil {
+		t.Fatal(err)
+	}
+	product, err := st.Product(t.Context(), "planning-poker")
+	if err != nil || product.ZitadelProjectID != "399002496946668546" || product.MachineUserID != "system:serviceaccount:planning-poker:planning-poker-api" {
+		t.Fatalf("wrong product registration: %#v %v", product, err)
+	}
+	if err := svc.ConfigurePlanningPoker(t.Context(), "399002496946668546", "399002497852638210"); err != nil {
+		t.Fatal("registration is not replay-safe", err)
+	}
+	if err := svc.ConfigurePlanningPoker(t.Context(), "other-project", "399002497852638210"); err == nil {
+		t.Fatal("existing registration was rebound")
 	}
 }

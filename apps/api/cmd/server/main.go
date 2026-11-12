@@ -20,6 +20,7 @@ import (
 	"github.com/tesserix/onboarding-service/api/internal/config"
 	"github.com/tesserix/onboarding-service/api/internal/hospitalclaims"
 	"github.com/tesserix/onboarding-service/api/internal/onboarding"
+	"github.com/tesserix/onboarding-service/api/internal/signupmail"
 	"github.com/tesserix/onboarding-service/api/internal/store"
 	"github.com/tesserix/onboarding-service/api/internal/workloadidentity"
 	"github.com/tesserix/onboarding-service/api/internal/zitadel"
@@ -85,7 +86,10 @@ func run(log *slog.Logger) error {
 	}
 	svc := onboarding.New(st, identity, authz.New(st), log, serviceOptions...)
 
+	var planningPokerWorkloads api.WorkloadVerifier
 	var hospitalWorkloads api.WorkloadVerifier
+	var customerWorkloads api.WorkloadVerifier
+	var ownerSecurityWorkloads api.WorkloadVerifier
 	if os.Getenv("HOSPITAL_PROVISIONING_ENABLED") == "true" {
 		kubeConfig, err := rest.InClusterConfig()
 		if err != nil {
@@ -99,13 +103,42 @@ func run(log *slog.Logger) error {
 		if err != nil {
 			return err
 		}
+		customerWorkloads, err = workloadidentity.New(kubeConfig, "helivanta-customer-onboarding", "system:serviceaccount:helivanta:helivanta-api")
+		if err != nil {
+			return err
+		}
+		ownerSecurityWorkloads, err = workloadidentity.New(kubeConfig, "helivanta-owner-security", "system:serviceaccount:helivanta:helivanta-api")
+		if err != nil {
+			return err
+		}
 		target := os.Getenv("HELIVANTA_PROVISIONING_URL")
 		u, err := url.Parse(target)
 		if err != nil || u.Scheme != "https" || u.Host != "helivanta.app" || u.Path != "/api/internal/v1/hospital-enrolments" || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
 			return errors.New("invalid Helivanta provisioning destination")
 		}
-		serviceOptions = append(serviceOptions, onboarding.WithHospitals(onboarding.HospitalConfig{Claims: hospitalclaims.New(kube, "identity-operator"), Product: "helivanta", HelivantaURL: target, HelivantaTokenFile: "/var/run/helivanta-provisioning/token"}))
+		var mailer *signupmail.Client
+		if cfg.HelivantaResendKeyFile != "" {
+			mailer, err = signupmail.New(cfg.HelivantaResendKeyFile, cfg.HelivantaEmailFrom, nil)
+			if err != nil {
+				return err
+			}
+		}
+		serviceOptions = append(serviceOptions, onboarding.WithCustomerIdentity(client), onboarding.WithCustomerMail(mailer), onboarding.WithHospitals(onboarding.HospitalConfig{Claims: hospitalclaims.New(kube, "identity-operator"), Product: "helivanta", HelivantaURL: target, HelivantaTokenFile: "/var/run/helivanta-provisioning/token"}))
 		svc = onboarding.New(st, identity, authz.New(st), log, serviceOptions...)
+	}
+
+	if cfg.PlanningPokerProjectID != "" {
+		kubeConfig, e := rest.InClusterConfig()
+		if e != nil {
+			return e
+		}
+		planningPokerWorkloads, e = workloadidentity.New(kubeConfig, "planning-poker-onboarding", "system:serviceaccount:planning-poker:planning-poker-api")
+		if e != nil {
+			return e
+		}
+		if e = svc.ConfigurePlanningPoker(ctx, cfg.PlanningPokerProjectID, cfg.PlanningPokerClientID); e != nil {
+			return e
+		}
 	}
 
 	verifier, err := auth.NewJWKSVerifier(ctx, cfg.ZitadelIssuer, cfg.ZitadelJWKSURL, cfg.Audience, http.DefaultClient)
@@ -152,7 +185,7 @@ func run(log *slog.Logger) error {
 	}
 	router := api.NewRouter(api.Deps{
 		MCPTokens: mcpTokens,
-		Service:   svc, Store: st, Tokens: verifier, RegistryTokens: registryVerifier, HospitalWorkloads: hospitalWorkloads,
+		Service:   svc, Store: st, Tokens: verifier, RegistryTokens: registryVerifier, HospitalWorkloads: hospitalWorkloads, PlanningPokerWorkloads: planningPokerWorkloads, CustomerWorkloads: customerWorkloads, OwnerSecurityWorkloads: ownerSecurityWorkloads,
 		ConsoleTokens: legacyTokens, Sessions: sessions,
 		ConsoleAccessTokens:  consoleAccess,
 		DisableLegacyConsole: !cfg.LegacyConsoleEnabled,
@@ -171,6 +204,12 @@ func run(log *slog.Logger) error {
 		IdleTimeout:       90 * time.Second,
 	}
 
+	if customerWorkloads != nil {
+		deliveryCtx, cancelDelivery := context.WithCancel(ctx)
+		done := make(chan struct{})
+		go func() { defer close(done); deliverCustomers(deliveryCtx, svc, log) }()
+		defer func() { cancelDelivery(); <-done }()
+	}
 	go purgeIdempotencyKeys(ctx, st, log)
 	if cfg.StaffIdentityProductKey != "" {
 		go purgeStaffIdentityHistoryCursors(ctx, st, log)
@@ -231,6 +270,9 @@ func purgeIdempotencyKeys(ctx context.Context, st *store.Store, log *slog.Logger
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			if err := st.PurgeDiscovery(ctx); err != nil {
+				log.Warn("could not purge expired discovery challenges", "error", err)
+			}
 			if err := st.PurgeExpiredIdempotencyKeys(ctx); err != nil {
 				log.Warn("could not purge idempotency keys", "error", err)
 			}
@@ -252,6 +294,21 @@ func purgeStaffIdentityHistoryCursors(ctx context.Context, st *store.Store, log 
 			if err != nil {
 				log.Warn("could not purge expired Staff history cursors", "error", err)
 			}
+		}
+	}
+}
+
+func deliverCustomers(ctx context.Context, svc *onboarding.Service, log *slog.Logger) {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	for {
+		if err := svc.DeliverCustomers(ctx, time.Now().UTC()); err != nil && ctx.Err() == nil {
+			log.Error("customer signup delivery deferred")
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
 		}
 	}
 }

@@ -1,0 +1,11 @@
+{
+  "name": "@tesserix/onboarding-contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./customer-signup": "./contracts/customer-signup.ts"
+  },
+  "files": ["contracts/customer-signup.ts"],
+  "peerDependencies": {"zod": "^4.0.0"}
+}
