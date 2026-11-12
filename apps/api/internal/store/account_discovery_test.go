@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"github.com/google/uuid"
 	"sync"
 	"sync/atomic"
@@ -85,5 +86,61 @@ func TestDiscoveryConcurrentProofAndRecipientBudget(t *testing.T) {
 	wg.Wait()
 	if accepted.Load() != 1 {
 		t.Fatalf("proof accepted %d times", accepted.Load())
+	}
+}
+
+func TestDiscoveryDailyRecipientAndHourlySourceLimits(t *testing.T) {
+	s := newStore(t)
+	base := time.Now().UTC().Add(-20 * time.Hour).Truncate(time.Microsecond)
+	browser := sha256.Sum256([]byte("browser"))
+	code := sha256.Sum256([]byte("code"))
+	source := sha256.Sum256([]byte("source"))
+	reserve := func(email string, at time.Time) error {
+		id, _ := uuid.NewV7()
+		return s.ReserveDiscovery(t.Context(), id, browser[:], source[:], email, code[:], at)
+	}
+	for i := 0; i < 10; i++ {
+		if err := reserve("daily@example.test", base.Add(time.Duration(i)*2*time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := reserve("daily@example.test", base.Add(20*time.Hour)); !errors.Is(err, ErrDiscoveryLimited) {
+		t.Fatal("daily recipient limit not enforced", err)
+	}
+	later := base.Add(26 * time.Hour)
+	for i := 0; i < 10; i++ {
+		if err := reserve(fmt.Sprintf("source-%d@example.test", i), later); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := reserve("source-over@example.test", later); !errors.Is(err, ErrDiscoveryLimited) {
+		t.Fatal("hourly source limit not enforced", err)
+	}
+}
+func TestDiscoveryFifthWrongCodeExhaustsProofAndExpiryAlwaysRefuses(t *testing.T) {
+	s := newStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	id, _ := uuid.NewV7()
+	browser := sha256.Sum256([]byte("browser"))
+	code := sha256.Sum256([]byte("right"))
+	wrong := sha256.Sum256([]byte("wrong"))
+	source := sha256.Sum256([]byte("source"))
+	if err := s.ReserveDiscovery(t.Context(), id, browser[:], source[:], "exhausted@example.test", code[:], now); err != nil {
+		t.Fatal(err)
+	}
+	for range 5 {
+		if err := s.VerifyDiscovery(t.Context(), id, browser[:], wrong[:], now.Add(time.Second)); !errors.Is(err, ErrNotFound) {
+			t.Fatal("wrong code admitted", err)
+		}
+	}
+	if err := s.VerifyDiscovery(t.Context(), id, browser[:], code[:], now.Add(time.Second)); !errors.Is(err, ErrNotFound) {
+		t.Fatal("exhausted proof admitted", err)
+	}
+	id, _ = uuid.NewV7()
+	if err := s.ReserveDiscovery(t.Context(), id, browser[:], source[:], "expired@example.test", code[:], now); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.VerifyDiscovery(t.Context(), id, browser[:], code[:], now.Add(10*time.Minute)); !errors.Is(err, ErrNotFound) {
+		t.Fatal("expired proof admitted", err)
 	}
 }
