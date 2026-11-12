@@ -724,3 +724,22 @@ not replace it. This refresh is still draft and undeployed. Recipient invitation
 mail/setup, the normal HMS Admin consumer and independent-reviewer bootstrap
 remain required. No native account, membership, Staff link, business grant or
 live schema mutation is authorized or proved by this merge refresh.
+
+## Staff invitation message transport — 2026-11-13
+
+The draft now includes a Staff-specific sender on the existing mounted-key Resend
+transport. It returns provider acceptance evidence and uses the retained delivery
+ID for a stable dispatch key. Verification and password messages carry the native
+code and a 32-byte opaque ticket in the fixed Helivanta acceptance URL fragment,
+with an explicit UTC expiry and escaped hospital/recipient labels. Diagnostics
+redact the message. Existing signup transport behavior is retained.
+
+Two positive sender tests failed against the unimplemented sender; corrected tests
+then passed with the implementation, including malformed-message refusal before
+provider dispatch, fragment binding, expiry rendering, HTML escaping and diagnostic
+redaction. The full sender/config/provider/auth/contract-command race suites, Go
+build/vet, golangci-lint and Staff contract artifact check pass locally. This is
+transport capability only: no retained invitation ledger, public recipient action,
+HMS consumer, active account, delivered production invitation or effective access
+is proved by it. Do not dispatch these links until their recipient API/UI and
+current-owner/source checks are deployed and the owning migration is approved.
