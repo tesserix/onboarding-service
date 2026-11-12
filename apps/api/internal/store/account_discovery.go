@@ -22,19 +22,19 @@ func (s *Store) ReserveDiscovery(ctx context.Context, id uuid.UUID, browser, sou
 		}
 		var global, recipientHour, recipientDay, sourceHour, sourceDay int
 		err := tx.QueryRow(ctx, `SELECT
-   (SELECT count(*) FROM (SELECT 1 FROM account_discovery_challenges WHERE created_at>$1-interval '1 hour' LIMIT 1000) b),
-   count(*) FILTER (WHERE email=$2 AND created_at>$1-interval '1 hour'),
+   (SELECT count(*) FROM (SELECT 1 FROM account_discovery_challenges WHERE created_at>$1::timestamptz-interval '1 hour' LIMIT 1000) b),
+   count(*) FILTER (WHERE email=$2 AND created_at>$1::timestamptz-interval '1 hour'),
    count(*) FILTER (WHERE email=$2),
-   count(*) FILTER (WHERE source_hash=$3 AND created_at>$1-interval '1 hour'),
+   count(*) FILTER (WHERE source_hash=$3 AND created_at>$1::timestamptz-interval '1 hour'),
    count(*) FILTER (WHERE source_hash=$3)
-   FROM account_discovery_challenges WHERE created_at>$1-interval '24 hours' AND (email=$2 OR source_hash=$3)`, now, email, source).Scan(&global, &recipientHour, &recipientDay, &sourceHour, &sourceDay)
+   FROM account_discovery_challenges WHERE created_at>$1::timestamptz-interval '24 hours' AND (email=$2 OR source_hash=$3)`, now, email, source).Scan(&global, &recipientHour, &recipientDay, &sourceHour, &sourceDay)
 		if err != nil {
 			return err
 		}
 		if global >= 1000 || recipientHour >= 3 || recipientDay >= 10 || sourceHour >= 10 || sourceDay >= 30 {
 			return ErrDiscoveryLimited
 		}
-		if _, err = tx.Exec(ctx, `INSERT INTO account_discovery_challenges(id,browser_hash,source_hash,email,code_hash,created_at,updated_at,expires_at) VALUES($1,$2,$3,$4,$5,$6,$6,$6+interval '10 minutes')`, id, browser, source, email, code, now); err != nil {
+		if _, err = tx.Exec(ctx, `INSERT INTO account_discovery_challenges(id,browser_hash,source_hash,email,code_hash,created_at,updated_at,expires_at) VALUES($1,$2,$3,$4,$5,$6,$6,$6::timestamptz+interval '10 minutes')`, id, browser, source, email, code, now); err != nil {
 			return err
 		}
 		return appendAudit(ctx, tx, audit.Event{ActorType: audit.ActorSystem, ActorID: "helivanta-api", ProductKey: "helivanta", Action: "account.discovery.requested", Outcome: audit.OutcomeSuccess, RequestID: id.String()})
