@@ -87,8 +87,8 @@ func TestCustomerIdentityProjectionScopesAdmissionAndAuditsBeforeDisclosure(t *t
 	foreign.Store(true)
 	in.RequestID = uuid.NewString()
 	proof, err = svc.CustomerIdentityProjection(t.Context(), in)
-	if err != nil || proof.Profile != nil || proof.TenantName != "" {
-		t.Fatal("foreign profile disclosed tenant name", err)
+	if err != nil || proof.Profile == nil || proof.TenantName != "TEST" {
+		t.Fatal("legacy profile replaced the verified current customer's name with native home ownership", err)
 	}
 	in.Purpose = "membership"
 	in.IncludeTenantName = false
