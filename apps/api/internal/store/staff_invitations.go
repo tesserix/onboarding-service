@@ -27,19 +27,24 @@ type StaffInvitationRateLimit struct{ RetryAfterSeconds int }
 func (StaffInvitationRateLimit) Error() string { return "staff invitation rate limit" }
 func (StaffInvitationRateLimit) Unwrap() error { return ErrConflict }
 
-func (s *Store) StaffSetupCompleted(ctx context.Context, scope StaffIdentityScope, event audit.Event) (bool, error) {
-	complete := false
+type StaffSetupAcknowledgements struct {
+	EmailConfirmed     bool
+	PasswordConfigured bool
+}
+
+func (s *Store) StaffSetupAcknowledged(ctx context.Context, scope StaffIdentityScope, event audit.Event) (StaffSetupAcknowledgements, error) {
+	var complete StaffSetupAcknowledgements
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		if _, err := invitationCommand(ctx, tx, scope); err != nil {
 			return err
 		}
-		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM staff_identity_setups WHERE command_id=$1 AND password_configured_at IS NOT NULL)`, scope.CommandID).Scan(&complete); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM staff_identity_setups WHERE command_id=$1 AND email_confirmed_at IS NOT NULL), EXISTS(SELECT 1 FROM staff_identity_setups WHERE command_id=$1 AND password_configured_at IS NOT NULL)`, scope.CommandID).Scan(&complete.EmailConfirmed, &complete.PasswordConfigured); err != nil {
 			return err
 		}
 		return appendAudit(ctx, tx, event)
 	})
 	if err != nil {
-		return false, err
+		return StaffSetupAcknowledgements{}, err
 	}
 	return complete, nil
 }
@@ -285,7 +290,7 @@ func (s *Store) FinishStaffInvitationProof(ctx context.Context, proof StaffInvit
 		if _, err := lockStaffSetup(ctx, tx, v.CommandID); err != nil {
 			return err
 		}
-		result, err := tx.Exec(ctx, `UPDATE staff_identity_setups SET password_configured_at=CASE WHEN $3 THEN coalesce(password_configured_at,now()) ELSE password_configured_at END,lease_id=NULL,lease_until=NULL,updated_at=now() WHERE command_id=$1 AND lease_id=$2 AND lease_until>now()`, v.CommandID, proof.LeaseID, success && v.Phase == "password")
+		result, err := tx.Exec(ctx, `UPDATE staff_identity_setups SET email_confirmed_at=CASE WHEN $4 THEN coalesce(email_confirmed_at,now()) ELSE email_confirmed_at END,password_configured_at=CASE WHEN $3 THEN coalesce(password_configured_at,now()) ELSE password_configured_at END,lease_id=NULL,lease_until=NULL,updated_at=now() WHERE command_id=$1 AND lease_id=$2 AND lease_until>now()`, v.CommandID, proof.LeaseID, success && v.Phase == "password", success && v.Phase == "email")
 		if err != nil {
 			return err
 		}

@@ -56,9 +56,12 @@ func (s *Service) staffSetupSource(ctx context.Context, p authz.Principal, scope
 		return op, proof, false, ErrNotFound
 	}
 	configured := false
-	completed, err := s.store.StaffSetupCompleted(ctx, scope, staffIdentityEvent(ctx, p, scope, "staff.invitation.completion", nil))
+	completed, err := s.store.StaffSetupAcknowledged(ctx, scope, staffIdentityEvent(ctx, p, scope, "staff.invitation.completion", nil))
 	if err != nil {
 		return op, proof, false, staffInvitationError(err)
+	}
+	if completed.EmailConfirmed && !proof.EmailVerified {
+		return op, proof, false, ErrUnavailable
 	}
 	if proof.EmailVerified {
 		configured, err = s.signupIdentity.StaffPasswordConfigured(ctx, c.ProviderOrgID, c.ProviderUserID)
@@ -73,7 +76,7 @@ func (s *Service) staffSetupSource(ctx context.Context, p authz.Principal, scope
 	if current != scope {
 		return op, proof, false, ErrUnavailable
 	}
-	return op, proof, configured || completed, nil
+	return op, proof, configured || completed.PasswordConfigured, nil
 }
 
 func (s *Service) DeliverStaffInvitation(ctx context.Context, p authz.Principal, tenant, command, id uuid.UUID, actor string) (StaffInvitationReceipt, error) {
@@ -242,6 +245,17 @@ func (s *Service) StaffRecipient(ctx context.Context, in StaffRecipientInput, ac
 		err = s.signupIdentity.VerifySignupEmail(ctx, op.Command.ProviderUserID, in.Code)
 	}
 	sourceErr := err
+	if sourceErr == nil {
+		event.Action = "staff.recipient." + action + ".accepted"
+		if err = s.store.FinishStaffInvitationProof(ctx, proof, true, event); err != nil {
+			return empty, staffInvitationError(err)
+		}
+		_, after, hasPassword, observeErr := s.staffSetupSource(ctx, p, v.Scope)
+		if observeErr != nil {
+			return empty, observeErr
+		}
+		return invitationReceipt(v, after.EmailVerified, hasPassword), nil
+	}
 	// A lost response is reconciled against native facts before any proof is repeated.
 	_, after, hasPassword, observeErr := s.staffSetupSource(ctx, p, v.Scope)
 	success := observeErr == nil && after.EmailVerified && (action == "email" || hasPassword)
@@ -250,7 +264,7 @@ func (s *Service) StaffRecipient(ctx context.Context, in StaffRecipientInput, ac
 	}
 	event.Action = "staff.recipient." + action + ".rejected"
 	if success {
-		event.Action = "staff.recipient." + action + ".accepted"
+		event.Action = "staff.recipient." + action + ".observed_complete"
 	}
 	if err = s.store.FinishStaffInvitationProof(ctx, proof, success, event); err != nil {
 		return empty, staffInvitationError(err)

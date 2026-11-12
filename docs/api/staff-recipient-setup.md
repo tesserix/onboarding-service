@@ -29,7 +29,13 @@ Receipt states: `email_action_required`, `already_verified`,
 not effective product access. Verified email links are redundant. Replaying a
 completed password proof never resets credentials. New deliveries supersede old
 proof. Lost responses cannot redispatch the same uncertain proof. Status reconciles
-native state; a deliberate new delivery retains separate evidence.
+native state; a deliberate new delivery retains separate evidence. Successful native
+commands are durably acknowledged before reading their projections. An acknowledged
+email verification with an unverified native projection returns unavailable and
+suppresses redispatch until source reconciliation. Password acknowledgement prevents
+another password setup even while the authentication-method projection lags.
+Historical acknowledgements never establish current tenant eligibility. Completion
+inferred after a lost response is audited separately from accepted proof.
 
 Links expire after 30 minutes. Permit five retained dispatch attempts/account per
 rolling 24 hours and one delivery/phase per 60 seconds. Email-to-password progression
