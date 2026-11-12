@@ -260,6 +260,9 @@ func purgeIdempotencyKeys(ctx context.Context, st *store.Store, log *slog.Logger
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			if err := st.PurgeDiscovery(ctx); err != nil {
+				log.Warn("could not purge expired discovery challenges", "error", err)
+			}
 			if err := st.PurgeExpiredIdempotencyKeys(ctx); err != nil {
 				log.Warn("could not purge idempotency keys", "error", err)
 			}

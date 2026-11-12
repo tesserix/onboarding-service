@@ -51,16 +51,6 @@ func (c *Client) Send(ctx context.Context, message Message) (string, error) {
 	if err != nil || address.Name != "" || address.Address != message.Email || len(message.Email) > 200 || !sourceID.MatchString(message.UserID) || message.Code == "" || len(message.Code) > 20 || strings.ContainsFunc(message.Code, unicode.IsControl) || (message.Phase != "email" && message.Phase != "password") {
 		return "", ErrUnavailable
 	}
-	file, err := os.Open(c.keyFile)
-	if err != nil {
-		return "", ErrUnavailable
-	}
-	raw, readErr := io.ReadAll(io.LimitReader(file, 4097))
-	closeErr := file.Close()
-	key := strings.TrimSpace(string(raw))
-	if readErr != nil || closeErr != nil || len(raw) > 4096 || !strings.HasPrefix(key, "re_") || strings.ContainsFunc(key, unicode.IsSpace) || strings.ContainsFunc(key, unicode.IsControl) {
-		return "", ErrUnavailable
-	}
 	title := "Verify your email address"
 	if message.Phase == "password" {
 		title = "Set your password"
@@ -72,6 +62,20 @@ func (c *Client) Send(ctx context.Context, message Message) (string, error) {
 	}
 	payload, err := json.Marshal(map[string]any{"from": "Helivanta <" + c.from + ">", "to": []string{message.Email}, "subject": title + " — Helivanta", "html": html.String(), "text": "Hello " + message.Name + ",\n\nContinue setting up " + message.Organization + " on Helivanta.\n\n" + link.String() + "\n\nThis link expires after 1 hour. If it has expired, request a fresh link from https://helivanta.app/signup. Up to 3 emails per hour and 10 per 24 hours, per workspace, including initial delivery and password setup. Across workspaces, the same recipient is limited to 10 emails per hour and 30 per 24 hours. Once your email is verified, verification emails stop.\n\nIf you did not request this, you can ignore this email."})
 	if err != nil {
+		return "", ErrUnavailable
+	}
+	return c.sendPayload(ctx, payload)
+}
+
+func (c *Client) sendPayload(ctx context.Context, payload []byte) (string, error) {
+	file, err := os.Open(c.keyFile)
+	if err != nil {
+		return "", ErrUnavailable
+	}
+	raw, readErr := io.ReadAll(io.LimitReader(file, 4097))
+	closeErr := file.Close()
+	key := strings.TrimSpace(string(raw))
+	if readErr != nil || closeErr != nil || len(raw) > 4096 || !strings.HasPrefix(key, "re_") || strings.ContainsFunc(key, unicode.IsSpace) || strings.ContainsFunc(key, unicode.IsControl) {
 		return "", ErrUnavailable
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.resend.com/emails", bytes.NewReader(payload))
