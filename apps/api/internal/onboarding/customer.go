@@ -96,6 +96,21 @@ func (s *Service) Customer(ctx context.Context, id uuid.UUID, hash []byte) (cust
 	return customerReceipt(row), nil
 }
 
+// CustomerForOwner narrows receipt access to the immutable owner named by a link.
+func (s *Service) CustomerForOwner(ctx context.Context, id uuid.UUID, hash []byte, owner string) (customercontract.Receipt, error) {
+	if !hospitalSourceID.MatchString(owner) {
+		return customercontract.Receipt{}, ErrNotFound
+	}
+	row, err := s.store.CustomerSignup(ctx, id, hash)
+	if err != nil {
+		return customercontract.Receipt{}, customerError(err)
+	}
+	if row.OwnerSubject != owner {
+		return customercontract.Receipt{}, ErrNotFound
+	}
+	return customerReceipt(row), nil
+}
+
 // WithCustomerIdentity supplies the native code-verification client.
 func WithCustomerIdentity(client *zitadel.Client) Option {
 	return func(s *Service) { s.signupIdentity = client }
