@@ -160,6 +160,8 @@ func invitationReceipt(v store.StaffInvitation, verified, configured bool) Staff
 		r.State = "complete"
 	case v.Phase == "email" && verified:
 		r.State = "already_verified"
+	case v.Superseded:
+		r.State = "superseded"
 	case v.ProofUncertain:
 		r.State = "proof_unresolved"
 	case v.ConsumedAt != nil:

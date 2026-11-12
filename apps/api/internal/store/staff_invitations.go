@@ -17,6 +17,7 @@ type StaffInvitation struct {
 	AcceptedAt, ConsumedAt *time.Time
 	PasswordConfigured     bool
 	Current                bool
+	Superseded             bool
 	ProofUncertain         bool
 	Scope                  StaffIdentityScope
 }
@@ -219,6 +220,7 @@ func (s *Store) StaffInvitationByTicket(ctx context.Context, id uuid.UUID, hash 
 	if err != nil {
 		return StaffInvitation{}, err
 	}
+	v.Superseded = !v.Current
 	return v, nil
 }
 

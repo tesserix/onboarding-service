@@ -10,6 +10,7 @@ import (
 	"github.com/tesserix/onboarding-service/api/internal/authz"
 	"github.com/tesserix/onboarding-service/api/internal/store"
 	"github.com/tesserix/onboarding-service/api/internal/zitadel"
+	"github.com/tesserix/onboarding-service/api/staffcontract"
 )
 
 // StaffIdentitySource supplies bounded read-only provider observations.
@@ -25,19 +26,7 @@ func WithStaffIdentity(product string, source StaffIdentitySource) Option {
 	}
 }
 
-type StaffIdentityReceipt struct {
-	SchemaVersion      int        `json:"schema_version"`
-	CommandID          uuid.UUID  `json:"command_id"`
-	TenantID           uuid.UUID  `json:"tenant_id"`
-	ProductKey         string     `json:"product_key"`
-	ActorSubject       string     `json:"actor_subject"`
-	CommandState       string     `json:"command_state"`
-	PreparedAt         time.Time  `json:"prepared_at"`
-	UserID             string     `json:"user_id,omitempty"`
-	CreatedAt          *time.Time `json:"created_at,omitempty"`
-	RecoveryState      string     `json:"recovery_state,omitempty"`
-	SuccessorCommandID *uuid.UUID `json:"successor_command_id,omitempty"`
-}
+type StaffIdentityReceipt = staffcontract.StaffIdentityReceipt
 
 func staffIdentityReceipt(op store.StaffIdentityOperation) StaffIdentityReceipt {
 	state := "prepared"
@@ -127,18 +116,9 @@ func (s *Service) StaffIdentityReceipt(ctx context.Context, p authz.Principal, t
 	return staffIdentityReceipt(op), nil
 }
 
-type StaffIdentityCurrentState struct {
-	State            string    `json:"state"`
-	EmailVerified    bool      `json:"email_verified"`
-	ObservedAt       time.Time `json:"observed_at"`
-	UserRevision     string    `json:"user_revision,omitempty"`
-	MetadataRevision string    `json:"metadata_revision,omitempty"`
-}
+type StaffIdentityCurrentState = staffcontract.StaffIdentityCurrentState
 
-type StaffIdentityObservationReceipt struct {
-	Receipt     StaffIdentityReceipt      `json:"receipt"`
-	Observation StaffIdentityCurrentState `json:"observation"`
-}
+type StaffIdentityObservationReceipt = staffcontract.StaffIdentityObservationReceipt
 
 // ObserveStaffIdentity rechecks current source facts and reconciles without redispatch.
 func (s *Service) ObserveStaffIdentity(ctx context.Context, p authz.Principal, tenant, command uuid.UUID, actor string) (StaffIdentityObservationReceipt, error) {

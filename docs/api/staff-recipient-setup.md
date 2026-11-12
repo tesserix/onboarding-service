@@ -25,7 +25,7 @@ routes; ordinary clients must not contact the identity owner directly.
 
 Receipt states: `email_action_required`, `already_verified`,
 `password_action_required`, `complete`, `consumed`, `expired`,
-`delivery_unresolved`, `proof_unresolved`. `complete` describes credential setup,
+`delivery_unresolved`, `proof_unresolved`, `superseded`. `complete` describes credential setup,
 not effective product access. Verified email links are redundant. Replaying a
 completed password proof never resets credentials. New deliveries supersede old
 proof. Lost responses cannot redispatch the same uncertain proof. Status reconciles
@@ -46,3 +46,19 @@ The additive schema prerequisite is chart 0.3.64 in
 recovery/acceptance gates. HMS integration, recipient UI, ordinary membership,
 reviewed Staff linking, first-reviewer policy and live owner/recipient acceptance
 remain open until verified.
+
+## Native account consumer SDK
+
+`apps/api/staffclient` provides scoped creation, retained receipt reads, fresh
+observations and idempotent invitation delivery using canonical public Go models
+in `staffcontract/identity.go`. Legacy internal type names are aliases, preserving
+wire shape. The consumer supplies a dedicated registered product token source;
+it never receives the identity service's administrative Zitadel credential.
+
+The SDK accepts only the private owner service destination, disables redirects
+and cookies, bounds deadlines/responses and verifies tenant, product, command and
+initiating actor in every returned receipt. It does not retry native commands or
+cache eligibility. `X-Expected-Product-Key` is an additional rejection guard: the
+server compares it to the verified product principal before preparing a command.
+It supplies no identity or authority. Existing clients may omit it. Private
+provider bodies and token-source errors are never returned to callers.

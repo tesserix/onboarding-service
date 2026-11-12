@@ -16,7 +16,7 @@ import (
 var ErrInvalid = errors.New("invalid staff setup request")
 
 func ReceiptStates() []string {
-	return []string{"complete", "delivery_unresolved", "proof_unresolved", "already_verified", "consumed", "expired", "email_action_required", "password_action_required"}
+	return []string{"complete", "delivery_unresolved", "proof_unresolved", "already_verified", "consumed", "superseded", "expired", "email_action_required", "password_action_required"}
 }
 
 type StaffInvitationReceipt struct {

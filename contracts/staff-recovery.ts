@@ -74,7 +74,7 @@ export type StaffIdentityRecoveryDecisionReceipt = {
 import { z } from "zod";
 
 export const StaffInvitationReceiptContract = z.object({
-  state: z.enum(["complete","delivery_unresolved","proof_unresolved","already_verified","consumed","expired","email_action_required","password_action_required"]),
+  state: z.enum(["complete","delivery_unresolved","proof_unresolved","already_verified","consumed","superseded","expired","email_action_required","password_action_required"]),
   invitation_id: z.uuidv7().optional(),
   phase: z.enum(["email", "password"]).optional(),
   expires_at: z.iso.datetime({offset: true}).optional(),

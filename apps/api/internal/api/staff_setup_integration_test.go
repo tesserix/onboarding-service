@@ -25,6 +25,7 @@ func (f staffMailTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 func TestStaffSetupAPIsDeliverOnlyToRecipientAndDoNotReplaySuccessfulProofs(t *testing.T) {
 	var verified, configured atomic.Bool
+	var emailProjectionBehind, passwordProjectionBehind atomic.Bool
 	var nativeCreates, nativeProofs, mails atomic.Int32
 	var born time.Time
 	var frozen zitadel.StaffIdentityInput
@@ -35,7 +36,7 @@ func TestStaffSetupAPIsDeliverOnlyToRecipientAndDoNotReplaySuccessfulProofs(t *t
 		case r.Method == "POST" && (strings.HasSuffix(r.URL.Path, "/email/send") || strings.HasSuffix(r.URL.Path, "/password_reset")):
 			_, _ = io.WriteString(w, `{"verificationCode":"`+nativeCode+`"}`)
 		case r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/authentication_methods"):
-			if configured.Load() {
+			if configured.Load() && !passwordProjectionBehind.Load() {
 				_, _ = io.WriteString(w, `{"details":{"totalResult":"1"},"authMethodTypes":["AUTHENTICATION_METHOD_TYPE_PASSWORD"]}`)
 			} else {
 				_, _ = io.WriteString(w, `{"details":{"totalResult":"0"}}`)
@@ -105,10 +106,10 @@ func TestStaffSetupAPIsDeliverOnlyToRecipientAndDoNotReplaySuccessfulProofs(t *t
 				t.Error("native observation lost frozen identity")
 			}
 			state := "initial"
-			if verified.Load() {
+			if verified.Load() && !emailProjectionBehind.Load() {
 				state = "active"
 			}
-			return zitadel.StaffIdentityObservation{UserID: in.UserID, OrganizationID: in.OrganizationID, State: state, EmailVerified: verified.Load(), CreatedAt: born, ObservedAt: time.Now().UTC(), UserRevision: "101", MetadataRevision: "102"}, nil
+			return zitadel.StaffIdentityObservation{UserID: in.UserID, OrganizationID: in.OrganizationID, State: state, EmailVerified: verified.Load() && !emailProjectionBehind.Load(), CreatedAt: born, ObservedAt: time.Now().UTC(), UserRevision: "101", MetadataRevision: "102"}, nil
 		},
 	}
 	h, c, create := staffCreationFixture(t, source, onboarding.WithCustomerIdentity(zitadel.New(native.URL, zitadel.StaticToken("test-token"), "test-platform", nil)), onboarding.WithCustomerMail(sender))
@@ -148,6 +149,17 @@ func TestStaffSetupAPIsDeliverOnlyToRecipientAndDoNotReplaySuccessfulProofs(t *t
 	if w := call("email", "wrong-code", ""); w.Code != 400 {
 		t.Fatalf("wrong proof: %d %s", w.Code, w.Body)
 	}
+	emailProjectionBehind.Store(true)
+	if w := call("email", nativeCode, ""); w.Code != 503 {
+		t.Fatalf("source lag must remain unavailable: %d %s", w.Code, w.Body)
+	}
+	if w := call("status", "", ""); w.Code != 503 {
+		t.Fatalf("acknowledged verification cannot revert to pending while source lags: %d %s", w.Code, w.Body)
+	}
+	if w := call("resend", "", ""); w.Code != 503 || mails.Load() != 1 {
+		t.Fatal("verification projection lag dispatched another email")
+	}
+	emailProjectionBehind.Store(false)
 	for range 2 {
 		if w := call("email", nativeCode, ""); w.Code != 200 || decode(t, w)["state"] != "already_verified" {
 			t.Fatalf("verify/replay: %d %s", w.Code, w.Body)
@@ -159,6 +171,7 @@ func TestStaffSetupAPIsDeliverOnlyToRecipientAndDoNotReplaySuccessfulProofs(t *t
 	if w := call("resend", "", ""); w.Code != 200 || decode(t, w)["state"] != "password_action_required" {
 		t.Fatalf("password delivery: %d %s", w.Code, w.Body)
 	}
+	passwordProjectionBehind.Store(true)
 	for range 2 {
 		if w := call("password", nativeCode, "test-private-password"); w.Code != 200 || decode(t, w)["state"] != "complete" {
 			t.Fatalf("password/replay: %d %s", w.Code, w.Body)
