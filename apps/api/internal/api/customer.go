@@ -106,6 +106,10 @@ func (d Deps) getCustomerForOwner(c *gin.Context) {
 		abort(c, 404, "not found")
 		return
 	}
+	if d.Service == nil {
+		abort(c, http.StatusServiceUnavailable, "identity unavailable")
+		return
+	}
 	receipt, err := d.Service.CustomerForOwner(c.Request.Context(), id, hash, c.Param("userID"))
 	if err != nil {
 		respondErr(c, d.logger(), err)
