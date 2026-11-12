@@ -19,6 +19,7 @@ func (d Deps) registerCustomers(r *gin.Engine) {
 	})
 	group.POST("", d.startCustomer)
 	group.GET("/:id", d.getCustomer)
+	group.GET("/:id/users/:userID", d.getCustomerForOwner)
 	group.POST("/:id/existing-owner", d.continueCustomer)
 	group.POST("/verify-email", func(c *gin.Context) { d.proveCustomer(c, false) })
 	group.POST("/password", func(c *gin.Context) { d.proveCustomer(c, true) })
@@ -88,6 +89,24 @@ func (d Deps) getCustomer(c *gin.Context) {
 		return
 	}
 	receipt, err := d.Service.Customer(c.Request.Context(), id, hash)
+	if err != nil {
+		respondErr(c, d.logger(), err)
+		return
+	}
+	c.JSON(http.StatusOK, receipt)
+}
+
+func (d Deps) getCustomerForOwner(c *gin.Context) {
+	hash, ok := customerHash(c)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil || id == uuid.Nil || id.String() != c.Param("id") {
+		abort(c, 404, "not found")
+		return
+	}
+	receipt, err := d.Service.CustomerForOwner(c.Request.Context(), id, hash, c.Param("userID"))
 	if err != nil {
 		respondErr(c, d.logger(), err)
 		return

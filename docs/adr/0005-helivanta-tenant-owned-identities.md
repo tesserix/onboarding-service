@@ -131,3 +131,12 @@ before accepting missing-user state. This is verified against native fork
 fail closed and require review during native upgrades; HTTP status alone must
 never globally revoke a valid account. The browser fixture preflight checks this
 against an actual missing synthetic native subject.
+
+### Owner-bound verification progress
+
+`GET /internal/v1/customer-signups/:id/users/:userID` is a workload-authenticated,
+read-only projection. It requires the private receipt hash and an exact match to
+that signup's immutable owner subject. A missing/foreign receipt or owner returns
+404; the read never consumes a native proof, issues mail or changes credential
+state. The existing unfiltered receipt route remains available for setup progress.
+Consumers must use the owner-bound route when interpreting a particular email link.
