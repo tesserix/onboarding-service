@@ -6,6 +6,7 @@ import (
 	"net/mail"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // DiscoveryStart is accepted only from the Helivanta workload, before identity lookup.
@@ -107,7 +108,7 @@ func (in DiscoveryChoices) Validate() error {
 	}
 	seen := map[string]bool{}
 	for _, choice := range in.Accounts {
-		if validateTaggedFields(choice, "") != nil || seen[choice.TenantID] || len(choice.Name) > 200 || strings.TrimSpace(choice.Name) != choice.Name || strings.ContainsFunc(choice.Name, unicode.IsControl) || (DiscoveryRequest{choice.Account}).Validate() != nil {
+		if validateTaggedFields(choice, "") != nil || seen[choice.TenantID] || !utf8.ValidString(choice.Name) || utf8.RuneCountInString(choice.Name) > 200 || strings.TrimSpace(choice.Name) != choice.Name || strings.ContainsFunc(choice.Name, unicode.IsControl) || (DiscoveryRequest{choice.Account}).Validate() != nil {
 			return ErrInvalid
 		}
 		seen[choice.TenantID] = true
