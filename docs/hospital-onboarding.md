@@ -208,3 +208,35 @@ Unknown, completed and quota-limited requests retain the same public response;
 a requested email is not a promise of provider acceptance or inbox delivery.
 See [delivery decision](adr/0004-customer-signup-email-limits.md) for concurrency,
 accounting boundaries and the initial rollout window.
+
+## Separate-account discovery (candidate, not deployed)
+
+Helivanta's email-first login calls workload-only account-discovery/start,
+account-discovery/verify and account-discovery/choices under customer-signups.
+Contracts live in customercontract/account_discovery.go and generate the public
+Zod models. The existing workload/audience boundary applies to all three; none
+is a public identity-directory API. Browser traffic must use Global API.
+
+Start sends a generic eight-digit mailbox code without querying identity.
+Codes last ten minutes with five atomic submissions, and success is one-use.
+The exact browser capability is required; list recovery may reuse its verified
+proof only until original expiry. Recipient limits are 3/hour and 10/24h,
+source limits 10/hour and 30/24h, global limit 1000/hour. Reservations precede
+provider I/O; ambiguous email sends consume budget. No signup proof or budget
+is reused. Hashes, not codes/browser secrets, are stored in the separate
+account_discovery_challenges schema, owned by tesserix-k8s.
+
+Choices search all matching native humans, including staff, capped at twenty
+raw results. Overflow/malformed/ambiguous results refuse discovery. Active
+verified native ownership and current active customer/product enrollment plus
+native project grants are required. An unaffiliated supply partnership creates
+no account choice. Each selected account still authenticates its own password
+and MFA; Helivanta independently verifies current IAM membership at exchange.
+Names come from current customer records. Email is never an account merge key.
+
+The existing hourly sweeper removes up to 5000 challenges older than 24 hours,
+about 25 hours retention at the 1000/hour cap when housekeeping is healthy.
+Expiry checks never depend on sweeping. Audit preserves identifiers/actions,
+without recipient/code payloads. Roll out additive GitOps schema before this
+service and its consumer; rollback leaves expiring challenge storage in place.
+Actual PostgreSQL tests run in CI; local apps/databases were not started.

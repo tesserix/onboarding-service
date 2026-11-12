@@ -48,6 +48,12 @@ func generateContracts() (string, error) {
 		{"CustomerSignupProof", reflect.TypeFor[customercontract.Proof]()},
 		{"CustomerSignupDelivery", reflect.TypeFor[customercontract.Delivery]()},
 		{"CustomerWorkspaceInput", reflect.TypeFor[customercontract.Workspace]()},
+		{"AccountDiscoveryRequest", reflect.TypeFor[customercontract.DiscoveryRequest]()},
+		{"AccountDiscoveryCode", reflect.TypeFor[customercontract.DiscoveryCode]()},
+		{"AccountDiscoveryChoice", reflect.TypeFor[customercontract.DiscoveryChoice]()},
+		{"AccountDiscoveryChoices", reflect.TypeFor[customercontract.DiscoveryChoices]()},
+		{"AccountDiscoveryAccepted", reflect.TypeFor[customercontract.DiscoveryAccepted]()},
+		{"AccountDiscoveryVerified", reflect.TypeFor[customercontract.DiscoveryVerified]()},
 		{"CustomerLoginTargetInput", reflect.TypeFor[customercontract.LoginTargetInput]()},
 		{"CustomerLoginTarget", reflect.TypeFor[customercontract.LoginTarget]()},
 		{"CustomerIdentityProjectionInput", reflect.TypeFor[customercontract.IdentityProjectionInput]()},
@@ -68,6 +74,13 @@ func generateContracts() (string, error) {
 func contractSchema(kind reflect.Type, choices string) (string, error) {
 	if kind.Kind() == reflect.Pointer {
 		return contractSchema(kind.Elem(), choices)
+	}
+	if kind.Kind() == reflect.Slice {
+		element, err := contractSchema(kind.Elem(), "")
+		if err != nil {
+			return "", err
+		}
+		return "z.array(" + element + ")", nil
 	}
 	if kind.Kind() == reflect.Bool {
 		return "z.boolean()", nil
@@ -134,6 +147,9 @@ func contractFields(kind reflect.Type) ([]string, error) {
 		schema, err := contractSchema(field.Type, field.Tag.Get("enum"))
 		if err != nil {
 			return nil, err
+		}
+		if maximum := field.Tag.Get("maxItems"); maximum != "" {
+			schema += ".max(" + maximum + ")"
 		}
 		if field.Tag.Get("format") == "email" {
 			schema += ".email()"

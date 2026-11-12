@@ -25,6 +25,9 @@ func (d Deps) registerCustomers(r *gin.Engine) {
 	group.POST("/password", func(c *gin.Context) { d.proveCustomer(c, true) })
 	group.POST("/email-link", func(c *gin.Context) { d.deliverCustomer(c, false) })
 	group.POST("/password-link", func(c *gin.Context) { d.deliverCustomer(c, true) })
+	group.POST("/account-discovery/start", d.startAccountDiscovery)
+	group.POST("/account-discovery/verify", d.verifyAccountDiscovery)
+	group.POST("/account-discovery/choices", d.accountChoices)
 	group.POST("/login-target", d.customerLoginTarget)
 	group.POST("/identity-projection", d.customerIdentityProjection)
 }
