@@ -44,7 +44,7 @@ func (s *Store) ReserveDiscovery(ctx context.Context, id uuid.UUID, browser, sou
 // VerifyDiscovery consumes an attempt atomically; a successful proof cannot replay.
 func (s *Store) VerifyDiscovery(ctx context.Context, id uuid.UUID, browser, code []byte, now time.Time) error {
 	var verified bool
-	err := s.pool.QueryRow(ctx, `UPDATE account_discovery_challenges SET attempts=attempts+1,updated_at=$4,verified_at=CASE WHEN code_hash=$3 THEN $4 ELSE NULL END WHERE id=$1 AND browser_hash=$2 AND verified_at IS NULL AND attempts<5 AND expires_at>$4 RETURNING verified_at IS NOT NULL`, id, browser, code, now).Scan(&verified)
+	err := s.pool.QueryRow(ctx, `UPDATE account_discovery_challenges SET attempts=attempts+1,updated_at=greatest($4::timestamptz,clock_timestamp()),verified_at=CASE WHEN code_hash=$3 THEN greatest($4::timestamptz,clock_timestamp()) ELSE NULL END WHERE id=$1 AND browser_hash=$2 AND verified_at IS NULL AND attempts<5 AND expires_at>greatest($4::timestamptz,clock_timestamp()) RETURNING verified_at IS NOT NULL`, id, browser, code, now).Scan(&verified)
 	if errors.Is(err, pgx.ErrNoRows) || err == nil && !verified {
 		return ErrNotFound
 	}
@@ -54,7 +54,7 @@ func (s *Store) VerifyDiscovery(ctx context.Context, id uuid.UUID, browser, code
 // DiscoveryEmail permits list recovery only for the browser's verified, unexpired proof.
 func (s *Store) DiscoveryEmail(ctx context.Context, id uuid.UUID, browser []byte, now time.Time) (string, error) {
 	var email string
-	err := s.pool.QueryRow(ctx, `SELECT email FROM account_discovery_challenges WHERE id=$1 AND browser_hash=$2 AND verified_at IS NOT NULL AND expires_at>$3`, id, browser, now).Scan(&email)
+	err := s.pool.QueryRow(ctx, `SELECT email FROM account_discovery_challenges WHERE id=$1 AND browser_hash=$2 AND verified_at IS NOT NULL AND expires_at>greatest($3::timestamptz,clock_timestamp())`, id, browser, now).Scan(&email)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", ErrNotFound
 	}
