@@ -240,3 +240,8 @@ Expiry checks never depend on sweeping. Audit preserves identifiers/actions,
 without recipient/code payloads. Roll out additive GitOps schema before this
 service and its consumer; rollback leaves expiring challenge storage in place.
 Actual PostgreSQL tests run in CI; local apps/databases were not started.
+
+Discovery display names use the same 200-Unicode-code-point limit as signup,
+including Marathi, Odia and other multibyte names. The shared contract validates
+that limit; the service does not apply a second byte-length restriction or
+truncate valid organisation names.

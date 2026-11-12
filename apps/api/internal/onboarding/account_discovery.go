@@ -109,9 +109,6 @@ func (s *Service) AccountChoices(ctx context.Context, in customercontract.Discov
 		if e != nil {
 			return empty, ErrUnavailable
 		}
-		if org.Name == "" || len(org.Name) > 200 || strings.TrimSpace(org.Name) != org.Name {
-			return empty, ErrUnavailable
-		}
 		choices = append(choices, customercontract.DiscoveryChoice{TenantID: account.TenantID, Name: org.Name, Account: email})
 	}
 	if _, err = s.store.DiscoveryEmail(ctx, id, browser, time.Now().UTC()); err != nil {

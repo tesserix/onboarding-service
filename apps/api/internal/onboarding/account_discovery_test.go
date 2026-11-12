@@ -25,7 +25,7 @@ func TestAccountDiscoveryRequiresProofAndRechecksCurrentCustomerEligibility(t *t
 	seedProduct(t, st, "helivanta")
 	svc.idp = securityIdentity{idp}
 	tenants := []uuid.UUID{uuid.New(), uuid.New()}
-	names := []string{"Hospital", "Independent pharmacy"}
+	names := []string{"Hospital", strings.Repeat("ଅ", 100)}
 	users := []any{}
 	for i, tenant := range tenants {
 		org := "helivanta-" + tenant.String()
@@ -80,7 +80,7 @@ func TestAccountDiscoveryRequiresProofAndRechecksCurrentCustomerEligibility(t *t
 		t.Fatal("proof replay accepted")
 	}
 	choices, err := svc.AccountChoices(t.Context(), access)
-	if err != nil || len(choices.Accounts) != 2 || choices.Accounts[0].Name != "Hospital" || choices.Accounts[1].Name != "Independent pharmacy" {
+	if err != nil || len(choices.Accounts) != 2 || choices.Accounts[0].Name != "Hospital" || choices.Accounts[1].Name != names[1] {
 		t.Fatal("named hospital/pharmacy choices missing", err)
 	}
 	if err = st.RevokeGrant(t.Context(), tenants[0], "helivanta"); err != nil {
