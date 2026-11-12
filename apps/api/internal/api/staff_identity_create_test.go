@@ -17,15 +17,15 @@ import (
 	"github.com/tesserix/onboarding-service/api/internal/zitadel"
 )
 
-func staffCreationFixture(t *testing.T, source staffSource) (*harness, store.StaffIdentityCommand, string) {
+func staffCreationFixture(t *testing.T, source staffSource, options ...onboarding.Option) (*harness, store.StaffIdentityCommand, string) {
 	t.Helper()
-	h := newHarness(t, onboarding.WithStaffIdentity("planning-poker", source))
+	h := newHarness(t, append([]onboarding.Option{onboarding.WithStaffIdentity("planning-poker", source)}, options...)...)
 	command := store.StaffIdentityCommand{ID: uuid.Must(uuid.NewV7()), OrgID: identityOrg(t, h), ActorSubject: "TEST-admin", Email: "synthetic@example.invalid", GivenName: "Synthetic", FamilyName: "Staff", Reason: "Authorized synthetic Staff identity creation"}
 	h.identity.verify = func(_ context.Context, org, tenant, project string) (zitadel.OrganizationIdentity, error) {
 		return identityObservation(org, tenant, project), nil
 	}
 	t.Cleanup(func() {
-		for _, item := range []struct{ table, column string }{{"staff_identity_creations", "command_id"}, {"staff_identity_dispatches", "command_id"}, {"staff_identity_contact_claims", "root_command_id"}, {"staff_identity_commands", "id"}} {
+		for _, item := range []struct{ table, column string }{{"staff_identity_invitation_attempts", "command_id"}, {"staff_identity_setups", "command_id"}, {"staff_identity_creations", "command_id"}, {"staff_identity_dispatches", "command_id"}, {"staff_identity_contact_claims", "root_command_id"}, {"staff_identity_commands", "id"}} {
 			if _, err := h.fixturePool.Exec(context.Background(), "DELETE FROM "+item.table+" WHERE "+item.column+"=$1", command.ID); err != nil {
 				t.Error(err)
 			}

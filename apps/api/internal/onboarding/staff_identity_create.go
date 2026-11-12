@@ -14,21 +14,14 @@ import (
 	"github.com/tesserix/onboarding-service/api/internal/authz"
 	"github.com/tesserix/onboarding-service/api/internal/store"
 	"github.com/tesserix/onboarding-service/api/internal/zitadel"
+	"github.com/tesserix/onboarding-service/api/staffcontract"
 )
 
 type StaffIdentityCreator interface {
 	CreateStaffIdentity(context.Context, zitadel.StaffIdentityInput) (zitadel.StaffIdentityCreated, error)
 }
 
-type StaffIdentityCreateInput struct {
-	ActorSubject string `json:"actor_subject"`
-	Email        string `json:"email"`
-	GivenName    string `json:"given_name"`
-	FamilyName   string `json:"family_name"`
-	Reason       string `json:"reason"`
-}
-
-func (StaffIdentityCreateInput) String() string { return "[redacted staff identity creation input]" }
+type StaffIdentityCreateInput = staffcontract.StaffIdentityCreateInput
 
 // CreateStaffIdentity persists authority to attempt exactly one role-free creation.
 func (s *Service) CreateStaffIdentity(ctx context.Context, p authz.Principal, tenant, command uuid.UUID, in StaffIdentityCreateInput) (StaffIdentityReceipt, error) {

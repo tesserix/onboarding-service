@@ -37,6 +37,10 @@ func (d Deps) getStaffIdentity(c *gin.Context) {
 }
 
 func staffIdentityIDs(c *gin.Context) (uuid.UUID, uuid.UUID, bool) {
+	if expected, present := c.Request.Header[http.CanonicalHeaderKey("X-Expected-Product-Key")]; present && (len(expected) != 1 || expected[0] != principalOf(c).ProductKey) {
+		abort(c, http.StatusNotFound, "not found")
+		return uuid.Nil, uuid.Nil, false
+	}
 	tenant, ok := orgID(c)
 	if !ok {
 		return uuid.Nil, uuid.Nil, false

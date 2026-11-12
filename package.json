@@ -4,8 +4,14 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./customer-signup": "./contracts/customer-signup.ts"
+    "./customer-signup": "./contracts/customer-signup.ts",
+    "./staff-setup": "./contracts/staff-recovery.ts"
   },
-  "files": ["contracts/customer-signup.ts"],
-  "peerDependencies": {"zod": "^4.0.0"}
+  "files": [
+    "contracts/customer-signup.ts",
+    "contracts/staff-recovery.ts"
+  ],
+  "peerDependencies": {
+    "zod": "^4.0.0"
+  }
 }
