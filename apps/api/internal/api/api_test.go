@@ -154,7 +154,7 @@ func newHarness(t *testing.T, options ...onboarding.Option) *harness {
 
 	return &harness{
 		router: NewRouter(Deps{
-			Service: svc, Store: st, Tokens: tokens, Sessions: sessions,
+			Service: svc, Store: st, Tokens: tokens, Sessions: sessions, CustomerWorkloads: customerCaller{},
 			Allowlist: auth.ParseAllowlist("sam@tesserix.app"), PlatformOrgID: platformOrg,
 		}),
 		store:       st,

@@ -33,6 +33,7 @@ func (d Deps) registerRoutes(g *gin.RouterGroup) {
 	g.PUT("/orgs/:id/staff-identities/:commandId/recovery/requests/:requestId/decision", d.decideStaffIdentityRecovery)
 	g.PUT("/orgs/:id/staff-identities/:commandId", d.createStaffIdentity)
 	g.POST("/orgs/:id/staff-identities/:commandId/observations", d.observeStaffIdentity)
+	g.PUT("/orgs/:id/staff-identities/:commandId/invitations/:invitationId", d.deliverStaffInvitation)
 	g.POST("/orgs/:id/deactivate", d.setOrgState("inactive"))
 	g.POST("/orgs/:id/reactivate", d.setOrgState("active"))
 
