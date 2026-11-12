@@ -162,6 +162,18 @@ a new provider idempotency key. Shared first-send/resend quotas cap attempts at
 three per hour. Provider outages remain retryable. With product mail enabled the
 worker leases two commands with twenty-second budgets inside a one-minute lease.
 
+After native email proof has verified the private signup receipt, the durable
+worker wakes its exact pending organisation through the existing reconcile-request
+annotation. Hospital and independent pharmacy signups use the same path. The
+immutable signup command ID makes the wakeup idempotent; retries after a crash
+observe the existing annotation instead of repeatedly scheduling the controller.
+Claim owner, tenant and product must match before any annotation is written.
+Unverified signups and historical existing-owner adoption do not use this path.
+Kubernetes failures retain the pending intent and use the worker's existing
+durable retry. This removes the normal wait for the operator's five-minute drift
+check; readiness still requires native identity, owner membership, archive and
+business initialization. The wakeup itself does not grant access or report ready.
+
 Existing claims that use native SMTP retain that delivery mode. An external-mail
 claim without its configured mailer fails closed rather than using shared SMTP.
 Existing-account continuation does not send privileged password resets or move
