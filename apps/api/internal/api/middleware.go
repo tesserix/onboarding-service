@@ -179,6 +179,7 @@ func (d Deps) principalFromClaims(c *gin.Context, claims auth.Claims) (authz.Pri
 		return authz.Principal{
 			Kind: authz.KindPlatform, Subject: claims.Subject, Email: claims.Email,
 			EmailVerified: claims.EmailVerified, ExternalOrgID: claims.OrgID, Roles: claims.Roles,
+			ConsoleAccess: claims.Console,
 		}, nil
 	}
 	if claims.OrgID == d.PlatformOrgID && claims.EmailVerified {
@@ -245,6 +246,19 @@ func principalOf(c *gin.Context) authz.Principal {
 // bug, not a retry.
 func (d Deps) idempotency() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Staff commands use durable claims and current authorization, never replay-cache authority.
+		const recovery = "/v1/orgs/:id/staff-identities/:commandId/recovery"
+		path := c.FullPath()
+		if path == recovery || strings.HasPrefix(path, recovery+"/") {
+			c.Next()
+			return
+		}
+		switch path {
+		case "/v1/orgs/:id/staff-identities/:commandId/observations",
+			"/v1/orgs/:id/staff-identities/:commandId":
+			c.Next()
+			return
+		}
 		key := c.GetHeader("Idempotency-Key")
 		if key == "" || !isUnsafe(c.Request.Method) {
 			c.Next()

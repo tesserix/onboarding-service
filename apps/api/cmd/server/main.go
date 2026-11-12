@@ -77,8 +77,14 @@ func run(log *slog.Logger) error {
 	}
 
 	identity := onboarding.ZitadelIdentity{Client: client}
-	svc := onboarding.New(st, identity, authz.New(st), log,
-		onboarding.WithRegistryProjectID(cfg.RegistryProjectID))
+	serviceOptions := []onboarding.Option{onboarding.WithRegistryProjectID(cfg.RegistryProjectID)}
+	if cfg.StaffIdentityProductKey != "" {
+		serviceOptions = append(serviceOptions, onboarding.WithStaffIdentity(cfg.StaffIdentityProductKey, client))
+		if cfg.ConsoleProjectID != "" {
+			serviceOptions = append(serviceOptions, onboarding.WithStaffRecovery(cfg.ConsoleProjectID, client))
+		}
+	}
+	svc := onboarding.New(st, identity, authz.New(st), log, serviceOptions...)
 
 	var planningPokerWorkloads api.WorkloadVerifier
 	var hospitalWorkloads api.WorkloadVerifier
@@ -117,7 +123,8 @@ func run(log *slog.Logger) error {
 				return err
 			}
 		}
-		svc = onboarding.New(st, identity, authz.New(st), log, onboarding.WithRegistryProjectID(cfg.RegistryProjectID), onboarding.WithCustomerIdentity(client), onboarding.WithCustomerMail(mailer), onboarding.WithHospitals(onboarding.HospitalConfig{Claims: hospitalclaims.New(kube, "identity-operator"), Product: "helivanta", HelivantaURL: target, HelivantaTokenFile: "/var/run/helivanta-provisioning/token"}))
+		serviceOptions = append(serviceOptions, onboarding.WithCustomerIdentity(client), onboarding.WithCustomerMail(mailer), onboarding.WithHospitals(onboarding.HospitalConfig{Claims: hospitalclaims.New(kube, "identity-operator"), Product: "helivanta", HelivantaURL: target, HelivantaTokenFile: "/var/run/helivanta-provisioning/token"}))
+		svc = onboarding.New(st, identity, authz.New(st), log, serviceOptions...)
 	}
 
 	if cfg.PlanningPokerProjectID != "" {
@@ -204,6 +211,9 @@ func run(log *slog.Logger) error {
 		defer func() { cancelDelivery(); <-done }()
 	}
 	go purgeIdempotencyKeys(ctx, st, log)
+	if cfg.StaffIdentityProductKey != "" {
+		go purgeStaffIdentityHistoryCursors(ctx, st, log)
+	}
 	go reapRegistryCredentials(ctx, svc, log)
 
 	errs := make(chan error, 1)
@@ -265,6 +275,24 @@ func purgeIdempotencyKeys(ctx context.Context, st *store.Store, log *slog.Logger
 			}
 			if err := st.PurgeExpiredIdempotencyKeys(ctx); err != nil {
 				log.Warn("could not purge idempotency keys", "error", err)
+			}
+		}
+	}
+}
+
+func purgeStaffIdentityHistoryCursors(ctx context.Context, st *store.Store, log *slog.Logger) {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			bounded, cancel := context.WithTimeout(ctx, 5*time.Second)
+			_, err := st.PurgeExpiredStaffIdentityHistoryCursors(bounded)
+			cancel()
+			if err != nil {
+				log.Warn("could not purge expired Staff history cursors", "error", err)
 			}
 		}
 	}

@@ -102,13 +102,14 @@ const (
 )
 
 type harness struct {
-	router   *gin.Engine
-	store    *store.Store
-	sessions *auth.SessionCodec
-	identity *fakeIdentity
+	router      *gin.Engine
+	store       *store.Store
+	sessions    *auth.SessionCodec
+	identity    *fakeIdentity
+	fixturePool *pgxpool.Pool
 }
 
-func newHarness(t *testing.T) *harness {
+func newHarness(t *testing.T, options ...onboarding.Option) *harness {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
@@ -143,7 +144,7 @@ func newHarness(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 	identity := &fakeIdentity{}
-	svc := onboarding.New(st, identity, authz.New(st), nil)
+	svc := onboarding.New(st, identity, authz.New(st), nil, options...)
 
 	tokens := stubTokens{claims: map[string]auth.Claims{
 		platformToken: {Subject: "sam", Email: "sam@tesserix.app", OrgID: platformOrg, Roles: []string{authz.RolePlatformAdmin}},
@@ -156,9 +157,10 @@ func newHarness(t *testing.T) *harness {
 			Service: svc, Store: st, Tokens: tokens, Sessions: sessions,
 			Allowlist: auth.ParseAllowlist("sam@tesserix.app"), PlatformOrgID: platformOrg,
 		}),
-		store:    st,
-		sessions: sessions,
-		identity: identity,
+		store:       st,
+		sessions:    sessions,
+		identity:    identity,
+		fixturePool: pool,
 	}
 }
 

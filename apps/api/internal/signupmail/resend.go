@@ -68,6 +68,10 @@ func (c *Client) Send(ctx context.Context, message Message) (string, error) {
 }
 
 func (c *Client) sendPayload(ctx context.Context, payload []byte) (string, error) {
+	return c.sendPayloadWithKey(ctx, payload, uuid.NewString())
+}
+
+func (c *Client) sendPayloadWithKey(ctx context.Context, payload []byte, idempotencyKey string) (string, error) {
 	file, err := os.Open(c.keyFile)
 	if err != nil {
 		return "", ErrUnavailable
@@ -84,8 +88,7 @@ func (c *Client) sendPayload(ctx context.Context, payload []byte) (string, error
 	}
 	request.Header.Set("Authorization", "Bearer "+key)
 	request.Header.Set("Content-Type", "application/json")
-	// A regenerated native code has a different payload and needs a new provider key.
-	request.Header.Set("Idempotency-Key", uuid.NewString())
+	request.Header.Set("Idempotency-Key", idempotencyKey)
 	response, err := c.http.Do(request)
 	if err != nil {
 		return "", ErrUnavailable
