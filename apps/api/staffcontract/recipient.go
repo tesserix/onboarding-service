@@ -15,6 +15,10 @@ import (
 
 var ErrInvalid = errors.New("invalid staff setup request")
 
+func ReceiptStates() []string {
+	return []string{"complete", "delivery_unresolved", "proof_unresolved", "already_verified", "consumed", "expired", "email_action_required", "password_action_required"}
+}
+
 type StaffInvitationReceipt struct {
 	State        string     `json:"state"`
 	InvitationID *uuid.UUID `json:"invitation_id,omitempty"`
@@ -23,7 +27,7 @@ type StaffInvitationReceipt struct {
 }
 
 func (v StaffInvitationReceipt) Validate() error {
-	if !slices.Contains([]string{"complete", "delivery_unresolved", "proof_unresolved", "already_verified", "consumed", "expired", "email_action_required", "password_action_required"}, v.State) {
+	if !slices.Contains(ReceiptStates(), v.State) {
 		return ErrInvalid
 	}
 	if v.InvitationID == nil {

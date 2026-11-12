@@ -62,6 +62,7 @@ func generate() ([]byte, error) {
 		}
 		b.WriteString("};\n\n")
 	}
+	b.WriteString(runtimeStaffSetup())
 	return []byte(strings.TrimRight(b.String(), "\n") + "\n"), nil
 }
 

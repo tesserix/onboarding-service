@@ -8,47 +8,19 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/tesserix/onboarding-service/api/internal/onboarding"
 	"github.com/tesserix/onboarding-service/api/internal/store"
+	"github.com/tesserix/onboarding-service/api/staffcontract"
 )
 
 func (d Deps) staffRecipient(action string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		keys := []string{"invitation_id", "ticket"}
-		switch action {
-		case "email":
-			keys = append(keys, "code")
-		case "password":
-			keys = append(keys, "code", "password")
-		case "resend":
-			keys = append(keys, "delivery_id")
-		}
 		body, err := io.ReadAll(http.MaxBytesReader(c.Writer, c.Request.Body, 4096))
 		if err != nil || c.Request.URL.RawQuery != "" || c.Request.URL.ForceQuery {
 			abort(c, http.StatusBadRequest, "invalid setup request")
 			return
 		}
-		fields, ok := staffIdentityFields(body, keys...)
-		if ok != nil {
-			abort(c, http.StatusBadRequest, "invalid setup request")
-			return
-		}
-		in := onboarding.StaffRecipientInput{Ticket: fields["ticket"], Code: fields["code"], Password: fields["password"]}
-		in.InvitationID, err = uuid.Parse(fields["invitation_id"])
-		if err != nil {
-			abort(c, http.StatusBadRequest, "invalid setup request")
-			return
-		}
-		if action == "resend" {
-			deliveryID, parseErr := uuid.Parse(fields["delivery_id"])
-			err = parseErr
-			in.DeliveryID = &deliveryID
-			if err != nil {
-				abort(c, http.StatusBadRequest, "invalid setup request")
-				return
-			}
-		}
-		if in.Validate(action) != nil {
+		in, decodeErr := staffcontract.DecodeRecipient(body, action)
+		if decodeErr != nil {
 			abort(c, http.StatusBadRequest, "invalid setup request")
 			return
 		}

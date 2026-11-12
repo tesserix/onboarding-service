@@ -2,6 +2,7 @@ package staffcontract
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -64,5 +65,27 @@ func TestStaffRecipientRejectsCredentialAuthorityAndMalformedCapabilities(t *tes
 	}
 	if (StaffInvitationReceipt{State: "complete"}).Validate() != nil || (StaffInvitationReceipt{State: "owner"}).Validate() == nil {
 		t.Fatal("receipt state validation failed")
+	}
+}
+
+func TestStaffRecipientDecoderRejectsDuplicateUnknownAndWrongPhaseFields(t *testing.T) {
+	in := StaffRecipientInput{InvitationID: uuid.Must(uuid.NewV7()), Ticket: base64.RawURLEncoding.EncodeToString(make([]byte, 32))}
+	body, err := json.Marshal(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = DecodeRecipient(body, "status"); err != nil {
+		t.Fatal("canonical status does not round trip")
+	}
+	for _, raw := range []string{
+		strings.TrimSuffix(string(body), "}") + `,"password":""}`,
+		strings.TrimSuffix(string(body), "}") + `,"ticket":"` + in.Ticket + `"}`,
+		strings.Replace(string(body), "ticket", "Ticket", 1),
+		string(body) + `{}`,
+		string(body) + string([]byte{255}),
+	} {
+		if _, err = DecodeRecipient([]byte(raw), "status"); err == nil {
+			t.Fatal("ambiguous or wrong-phase proof accepted")
+		}
 	}
 }
