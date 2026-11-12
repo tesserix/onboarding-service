@@ -68,7 +68,7 @@ func (c *Client) CreateStaffIdentity(ctx context.Context, in StaffIdentityInput)
 		"organizationId": in.OrganizationID, "userId": in.UserID, "username": in.Email,
 		"human": map[string]any{
 			"profile": map[string]string{"givenName": in.GivenName, "familyName": in.FamilyName},
-			"email":   map[string]string{"email": in.Email},
+			"email":   map[string]any{"email": in.Email, "returnCode": map[string]any{}},
 		},
 		"metadata": []map[string]string{{"key": "onboarding_staff_command", "value": base64.StdEncoding.EncodeToString([]byte(in.BindingNonce))}},
 	})
@@ -116,7 +116,7 @@ func staffCreationProof(raw []byte) (StaffIdentityCreated, error) {
 	for decoder.More() {
 		token, err := decoder.Token()
 		key, ok := token.(string)
-		if err != nil || !ok || (key != "id" && key != "creationDate") {
+		if err != nil || !ok || (key != "id" && key != "creationDate" && key != "emailCode") {
 			return empty, ErrStaffIdentityUncertain
 		}
 		if _, duplicate := fields[key]; duplicate {
@@ -129,14 +129,14 @@ func staffCreationProof(raw []byte) (StaffIdentityCreated, error) {
 		fields[key] = value
 	}
 	end, err := decoder.Token()
-	if err != nil || end != json.Delim('}') || len(fields) != 2 {
+	if err != nil || end != json.Delim('}') || len(fields) != 3 {
 		return empty, ErrStaffIdentityUncertain
 	}
 	if _, err := decoder.Token(); err != io.EOF {
 		return empty, ErrStaffIdentityUncertain
 	}
 	created, err := time.Parse(time.RFC3339Nano, fields["creationDate"])
-	if err != nil || created.IsZero() || !identitySourceID.MatchString(fields["id"]) {
+	if err != nil || created.IsZero() || !validSignupCode(fields["id"], fields["emailCode"]) {
 		return empty, ErrStaffIdentityUncertain
 	}
 	return StaffIdentityCreated{ID: fields["id"], CreatedAt: created}, nil

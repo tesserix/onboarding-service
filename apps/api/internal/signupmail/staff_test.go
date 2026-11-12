@@ -140,3 +140,33 @@ func TestStaffInvitationMailEscapesNamesAndRedactsDiagnostics(t *testing.T) {
 		}
 	}
 }
+
+func TestStaffInvitationMailPreservesOpaqueCodeCharacters(t *testing.T) {
+	var payload staffTestPayload
+	client := staffTestClient(t, transport(func(r *http.Request) (*http.Response, error) {
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		return staffTestResponse(), nil
+	}))
+	message := staffMessageFixture()
+	message.Code = "Opaque+Code/==#"
+	if _, err := client.SendStaff(context.Background(), message); err != nil {
+		t.Fatal(err)
+	}
+	start := strings.Index(payload.Text, "https://")
+	if start < 0 {
+		t.Fatal("missing link")
+	}
+	parsed, err := url.Parse(strings.Fields(payload.Text[start:])[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	fragment, err := url.ParseQuery(parsed.EscapedFragment())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fragment.Get("code") != message.Code {
+		t.Fatal("recipient would submit a changed native verification code")
+	}
+}

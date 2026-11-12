@@ -30,7 +30,7 @@ type StaffMessage struct {
 func (StaffMessage) String() string   { return "StaffMessage{redacted}" }
 func (StaffMessage) GoString() string { return "StaffMessage{redacted}" }
 
-var staffBody = template.Must(template.New("staff").Parse(`<h1>{{.Heading}}</h1><p>Hello {{.Name}},</p><p>You have been invited to join {{.Workspace}} on Helivanta.</p><p><a href="{{.Link}}">{{.Heading}}</a></p><p>This link expires at {{.Expiry}}. Ask your hospital administrator for another link if it expires.</p><p>Your hospital administrator will confirm your staff access after account setup.</p>`))
+var staffBody = template.Must(template.New("staff").Parse(`<h1>{{.Heading}}</h1><p>Hello {{.Name}},</p><p>You have been invited to join {{.Workspace}} on Helivanta.</p><p><a href="{{.Link}}">{{.Heading}}</a></p><p>This link expires at {{.Expiry}}. Ask your organisation administrator for another link if it expires.</p><p>Your organisation administrator will confirm your staff access after account setup.</p>`))
 
 func (c *Client) SendStaff(ctx context.Context, message StaffMessage) (string, error) {
 	email, err := mail.ParseAddress(message.Email)
@@ -46,14 +46,14 @@ func (c *Client) SendStaff(ctx context.Context, message StaffMessage) (string, e
 	default:
 		return "", ErrUnavailable
 	}
-	link := url.URL{Scheme: "https", Host: "helivanta.app", Path: "/staff/accept", Fragment: url.Values{"invitation": {message.InvitationID.String()}, "ticket": {message.Ticket}, "phase": {message.Phase}, "code": {message.Code}}.Encode()}
+	link := "https://helivanta.app/staff/accept#" + url.Values{"invitation": {message.InvitationID.String()}, "ticket": {message.Ticket}, "phase": {message.Phase}, "code": {message.Code}}.Encode()
 	expiry := message.ExpiresAt.UTC().Format("02 Jan 2006 15:04 MST")
-	view := struct{ Heading, Name, Workspace, Link, Expiry string }{heading, message.Name, message.WorkspaceName, link.String(), expiry}
+	view := struct{ Heading, Name, Workspace, Link, Expiry string }{heading, message.Name, message.WorkspaceName, link, expiry}
 	var html bytes.Buffer
 	if err := staffBody.Execute(&html, view); err != nil {
 		return "", ErrUnavailable
 	}
-	text := heading + "\n\nHello " + message.Name + ",\n\nYou have been invited to join " + message.WorkspaceName + " on Helivanta.\n\n" + link.String() + "\n\nThis link expires at " + expiry + ". Ask your hospital administrator for another link if it expires.\n\nYour hospital administrator will confirm your staff access after account setup."
+	text := heading + "\n\nHello " + message.Name + ",\n\nYou have been invited to join " + message.WorkspaceName + " on Helivanta.\n\n" + link + "\n\nThis link expires at " + expiry + ". Ask your organisation administrator for another link if it expires.\n\nYour organisation administrator will confirm your staff access after account setup."
 	payload, err := json.Marshal(map[string]any{"from": "Helivanta <" + c.from + ">", "to": []string{message.Email}, "subject": heading + " — Helivanta", "html": html.String(), "text": text})
 	if err != nil {
 		return "", ErrUnavailable

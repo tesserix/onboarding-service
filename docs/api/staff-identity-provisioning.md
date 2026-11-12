@@ -268,6 +268,25 @@ command rather than fabricated success. Observation may later retain only an
 exact matching creation. This request never verifies contact, sets a password,
 grants a role or activates membership.
 
+### Controlled native email delivery
+
+The unpublished v4.15.3 creation adapter explicitly supplies
+`human.email.returnCode: {}`. Zitadel otherwise sends a default verification
+email when no verification option is specified. The adapter validates the native
+`emailCode` response along with the ID and creation date, discards that code and
+retains only creation facts. It never sets `isVerified`, requests native email
+sending or exposes that returned credential in the product receipt. Unknown,
+duplicate, absent or malformed response fields retain an uncertain result.
+
+This keeps account creation separate from a later metered Helivanta invitation.
+The initial returned code is not retained for retry or used as contact proof.
+The invitation workflow and its recipient UI must exist before product-controlled
+mail is dispatched. Native source references:
+[v4.15.3 SetHumanEmail](https://github.com/zitadel/zitadel/blob/v4.15.3/proto/zitadel/user/v2/email.proto)
+and [CreateUserResponse](https://github.com/zitadel/zitadel/blob/v4.15.3/proto/zitadel/user/v2/user_service.proto).
+Earlier actual-provider creation evidence does not establish acceptance of this
+new explicit-return-code path; repeat native/consumer acceptance before rollout.
+
 ## Protected state and fresh observation
 
 `GET /v1/orgs/{tenant}/staff-identities/{command}?actor_subject={initiator}`

@@ -743,3 +743,21 @@ transport capability only: no retained invitation ledger, public recipient actio
 HMS consumer, active account, delivered production invitation or effective access
 is proved by it. Do not dispatch these links until their recipient API/UI and
 current-owner/source checks are deployed and the owning migration is approved.
+
+## Controlled creation and opaque-code encoding — 2026-11-13
+
+The pinned Native SetHumanEmail contract revealed an implicit default email send
+when verification is omitted. The draft creation request now explicitly asks for
+a returned code; that field is validated and discarded, while the retained receipt
+still contains only ID and creation time. The initial source test reproduced both
+the unwanted request shape and rejection of the new native response, then passed.
+Negative cases retain unknown/duplicate field, absent/empty/control/non-string
+code, wrong account, malformed timestamp, oversized response and one-dispatch
+checks. A creation receipt's JSON and diagnostic rendering exclude the code.
+
+A separate regression reproduced double encoding of reserved opaque code
+characters in the new Staff email URL. Constructing the fixed acceptance URL with
+one URLSearchParams-compatible fragment encoding preserves the exact code. The
+sender now addresses organisation administrators for both hospital and independent
+pharmacy workspaces. Sender/provider race tests pass. This remains draft transport
+and adapter work, not a delivered production invitation or recipient acceptance.

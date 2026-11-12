@@ -36,15 +36,15 @@ func TestCreateStaffIdentityCreatesOnlyAnUnverifiedRoleFreeHuman(t *testing.T) {
 			t.Error(err)
 		}
 		var fields map[string]json.RawMessage
-		if err := json.Unmarshal(body["human"], &fields); err != nil || len(fields) != 2 || len(human.Email) != 1 || string(human.Email["email"]) != `"synthetic@example.invalid"` || human.Profile["givenName"] != "Synthetic" || human.Profile["familyName"] != "Staff" {
-			t.Error("creation supplied credentials, verification, or unintended human fields")
+		if err := json.Unmarshal(body["human"], &fields); err != nil || len(fields) != 2 || len(human.Email) != 2 || string(human.Email["returnCode"]) != `{}` || string(human.Email["email"]) != `"synthetic@example.invalid"` || human.Profile["givenName"] != "Synthetic" || human.Profile["familyName"] != "Staff" {
+			t.Error("creation must return rather than send an unverified email code")
 		}
 		var metadata []struct{ Key, Value string }
 		if err := json.Unmarshal(body["metadata"], &metadata); err != nil || len(metadata) != 1 || metadata[0].Key != "onboarding_staff_command" || metadata[0].Value != base64.StdEncoding.EncodeToString([]byte("TEST-binding-nonce")) {
 			t.Error("creation lost its durable-command correlation")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"staff-test-account","creationDate":"2026-10-30T10:00:00Z"}`))
+		_, _ = w.Write([]byte(`{"id":"staff-test-account","creationDate":"2026-10-30T10:00:00Z","emailCode":"SYNTHETIC_CODE"}`))
 	}))
 	t.Cleanup(server.Close)
 	client := New(server.URL, StaticToken("TEST-source-token"), "platform-1", nil)
@@ -55,6 +55,10 @@ func TestCreateStaffIdentityCreatesOnlyAnUnverifiedRoleFreeHuman(t *testing.T) {
 	})
 	if err != nil || got.ID != "staff-test-account" || !got.CreatedAt.Equal(time.Date(2026, 10, 30, 10, 0, 0, 0, time.UTC)) || calls.Load() != 1 {
 		t.Fatalf("role-free creation result: id=%q calls=%d err=%v", got.ID, calls.Load(), err)
+	}
+	encoded, _ := json.Marshal(got)
+	if strings.Contains(string(encoded), "SYNTHETIC_CODE") || strings.Contains(fmt.Sprintf("%#v", got), "SYNTHETIC_CODE") {
+		t.Fatal("creation receipt exposed the returned native code")
 	}
 }
 
@@ -67,11 +71,16 @@ func TestCreateStaffIdentityNeverRetriesOrDisclosesUncertainProviderResults(t *t
 		{"conflict", 409, `PRIVATE_EMAIL PRIVATE_CODE`},
 		{"unavailable", 503, `PRIVATE_EMAIL PRIVATE_CODE`},
 		{"throttled", 429, `PRIVATE_EMAIL PRIVATE_CODE`},
-		{"wrong ID", 200, `{"id":"other-account","creationDate":"2026-10-30T10:00:00Z"}`},
-		{"missing timestamp", 200, `{"id":"staff-test-account"}`},
-		{"invalid timestamp", 200, `{"id":"staff-test-account","creationDate":"unknown"}`},
-		{"unexpected code", 200, `{"id":"staff-test-account","creationDate":"2026-10-30T10:00:00Z","emailCode":"PRIVATE_CODE"}`},
-		{"second document", 200, `{"id":"staff-test-account","creationDate":"2026-10-30T10:00:00Z"}{}`},
+		{"wrong ID", 200, `{"id":"other-account","creationDate":"2026-10-30T10:00:00Z","emailCode":"SYNTHETIC_CODE"}`},
+		{"missing timestamp", 200, `{"id":"staff-test-account","emailCode":"SYNTHETIC_CODE"}`},
+		{"invalid timestamp", 200, `{"id":"staff-test-account","creationDate":"unknown","emailCode":"SYNTHETIC_CODE"}`},
+		{"unexpected phone code", 200, `{"id":"staff-test-account","creationDate":"2026-10-30T10:00:00Z","emailCode":"SYNTHETIC_CODE","phoneCode":"PRIVATE_CODE"}`},
+		{"unexpected password", 200, `{"id":"staff-test-account","creationDate":"2026-10-30T10:00:00Z","emailCode":"SYNTHETIC_CODE","password":"PRIVATE_CODE"}`},
+		{"missing returned code", 200, `{"id":"staff-test-account","creationDate":"2026-10-30T10:00:00Z"}`},
+		{"empty returned code", 200, `{"id":"staff-test-account","creationDate":"2026-10-30T10:00:00Z","emailCode":""}`},
+		{"non-string code", 200, `{"id":"staff-test-account","creationDate":"2026-10-30T10:00:00Z","emailCode":123}`},
+		{"control code", 200, `{"id":"staff-test-account","creationDate":"2026-10-30T10:00:00Z","emailCode":"bad\ncode"}`},
+		{"second document", 200, `{"id":"staff-test-account","creationDate":"2026-10-30T10:00:00Z","emailCode":"SYNTHETIC_CODE"}{}`},
 		{"oversized", 200, strings.Repeat(" ", identityReadLimit+1)},
 		{"empty", 200, ""},
 		{"null", 200, "null"},
@@ -122,8 +131,9 @@ func TestCreateStaffIdentityRejectsControlCharactersBeforeDispatch(t *testing.T)
 
 func TestCreateStaffIdentityRejectsAmbiguousCreationProof(t *testing.T) {
 	for _, body := range []string{
-		`{"id":"other-account","id":"staff-test-account","creationDate":"2026-10-30T10:00:00Z"}`,
-		`{"id":"staff-test-account","creationDate":"2026-10-30T10:00:00Z","creationDate":"2026-10-30T11:00:00Z"}`,
+		`{"id":"other-account","id":"staff-test-account","creationDate":"2026-10-30T10:00:00Z","emailCode":"SYNTHETIC_CODE"}`,
+		`{"id":"staff-test-account","creationDate":"2026-10-30T10:00:00Z","creationDate":"2026-10-30T11:00:00Z","emailCode":"SYNTHETIC_CODE"}`,
+		`{"id":"staff-test-account","creationDate":"2026-10-30T10:00:00Z","emailCode":"CODE1","emailCode":"CODE2"}`,
 	} {
 		t.Run(body, func(t *testing.T) {
 			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
