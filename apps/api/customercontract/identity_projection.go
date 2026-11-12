@@ -9,13 +9,17 @@ import (
 
 // IdentityProjectionInput is accepted only from the verified product workload.
 type IdentityProjectionInput struct {
-	Purpose   string `json:"purpose" required:"true" enum:"status,membership,profile"`
-	TenantID  string `json:"tenantId" format:"uuid" required:"true"`
-	Subject   string `json:"subject" required:"true" pattern:"^[A-Za-z0-9_-]{1,200}$"`
-	RequestID string `json:"requestId" format:"uuid" required:"true"`
+	Purpose           string `json:"purpose" required:"true" enum:"status,membership,profile"`
+	TenantID          string `json:"tenantId" format:"uuid" required:"true"`
+	Subject           string `json:"subject" required:"true" pattern:"^[A-Za-z0-9_-]{1,200}$"`
+	RequestID         string `json:"requestId" format:"uuid" required:"true"`
+	IncludeTenantName bool   `json:"includeTenantName,omitempty"`
 }
 
 func (v IdentityProjectionInput) Validate() error {
+	if v.IncludeTenantName && v.Purpose != "profile" {
+		return ErrInvalid
+	}
 	if v.Purpose != "status" && v.Purpose != "membership" && v.Purpose != "profile" {
 		return ErrInvalid
 	}
@@ -49,6 +53,7 @@ type IdentityProjection struct {
 	State          string           `json:"state" required:"true" enum:"active,inactive"`
 	Admission      string           `json:"admission" required:"true" enum:"unassessed,eligible,ineligible"`
 	Profile        *IdentityProfile `json:"profile,omitempty"`
+	TenantName     string           `json:"tenantName,omitempty" max:"200" clean:"true"`
 }
 
 func (v IdentityProjection) Validate() error {
@@ -71,6 +76,9 @@ func (v IdentityProjection) Validate() error {
 		return ErrInvalid
 	}
 	if v.Profile != nil && (v.Purpose != "profile" || v.State != "active" || v.Profile.Validate() != nil) {
+		return ErrInvalid
+	}
+	if v.TenantName != "" && (v.Purpose != "profile" || v.State != "active" || v.Profile == nil || !utf8.ValidString(v.TenantName) || utf8.RuneCountInString(v.TenantName) > 200 || strings.TrimSpace(v.TenantName) != v.TenantName || strings.ContainsFunc(v.TenantName, unicode.IsControl)) {
 		return ErrInvalid
 	}
 	return nil

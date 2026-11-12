@@ -3,6 +3,7 @@ package onboarding
 import (
 	"context"
 	"encoding/json"
+	"github.com/google/uuid"
 	"time"
 
 	"github.com/tesserix/onboarding-service/api/customercontract"
@@ -26,6 +27,20 @@ func (s *Service) CustomerIdentityProjection(ctx context.Context, in customercon
 	result, err := s.signupIdentity.IdentityProjection(ctx, org, in.Subject, in.Purpose)
 	if err != nil || result.Validate() != nil || result.TenantID != in.TenantID || result.Subject != in.Subject || result.OrganizationID != org || result.Purpose != in.Purpose {
 		return empty, ErrUnavailable
+	}
+	if result.TenantName != "" {
+		return empty, ErrUnavailable
+	}
+	if in.IncludeTenantName && result.Profile != nil {
+		tenant, _ := uuid.Parse(in.TenantID)
+		customer, err := s.store.Organization(ctx, tenant)
+		if err != nil || customer.State != "active" || customer.ZitadelOrgID != org || customer.CreatedByProduct != "helivanta" || customer.Name == "" {
+			return empty, ErrUnavailable
+		}
+		result.TenantName = customer.Name
+		if result.Validate() != nil {
+			return empty, ErrUnavailable
+		}
 	}
 	detail, err := json.Marshal(struct {
 		Purpose string `json:"purpose"`
