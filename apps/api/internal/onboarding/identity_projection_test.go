@@ -72,6 +72,26 @@ func TestCustomerIdentityProjectionScopesAdmissionAndAuditsBeforeDisclosure(t *t
 	if err = auditPool.QueryRow(t.Context(), `SELECT count(*) FROM audit_events WHERE action='customer.identity.read' AND request_id=$1 AND target='fresh-staff' AND detail::jsonb->>'purpose'='membership'`, in.RequestID).Scan(&count); err != nil || count != 1 {
 		t.Fatal("projection was disclosed without audit", err, count)
 	}
+	in.Purpose = "profile"
+	in.RequestID = uuid.NewString()
+	proof, err = svc.CustomerIdentityProjection(t.Context(), in)
+	if err != nil || proof.Profile == nil || proof.TenantName != "" {
+		t.Fatal("legacy profile response changed", err)
+	}
+	in.IncludeTenantName = true
+	in.RequestID = uuid.NewString()
+	proof, err = svc.CustomerIdentityProjection(t.Context(), in)
+	if err != nil || proof.Profile == nil || proof.TenantName != "TEST" {
+		t.Fatal("current customer's name was not projected", err)
+	}
+	foreign.Store(true)
+	in.RequestID = uuid.NewString()
+	proof, err = svc.CustomerIdentityProjection(t.Context(), in)
+	if err != nil || proof.Profile != nil || proof.TenantName != "" {
+		t.Fatal("foreign profile disclosed tenant name", err)
+	}
+	in.Purpose = "membership"
+	in.IncludeTenantName = false
 	foreign.Store(true)
 	in.RequestID = uuid.NewString()
 	proof, err = svc.CustomerIdentityProjection(t.Context(), in)
