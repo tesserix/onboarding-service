@@ -75,7 +75,16 @@ func (identity) VerifyOrganization(_ context.Context, org, tenant, project strin
 func New(t testing.TB, dsn, schemaFile string, tenants ...uuid.UUID) *Fixture {
 	t.Helper()
 	cfg, err := pgxpool.ParseConfig(dsn)
-	if err != nil || cfg.ConnConfig.Host != "127.0.0.1" || (cfg.ConnConfig.Database != "app_test" && cfg.ConnConfig.Database != "onboarding_fixture") {
+	if err != nil {
+		t.Fatal("staff owner fixture database configuration invalid")
+	}
+	database := cfg.ConnConfig.Database
+	allowedDatabase := database == "app_test" || database == "onboarding_fixture"
+	if strings.HasPrefix(database, "hms_test_") {
+		_, numberErr := strconv.ParseUint(strings.TrimPrefix(database, "hms_test_"), 10, 64)
+		allowedDatabase = numberErr == nil
+	}
+	if (cfg.ConnConfig.Host != "127.0.0.1" && cfg.ConnConfig.Host != "localhost") || !allowedDatabase {
 		t.Fatal("staff owner fixture requires an isolated loopback test database")
 	}
 	owner, err := pgxpool.NewWithConfig(t.Context(), cfg)
@@ -117,7 +126,7 @@ func New(t testing.TB, dsn, schemaFile string, tenants ...uuid.UUID) *Fixture {
 		t.Fatal("fixture product unavailable")
 	}
 	for _, tenant := range tenants {
-		if _, err = st.CreateOrganization(t.Context(), store.Organization{ID: tenant, ZitadelOrgID: "test-org-" + tenant.String(), Name: "Synthetic fixture tenant", CreatedByProduct: "helivanta"}); err != nil {
+		if _, err = st.CreateOrganization(t.Context(), store.Organization{ID: tenant, ZitadelOrgID: "helivanta-" + tenant.String(), Name: "Synthetic fixture tenant", CreatedByProduct: "helivanta"}); err != nil {
 			t.Fatal("fixture tenant unavailable")
 		}
 		if err = st.Grant(t.Context(), tenant, "helivanta", nil); err != nil {
@@ -229,7 +238,7 @@ func (n *nativeProvider) ObserveStaffIdentity(_ context.Context, in zitadel.Staf
 		return zitadel.StaffIdentityObservation{}, zitadel.ErrIdentityUnavailable
 	}
 	state := "initial"
-	if u.verified {
+	if u.verified && u.password {
 		state = "active"
 	}
 	return zitadel.StaffIdentityObservation{UserID: in.UserID, OrganizationID: in.OrganizationID, State: state, EmailVerified: u.verified, CreatedAt: u.born, ObservedAt: time.Now().UTC(), UserRevision: "101", MetadataRevision: "102"}, nil
@@ -238,7 +247,7 @@ func (n *nativeProvider) serve(w http.ResponseWriter, r *http.Request) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	pieces := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	if len(pieces) < 4 || pieces[0] != "v2" || pieces[1] != "users" {
+	if len(pieces) < 3 || pieces[0] != "v2" || pieces[1] != "users" {
 		http.NotFound(w, r)
 		return
 	}
@@ -248,6 +257,18 @@ func (n *nativeProvider) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+	if r.Method == "GET" && len(pieces) == 3 {
+		state := "USER_STATE_INITIAL"
+		if u.verified && u.password {
+			state = "USER_STATE_ACTIVE"
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"user": map[string]any{
+			"userId": u.input.UserID, "state": state,
+			"details": map[string]string{"resourceOwner": u.input.OrganizationID},
+			"human":   map[string]any{"email": map[string]any{"email": u.input.Email, "isVerified": u.verified}, "profile": map[string]string{"displayName": u.input.GivenName + " " + u.input.FamilyName}},
+		}})
+		return
+	}
 	switch {
 	case r.Method == "POST" && (strings.HasSuffix(r.URL.Path, "/email/send") || strings.HasSuffix(r.URL.Path, "/password_reset")):
 		_ = json.NewEncoder(w).Encode(map[string]string{"verificationCode": nativeCode})

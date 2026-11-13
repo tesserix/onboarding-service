@@ -111,7 +111,9 @@ func (c *Client) request(ctx context.Context, s Scope, method, suffix string, in
 	switch response.StatusCode {
 	case 404:
 		return ErrNotFound
-	case 400, 409:
+	case 400:
+		return ErrInvalid
+	case 409:
 		return ErrConflict
 	case 429:
 		n, err := strconv.Atoi(response.Header.Get("Retry-After"))
