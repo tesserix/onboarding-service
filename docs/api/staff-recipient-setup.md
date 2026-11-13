@@ -68,3 +68,21 @@ cache eligibility. `X-Expected-Product-Key` is an additional rejection guard: th
 server compares it to the verified product principal before preparing a command.
 It supplies no identity or authority. Existing clients may omit it. Private
 provider bodies and token-source errors are never returned to callers.
+
+## Product initiation contracts and integration tests
+
+The public Staff contract now exports strict contact decoding, generated creation
+and observation receipt schemas, and a browser contact schema that omits
+actor_subject. The product binds that field from the verified session.
+Unknown authority fields, duplicate keys, case aliases, non-string values,
+trailing documents and bodies over 4096 bytes are refused before delegation.
+The existing identity command remains the durable source of frozen input and
+exact-actor recovery; consumers must retain their UUIDv7 command on uncertain
+responses and must not replace it to retry.
+
+The staffclienttest package provides the actual owner API, ledger and least-privilege
+application role against a checked canonical SQL file. It accepts only named
+loopback test databases, creates a disposable isolated schema, and simulates only
+native Zitadel and email delivery. Production does not import it. CI retains
+the checked SQL path as ONBOARDING_TEST_SCHEMA for cross-owner integration
+tests. A real database is required; the fixture never starts a local database.

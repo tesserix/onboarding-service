@@ -13,7 +13,7 @@ func TestStaffContractsFollowCanonicalJSONNamesAndOptionality(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(output)
-	for _, expected := range []string{"export type StaffIdentityRecoveryRequestReceipt = {", "request_id: string;", "requested_action: string;", "decision?: StaffIdentityRecoveryDecisionReceipt;", "successor_command_id?: string;", "observed_at: string;", "schema_version: number;"} {
+	for _, expected := range []string{"export type StaffIdentityCreateInput = {", "export type StaffIdentityObservationReceipt = {", "StaffContactInputContract = StaffIdentityCreateInputContract.omit({actor_subject: true})", "export type StaffIdentityRecoveryRequestReceipt = {", "request_id: string;", "requested_action: string;", "decision?: StaffIdentityRecoveryDecisionReceipt;", "successor_command_id?: string;", "observed_at: string;", "schema_version: number;"} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("missing canonical field %s", expected)
 		}
