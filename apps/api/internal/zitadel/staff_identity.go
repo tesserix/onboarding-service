@@ -65,7 +65,7 @@ func (c *Client) CreateStaffIdentity(ctx context.Context, in StaffIdentityInput)
 		return empty, ErrIdentityUnavailable
 	}
 	raw, err := json.Marshal(map[string]any{
-		"organizationId": in.OrganizationID, "userId": in.UserID, "username": in.Email,
+		"organizationId": in.OrganizationID, "userId": in.UserID, "username": in.UserID,
 		"human": map[string]any{
 			"profile": map[string]string{"givenName": in.GivenName, "familyName": in.FamilyName},
 			"email":   map[string]any{"email": in.Email, "returnCode": map[string]any{}},

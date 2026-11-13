@@ -25,7 +25,7 @@ func TestCreateStaffIdentityCreatesOnlyAnUnverifiedRoleFreeHuman(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Error(err)
 		}
-		if len(body) != 5 || string(body["organizationId"]) != `"org-1"` || string(body["userId"]) != `"staff-test-account"` || string(body["username"]) != `"synthetic@example.invalid"` {
+		if len(body) != 5 || string(body["organizationId"]) != `"org-1"` || string(body["userId"]) != `"staff-test-account"` || string(body["username"]) != `"staff-test-account"` {
 			t.Error("creation facts were not bound to the prepared command")
 		}
 		var human struct {
@@ -215,5 +215,47 @@ func TestStaffIdentityNamesUseProviderCharacterLimits(t *testing.T) {
 	in.GivenName += "अ"
 	if err := in.Validate(); !errors.Is(err, ErrStaffIdentityInvalid) {
 		t.Fatal("name above the provider character limit was accepted")
+	}
+}
+
+func TestCreateStaffIdentityUsesSeparateUsernamesForOneEmailAcrossOrganizations(t *testing.T) {
+	seen := map[string]bool{}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			OrganizationID string `json:"organizationId"`
+			UserID         string `json:"userId"`
+			Username       string `json:"username"`
+			Human          struct {
+				Profile map[string]string `json:"profile"`
+				Email   struct {
+					Address string `json:"email"`
+				} `json:"email"`
+			} `json:"human"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if body.Username != body.UserID || body.Username == body.Human.Email.Address || seen[body.Username] {
+			t.Error("separate tenant accounts must use their reserved unique native id as username")
+		}
+		seen[body.Username] = true
+		if body.Human.Email.Address != "shared-synthetic@example.invalid" || body.Human.Profile["givenName"] != "Synthetic" || body.Human.Profile["familyName"] != "Staff" || r.Header.Get("x-zitadel-orgid") != body.OrganizationID {
+			t.Error("username uniqueness must preserve contact, person name and organization scope")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": body.UserID, "creationDate": "2026-11-13T00:00:00Z", "emailCode": "SYNTHETIC_CODE"})
+	}))
+	defer server.Close()
+	client := New(server.URL, StaticToken("TEST-source-token"), "platform-1", nil)
+	client.http = server.Client()
+	for _, tenant := range []string{"first", "second"} {
+		in := StaffIdentityInput{OrganizationID: "org-" + tenant, UserID: "staff-" + tenant, Email: "shared-synthetic@example.invalid", GivenName: "Synthetic", FamilyName: "Staff", BindingNonce: "TEST-binding-nonce"}
+		created, err := client.CreateStaffIdentity(context.Background(), in)
+		if err != nil || created.ID != in.UserID {
+			t.Fatalf("separate account creation: %v", err)
+		}
+	}
+	if len(seen) != 2 {
+		t.Fatalf("got %d separate usernames", len(seen))
 	}
 }

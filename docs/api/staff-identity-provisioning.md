@@ -465,3 +465,20 @@ exact generated file with owner revision and SHA-256 provenance; they must not
 edit it or maintain independent wire-model copies. This artifact describes
 receipt shapes, not additional permissions or a release approval. Runtime
 scope/identity and source-proof validation remain authoritative.
+
+## Native username and email login
+
+New Staff identities use their owner-reserved immutable native user ID as the
+internal username. The given/family name and email remain the supplied person
+contact. A shared mailbox may therefore belong to separate accounts in different
+organizations without competing for a global username. The existing per-organization
+contact reservation still prevents duplicate adoption within one organization.
+This does not migrate existing users, change their names/passwords, link accounts
+or grant membership. Helivanta's tenant-bound login resolves the selected
+organization and email to a native user ID, then verifies that exact subject;
+mailbox discovery and native usernames are not authorization.
+
+The adapter regression checks serialized native requests for two organizations
+sharing one synthetic email, distinct reserved IDs and preserved contact/profile
+fields. It simulates Zitadel; live separate-account signup/login remains an
+acceptance gate.
