@@ -18,3 +18,7 @@ END $$;
 SQL
 PGPASSWORD=local psql -h 127.0.0.1 -p "$port" -U local -d app_test -v ON_ERROR_STOP=1 -f "$schema" >&2
 printf 'ONBOARDING_TEST_DSN=postgres://local:local@127.0.0.1:%s/app_test\n' "$port"
+
+retained_schema=$(mktemp "${RUNNER_TEMP:-/tmp}/onboarding-owner-schema.XXXXXX.sql")
+cp "$schema" "$retained_schema"
+printf 'ONBOARDING_TEST_SCHEMA=%s\n' "$retained_schema"
