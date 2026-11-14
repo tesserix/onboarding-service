@@ -3,6 +3,7 @@ package onboarding
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -41,44 +42,58 @@ func (s *Service) CustomerLoginTarget(ctx context.Context, in customercontract.L
 }
 
 func (s *Service) customerIdentityScope(ctx context.Context, tenantID string) (string, error) {
-	tenant, _ := uuid.Parse(tenantID)
+	binding, err := s.verifiedCustomerIdentity(ctx, tenantID, true)
+	return binding.organization.ZitadelOrgID, err
+}
+
+type customerIdentityBinding struct {
+	organization store.Organization
+	product      store.Product
+}
+
+func (s *Service) verifiedCustomerIdentity(ctx context.Context, tenantID string, tenantOwned bool) (customerIdentityBinding, error) {
+	var empty customerIdentityBinding
+	tenant, err := uuid.Parse(tenantID)
+	if err != nil || tenant == uuid.Nil || tenant.String() != tenantID {
+		return empty, ErrNotFound
+	}
 	org, err := s.store.Organization(ctx, tenant)
 	if errors.Is(err, store.ErrNotFound) {
-		return "", ErrNotFound
+		return empty, ErrNotFound
 	}
 	if err != nil {
-		return "", ErrUnavailable
+		return empty, ErrUnavailable
 	}
-	if org.State != "active" || org.CreatedByProduct != "helivanta" || org.ZitadelOrgID != "helivanta-"+tenantID {
-		return "", ErrNotFound
+	if org.State != "active" || !enrolSourceID.MatchString(org.ZitadelOrgID) {
+		return empty, ErrNotFound
+	}
+	if tenantOwned && (org.CreatedByProduct != "helivanta" || org.ZitadelOrgID != "helivanta-"+tenantID) {
+		return empty, ErrNotFound
+	}
+	if strings.HasPrefix(org.ZitadelOrgID, "helivanta-") && org.ZitadelOrgID != "helivanta-"+tenantID {
+		return empty, ErrNotFound
 	}
 	product, err := s.store.Product(ctx, "helivanta")
 	if err != nil {
-		return "", ErrUnavailable
+		return empty, ErrUnavailable
 	}
-	if product.State != "active" {
-		return "", ErrNotFound
+	if product.State != "active" || product.Identity != store.IdentityZitadel {
+		return empty, ErrNotFound
 	}
-	grants, err := s.store.Grants(ctx, tenant)
+	enrolled, err := s.store.Entitled(ctx, tenantID, "helivanta")
 	if err != nil {
-		return "", ErrUnavailable
-	}
-	enrolled := false
-	for _, grant := range grants {
-		if grant.ProductKey == "helivanta" && grant.RevokedAt == nil {
-			enrolled = true
-		}
+		return empty, ErrUnavailable
 	}
 	if !enrolled {
-		return "", ErrNotFound
+		return empty, ErrNotFound
 	}
+	started := time.Now().UTC()
 	proof, err := s.idp.VerifyOrganization(ctx, org.ZitadelOrgID, tenantID, product.ZitadelProjectID)
-	if err != nil {
-		return "", ErrUnavailable
+	if err != nil || !currentIdentityProof(proof, org, product, started, time.Now().UTC()) {
+		return empty, ErrUnavailable
 	}
-	if proof.State != "active" || proof.OrganizationID != org.ZitadelOrgID || proof.TenantID != tenantID || proof.ProjectID != product.ZitadelProjectID {
-		return "", ErrNotFound
+	if proof.State != "active" {
+		return empty, ErrNotFound
 	}
-
-	return org.ZitadelOrgID, nil
+	return customerIdentityBinding{organization: org, product: product}, nil
 }
