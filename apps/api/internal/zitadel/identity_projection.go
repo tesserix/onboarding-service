@@ -148,6 +148,32 @@ func nativeIdentityProjection(raw json.RawMessage, out customercontract.Identity
 	if owner != out.OrganizationID {
 		return out, nil
 	}
+	if out.Purpose == "assignment_candidate" {
+		profile, present := person["profile"]
+		if !present {
+			return out, nil
+		}
+		values, err := identityObject(profile, "displayName")
+		if err != nil {
+			return fail()
+		}
+		value, present := values["displayName"]
+		if !present {
+			return out, nil
+		}
+		var name string
+		if string(value) == "null" || json.Unmarshal(value, &name) != nil {
+			return fail()
+		}
+		if name == "" {
+			return out, nil
+		}
+		out.Candidate = &customercontract.AssignmentCandidateIdentity{DisplayName: name, Email: address}
+		if out.Candidate.Validate() != nil {
+			return fail()
+		}
+		return out, nil
+	}
 	out.Admission = "eligible"
 	return out, nil
 }

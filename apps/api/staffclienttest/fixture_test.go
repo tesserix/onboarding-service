@@ -92,13 +92,18 @@ func TestRealOwnerFixtureCreatesOnlyOnceAndCompletesPrivateRecipientSetup(t *tes
 		}
 		return receipt.State
 	}
-	if call("email") != "already_verified" || call("email") != "already_verified" {
+	firstEmail := call("email")
+	replayedEmail := call("email")
+	if firstEmail != "already_verified" || replayedEmail != "already_verified" {
 		t.Fatal("verification did not become redundant")
 	}
 	if call("resend") != "password_action_required" {
 		t.Fatal("verified contact did not progress to private password setup")
 	}
-	if call("password") != "complete" || call("password") != "complete" || call("resend") != "complete" {
+	firstPassword := call("password")
+	replayedPassword := call("password")
+	completedResend := call("resend")
+	if firstPassword != "complete" || replayedPassword != "complete" || completedResend != "complete" {
 		t.Fatal("password setup did not complete idempotently")
 	}
 	if f.Mails.Load() != 2 || f.Creates.Load() != 1 {
