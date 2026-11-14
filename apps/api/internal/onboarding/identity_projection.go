@@ -28,6 +28,15 @@ func (s *Service) CustomerIdentityProjection(ctx context.Context, in customercon
 	if err != nil || result.Validate() != nil || result.TenantID != in.TenantID || result.Subject != in.Subject || result.OrganizationID != org || result.Purpose != in.Purpose {
 		return empty, ErrUnavailable
 	}
+	if in.Purpose == "assignment_candidate" {
+		currentOrg, err := s.customerIdentityScope(ctx, in.TenantID)
+		if err != nil {
+			return empty, err
+		}
+		if currentOrg != org {
+			return empty, ErrUnavailable
+		}
+	}
 	if result.TenantName != "" {
 		return empty, ErrUnavailable
 	}

@@ -72,6 +72,23 @@ func TestCustomerIdentityProjectionScopesAdmissionAndAuditsBeforeDisclosure(t *t
 	if err = auditPool.QueryRow(t.Context(), `SELECT count(*) FROM audit_events WHERE action='customer.identity.read' AND request_id=$1 AND target='fresh-staff' AND detail::jsonb->>'purpose'='membership'`, in.RequestID).Scan(&count); err != nil || count != 1 {
 		t.Fatal("projection was disclosed without audit", err, count)
 	}
+	in.Purpose = "assignment_candidate"
+	in.RequestID = uuid.NewString()
+	candidate, err := svc.CustomerIdentityProjection(t.Context(), in)
+	if err != nil || candidate.Candidate == nil || candidate.Profile != nil || candidate.TenantName != "" || candidate.Admission != "unassessed" || candidate.Candidate.DisplayName != "Synthetic Staff" || candidate.Candidate.Email != "synthetic@example.test" {
+		t.Fatal("owned assignment identity selection failed", err)
+	}
+	count = 0
+	if err = auditPool.QueryRow(t.Context(), `SELECT count(*) FROM audit_events WHERE action='customer.identity.read' AND request_id=$1 AND target='fresh-staff' AND detail::jsonb->>'purpose'='assignment_candidate'`, in.RequestID).Scan(&count); err != nil || count != 1 {
+		t.Fatal("candidate identity was disclosed without its sensitive-read audit", err, count)
+	}
+	foreign.Store(true)
+	in.RequestID = uuid.NewString()
+	candidate, err = svc.CustomerIdentityProjection(t.Context(), in)
+	if err != nil || candidate.Candidate != nil || candidate.Profile != nil || candidate.TenantName != "" {
+		t.Fatal("foreign native identity disclosed through candidate selection", err)
+	}
+	foreign.Store(false)
 	in.Purpose = "profile"
 	in.RequestID = uuid.NewString()
 	proof, err = svc.CustomerIdentityProjection(t.Context(), in)
@@ -147,5 +164,33 @@ func TestCustomerIdentityProjectionAuditOutageDoesNotDisclose(t *testing.T) {
 	result, err := svc.CustomerIdentityProjection(t.Context(), customercontract.IdentityProjectionInput{Purpose: "membership", TenantID: tenant.String(), Subject: "fresh-staff", RequestID: uuid.NewString()})
 	if !errors.Is(err, ErrUnavailable) || result.State != "" || result.Profile != nil {
 		t.Fatal("audit failure disclosed projection", err)
+	}
+}
+
+func TestCustomerAssignmentCandidateRechecksEnrollmentAfterNativeRead(t *testing.T) {
+	svc, idp, st := newService(t)
+	seedProduct(t, st, "helivanta")
+	svc.idp = securityIdentity{idp}
+	tenant := uuid.New()
+	org := "helivanta-" + tenant.String()
+	if _, err := st.CreateOrganization(t.Context(), store.Organization{ID: tenant, ZitadelOrgID: org, Name: "TEST", CreatedByProduct: "helivanta"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Grant(t.Context(), tenant, "helivanta", []string{"helivanta-admin"}); err != nil {
+		t.Fatal(err)
+	}
+	native := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := st.RevokeGrant(r.Context(), tenant, "helivanta"); err != nil {
+			t.Error(err)
+			w.WriteHeader(503)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"user": map[string]any{"userId": "fresh-staff", "state": "USER_STATE_ACTIVE", "details": map[string]string{"resourceOwner": org}, "human": map[string]any{"profile": map[string]string{"displayName": "Synthetic Staff"}, "email": map[string]any{"email": "synthetic@example.test", "isVerified": true}}}})
+	}))
+	defer native.Close()
+	svc.signupIdentity = zitadel.New(native.URL, zitadel.StaticToken("synthetic"), "platform", nil)
+	view, err := svc.CustomerIdentityProjection(t.Context(), customercontract.IdentityProjectionInput{Purpose: "assignment_candidate", TenantID: tenant.String(), Subject: "fresh-staff", RequestID: uuid.NewString()})
+	if !errors.Is(err, ErrNotFound) || view.Candidate != nil || view.Profile != nil || view.State != "" {
+		t.Fatal("enrollment revoked during native read still disclosed identity", err)
 	}
 }
