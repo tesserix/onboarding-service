@@ -103,37 +103,6 @@ unavailable, never a fabricated inactive result that revokes a clinician's
 credentials. Profile absence remains explicitly unavailable. The service audits
 opaque subject/purpose, without names, email, password, token or factor data.
 
-### Retained organisation self reads
-
-The operator-managed existing-tenant adoption workflow may retain an original
-native organisation ID. After that binding and the product enrolment exist in
-the registry, status/profile reads for the verified current principal use its
-explicit tenant UUID and the owner's exact retained native ID. They require
-fresh live organisation, tenant metadata, project and grant proof. An unknown
-or unenrolled tenant remains unavailable to the product; there is no SQL
-backfill, native-ID relabelling or inferred registration.
-
-The canonical projection permits a bounded retained native ID for these self
-reads. An ID in the reserved `helivanta-` namespace must still match its exact
-tenant. Membership admission, login discovery and all new role/account paths
-continue to require their fresh tenant-owned organisation. The native adapter
-receives tenant and native organisation separately rather than deriving the
-tenant from the organisation string. Receivers validate the owner-attested
-purpose/tenant/subject through the canonical contract.
-
-After native user I/O, the owner locks and rechecks the product configuration,
-organisation binding and current product grant, then commits its sensitive-read
-audit in that same transaction. A concurrent revocation, binding/configuration
-change or audit outage returns unavailable without a projection or fabricated
-inactive state. No database transaction spans native I/O.
-
-Release the owner and upgrade the consumer's canonical contract before accepting
-legacy self reads. A platform administrator must adopt the exact retained
-Helivanta tenant through `/v1/hospital-onboardings`; the generic enrolment route
-excludes this product. The existing administrator, native binding and login
-policy require their normal adoption checks. The software repair creates no
-production registry record, credential, role or operating authority.
-
 ### Local consumer acceptance dependency
 
 Helivanta's browser CI uses the same private identity-read handlers and native

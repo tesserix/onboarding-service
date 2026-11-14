@@ -83,7 +83,7 @@ func TestNativeIdentityProjectionRequiresOneMatchingVerifiedHumanProof(t *testin
 				}
 				_, _ = w.Write([]byte(tc.body))
 			})
-			projection, err := client.IdentityProjection(t.Context(), membershipTestTenant, "helivanta-"+membershipTestTenant, "synthetic-human", "membership")
+			projection, err := client.IdentityProjection(t.Context(), "helivanta-"+membershipTestTenant, "synthetic-human", "membership")
 			require.Equal(t, tc.eligible, projection.Admission == "eligible")
 			require.EqualValues(t, 1, calls.Load(), "identity state and contact must share one observation")
 			if tc.unavailable {
@@ -108,7 +108,7 @@ func TestProjectionProfilesRequireExplicitCurrentUserPurpose(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			client := newProjectionClient(t, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(tc.body)) })
-			proof, err := client.IdentityProjection(t.Context(), membershipTestTenant, "helivanta-"+membershipTestTenant, "synthetic-human", tc.purpose)
+			proof, err := client.IdentityProjection(t.Context(), "helivanta-"+membershipTestTenant, "synthetic-human", tc.purpose)
 			require.NoError(t, err)
 			require.NoError(t, proof.Validate())
 			require.Equal(t, "active", proof.State)
@@ -125,18 +125,18 @@ func TestProjectionProfilesRequireExplicitCurrentUserPurpose(t *testing.T) {
 
 func TestProjectionMissingClientInvalidScopeAndCancellationFailClosed(t *testing.T) {
 	var missing *Client
-	_, err := missing.IdentityProjection(t.Context(), membershipTestTenant, "helivanta-"+membershipTestTenant, "synthetic-human", "membership")
+	_, err := missing.IdentityProjection(t.Context(), "helivanta-"+membershipTestTenant, "synthetic-human", "membership")
 	require.ErrorIs(t, err, ErrIdentityUnavailable)
 	var calls atomic.Int32
 	client := newProjectionClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		calls.Add(1)
 		_, _ = w.Write([]byte(verifiedMembershipHuman))
 	})
-	_, err = client.IdentityProjection(t.Context(), membershipTestTenant, "foreign-org", "synthetic-human", "membership")
+	_, err = client.IdentityProjection(t.Context(), "foreign-org", "synthetic-human", "membership")
 	require.ErrorIs(t, err, ErrIdentityUnavailable)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	_, err = client.IdentityProjection(ctx, membershipTestTenant, "helivanta-"+membershipTestTenant, "synthetic-human", "membership")
+	_, err = client.IdentityProjection(ctx, "helivanta-"+membershipTestTenant, "synthetic-human", "membership")
 	require.ErrorIs(t, err, ErrIdentityUnavailable)
 	require.Zero(t, calls.Load())
 }
@@ -154,7 +154,7 @@ func TestIdentityStatusReadsNoProfileAndAssessesNoGrant(t *testing.T) {
 			client := newProjectionClient(t, func(w http.ResponseWriter, _ *http.Request) {
 				_, _ = fmt.Fprintf(w, `{"user":{"userId":"synthetic-human","state":%q}}`, tc.native)
 			})
-			proof, err := client.IdentityProjection(t.Context(), membershipTestTenant, "helivanta-"+membershipTestTenant, "synthetic-human", "status")
+			proof, err := client.IdentityProjection(t.Context(), "helivanta-"+membershipTestTenant, "synthetic-human", "status")
 			if tc.unavailable {
 				require.ErrorIs(t, err, ErrIdentityUnavailable)
 				require.Empty(t, proof.State)

@@ -15,8 +15,8 @@ import (
 	"github.com/tesserix/onboarding-service/api/customercontract"
 )
 
-func (c *Client) IdentityProjection(ctx context.Context, tenant, org, subject, purpose string) (customercontract.IdentityProjection, error) {
-	base := customercontract.IdentityProjection{TenantID: tenant, OrganizationID: org, Subject: subject, State: "inactive", Admission: "unassessed", Purpose: purpose}
+func (c *Client) IdentityProjection(ctx context.Context, org, subject, purpose string) (customercontract.IdentityProjection, error) {
+	base := customercontract.IdentityProjection{TenantID: strings.TrimPrefix(org, "helivanta-"), OrganizationID: org, Subject: subject, State: "inactive", Admission: "unassessed", Purpose: purpose}
 	if purpose == "membership" {
 		base.Admission = "ineligible"
 	}
