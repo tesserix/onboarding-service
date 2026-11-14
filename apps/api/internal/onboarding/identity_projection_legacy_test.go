@@ -19,6 +19,7 @@ import (
 func TestRetainedSelfReadNeedsEnrolmentAndCurrentAuthorityBeforeDisclosure(t *testing.T) {
 	svc, idp, st := newService(t)
 	seedProduct(t, st, "helivanta")
+	seedProduct(t, st, "console")
 	svc.idp = securityIdentity{idp}
 	tenant := uuid.New()
 	const org = "123456789"
