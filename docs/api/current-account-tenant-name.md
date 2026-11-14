@@ -23,3 +23,7 @@ Helivanta forwards the verified name as `tenant_name` on its existing current
 profile read and labels its current-account control. It does not infer a name
 from an identifier, branding or a branch. Separate native accounts retain their
 own destination authentication, membership, roles and MFA.
+
+A separate [assignment-selection purpose](../adr/0007-scoped-assignment-account-selection.md)
+is an unreleased candidate for explicitly authorized hospital account selection.
+It does not broaden this self-profile read or permit tenant-name disclosure.
