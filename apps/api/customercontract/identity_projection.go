@@ -48,7 +48,7 @@ func (v IdentityProfile) Validate() error {
 type IdentityProjection struct {
 	Purpose        string           `json:"purpose" required:"true" enum:"status,membership,profile"`
 	TenantID       string           `json:"tenantId" format:"uuid" required:"true"`
-	OrganizationID string           `json:"organizationId" required:"true"`
+	OrganizationID string           `json:"organizationId" required:"true" pattern:"^[A-Za-z0-9_-]{1,200}$"`
 	Subject        string           `json:"subject" required:"true" pattern:"^[A-Za-z0-9_-]{1,200}$"`
 	State          string           `json:"state" required:"true" enum:"active,inactive"`
 	Admission      string           `json:"admission" required:"true" enum:"unassessed,eligible,ineligible"`
@@ -57,7 +57,13 @@ type IdentityProjection struct {
 }
 
 func (v IdentityProjection) Validate() error {
-	if validateTaggedFields(v, "") != nil || v.OrganizationID != "helivanta-"+v.TenantID {
+	if validateTaggedFields(v, "") != nil {
+		return ErrInvalid
+	}
+	// Self reads may use a retained, owner-verified native organisation. New
+	// grants still require a fresh tenant-owned organisation, and the reserved
+	// deterministic namespace must never name another tenant.
+	if v.OrganizationID != "helivanta-"+v.TenantID && (v.Purpose == "membership" || strings.HasPrefix(v.OrganizationID, "helivanta-")) {
 		return ErrInvalid
 	}
 	if v.State != "active" && v.State != "inactive" {
