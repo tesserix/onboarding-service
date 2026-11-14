@@ -18,7 +18,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 )
 
 func TestSecurityViewFingerprintsNativePolicyAndClaimForStaleRequests(t *testing.T) {
@@ -48,12 +47,7 @@ func TestSecurityViewFingerprintsNativePolicyAndClaimForStaleRequests(t *testing
 type securityIdentity struct{ *fakeIdentity }
 
 func (s securityIdentity) VerifyOrganization(_ context.Context, org, tenant, project string) (zitadel.OrganizationIdentity, error) {
-	proof := zitadel.OrganizationIdentity{SchemaVersion: 1, State: "active", OrganizationID: org, TenantID: tenant, ProjectID: project, GrantID: "synthetic-grant", VerifiedAt: time.Now().UTC()}
-	proof.SourceRevisions.Organization = "1"
-	proof.SourceRevisions.Metadata = "1"
-	proof.SourceRevisions.Project = "1"
-	proof.SourceRevisions.Grant = "1"
-	return proof, nil
+	return zitadel.OrganizationIdentity{State: "active", OrganizationID: org, TenantID: tenant, ProjectID: project}, nil
 }
 
 func TestOwnerSecurityReconciliationIsAuditedPendingAndRevocable(t *testing.T) {
