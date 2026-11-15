@@ -40,7 +40,10 @@ func (s *Service) CustomerLoginTarget(ctx context.Context, in customercontract.L
 	return customercontract.LoginTarget{TenantID: in.TenantID, OrganizationID: orgID, Subject: subject}, nil
 }
 
-func (s *Service) customerIdentityScope(ctx context.Context, tenantID string) (string, error) {
+func (s *Service) customerIdentityScope(ctx context.Context, tenantID string) (out string, failure error) {
+	started, phase := time.Now(), "scope_organization_record"
+	defer func() { s.recordAccountLookupFailure(ctx, phase, started, failure) }()
+
 	tenant, _ := uuid.Parse(tenantID)
 	org, err := s.store.Organization(ctx, tenant)
 	if errors.Is(err, store.ErrNotFound) {
@@ -52,6 +55,7 @@ func (s *Service) customerIdentityScope(ctx context.Context, tenantID string) (s
 	if org.State != "active" || org.CreatedByProduct != "helivanta" || org.ZitadelOrgID != "helivanta-"+tenantID {
 		return "", ErrNotFound
 	}
+	phase = "scope_product_record"
 	product, err := s.store.Product(ctx, "helivanta")
 	if err != nil {
 		return "", ErrUnavailable
@@ -59,6 +63,7 @@ func (s *Service) customerIdentityScope(ctx context.Context, tenantID string) (s
 	if product.State != "active" {
 		return "", ErrNotFound
 	}
+	phase = "scope_enrolments"
 	grants, err := s.store.Grants(ctx, tenant)
 	if err != nil {
 		return "", ErrUnavailable
@@ -72,6 +77,7 @@ func (s *Service) customerIdentityScope(ctx context.Context, tenantID string) (s
 	if !enrolled {
 		return "", ErrNotFound
 	}
+	phase = "scope_current_identity"
 	proof, err := s.idp.VerifyOrganization(ctx, org.ZitadelOrgID, tenantID, product.ZitadelProjectID)
 	if err != nil {
 		return "", ErrUnavailable

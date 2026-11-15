@@ -103,6 +103,11 @@ func (c *Client) VerifyOrganization(ctx context.Context, orgID, tenantID, projec
 			{"grantedOrgIdQuery": map[string]string{"grantedOrgId": orgID}},
 		},
 	}
+	var current struct {
+		Grant identitySourceGrant `json:"projectGrant"`
+	}
+	var currentErr error
+	var grantScoped bool
 	calls := []struct {
 		method, path, org string
 		body, out         any
@@ -110,15 +115,28 @@ func (c *Client) VerifyOrganization(ctx context.Context, orgID, tenantID, projec
 		{http.MethodGet, "/admin/v1/orgs/" + orgID, "", nil, &org},
 		{http.MethodGet, "/management/v1/metadata/tenant_id", orgID, nil, &metadata},
 		{http.MethodGet, "/management/v1/projects/" + projectID, c.adminOrg, nil, &project},
-		{http.MethodPost, "/management/v1/projectgrants/_search", c.adminOrg, query, &grants},
 	}
-	errs := make([]error, len(calls))
+	errs := make([]error, len(calls)+1)
 	var wg sync.WaitGroup
 	for i, call := range calls {
 		wg.Go(func() {
 			errs[i] = c.readIdentity(ctx, &client, token, call.method, call.path, call.org, call.body, call.out)
 		})
 	}
+	// The exact grant read depends on its search, not the independent source reads.
+	wg.Go(func() {
+		errs[len(calls)] = c.readIdentity(ctx, &client, token, http.MethodPost, "/management/v1/projectgrants/_search", c.adminOrg, query, &grants)
+		if errs[len(calls)] != nil || len(grants.Result) != 1 || grants.Details.TotalResult != "1" {
+			return
+		}
+		grant := grants.Result[0]
+		grantScoped = grant.GrantedOrgID == orgID && grant.ProjectID == projectID && grant.ProjectOwnerID == c.adminOrg && identitySourceID.MatchString(grant.GrantID)
+		if !grantScoped {
+			return
+		}
+		// Unlike search, the point read awaits the grant projection (ADR0003).
+		currentErr = c.readIdentity(ctx, &client, token, http.MethodGet, "/management/v1/projects/"+projectID+"/grants/"+grant.GrantID, c.adminOrg, nil, &current)
+	})
 	wg.Wait()
 	for _, e := range errs {
 		if e != nil && !errors.Is(e, ErrIdentityMissing) {
@@ -141,15 +159,11 @@ func (c *Client) VerifyOrganization(ctx context.Context, orgID, tenantID, projec
 	}
 	grant := grants.Result[0]
 	searchedState := grant.State
-	if org.Org.ID != orgID || project.Project.ID != projectID || project.Project.Details.ResourceOwner != c.adminOrg || grant.GrantedOrgID != orgID || grant.ProjectID != projectID || grant.ProjectOwnerID != c.adminOrg || !identitySourceID.MatchString(grant.GrantID) || metadata.Metadata.Key != "tenant_id" {
+	if org.Org.ID != orgID || project.Project.ID != projectID || project.Project.Details.ResourceOwner != c.adminOrg || !grantScoped || metadata.Metadata.Key != "tenant_id" {
 		return empty, ErrIdentityUnavailable
 	}
-	var current struct {
-		Grant identitySourceGrant `json:"projectGrant"`
-	}
-	// Unlike grant search, this source read awaits the grant projection (ADR0003).
-	if err := c.readIdentity(ctx, &client, token, http.MethodGet, "/management/v1/projects/"+projectID+"/grants/"+grant.GrantID, c.adminOrg, nil, &current); err != nil {
-		return empty, err
+	if currentErr != nil {
+		return empty, currentErr
 	}
 	latest := current.Grant
 	if latest.GrantID != grant.GrantID || latest.GrantedOrgID != orgID || latest.ProjectID != projectID || latest.ProjectOwnerID != c.adminOrg || latest.Details.ResourceOwner != c.adminOrg {
