@@ -49,8 +49,10 @@ provenance, stale observations, or mismatched tenant and product bindings.
 | 404 | Unauthorized, unknown, revoked, or absent identity | Deny without disclosing another product's records |
 | 503 | Source unavailable, malformed, ambiguous, or mismatched | Fail closed; allow an explicit later retry |
 
-The outer verification budget is one second; the four parallel source reads
-share a 750 ms deadline. Redirects are rejected and source bodies are limited to
+The outer verification budget is one second. Organisation, metadata and project
+reads run alongside a grant-search/exact-grant branch under one shared 750 ms
+deadline. The point lookup starts after its scoped search, and every source must
+finish and pass validation before a proof is returned. Redirects are rejected and source bodies are limited to
 64 KiB. There is no automatic application retry, eligibility cache, or new data
 store. Consumers should also bound their deadlines and error output.
 

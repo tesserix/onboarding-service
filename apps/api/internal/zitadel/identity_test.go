@@ -283,3 +283,62 @@ func TestVerifyOrganizationDoesNotTreatMalformedSourceAsMissingIdentity(t *testi
 		t.Fatalf("malformed source became a policy denial: %v", err)
 	}
 }
+
+func TestVerifyOrganizationStartsGrantPointReadWhileOtherEvidenceIsPending(t *testing.T) {
+	for _, lateUnavailable := range []bool{false, true} {
+		name := "active"
+		if lateUnavailable {
+			name = "late source unavailable"
+		}
+		t.Run(name, func(t *testing.T) {
+			replies := identityResponses()
+			pointReached := make(chan struct{})
+			var pointCalls atomic.Int64
+			source := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Authorization") != "Bearer TEST-source-token" {
+					t.Error("missing source credential")
+				}
+				if r.URL.Path == "/admin/v1/orgs/org-1" {
+					select {
+					case <-pointReached:
+					case <-r.Context().Done():
+						return
+					}
+					if lateUnavailable {
+						w.WriteHeader(http.StatusServiceUnavailable)
+						return
+					}
+				}
+				if r.URL.Path == "/management/v1/projects/project-1/grants/grant-1" {
+					if r.Header.Get("x-zitadel-orgid") != "platform-1" {
+						t.Error("grant point read lost its project-owner scope")
+					}
+					if pointCalls.Add(1) == 1 {
+						close(pointReached)
+					}
+				}
+				raw, ok := replies[r.URL.Path]
+				if !ok {
+					http.NotFound(w, r)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, raw)
+			}))
+			defer source.Close()
+			client := New(source.URL, StaticToken("TEST-source-token"), "platform-1", nil)
+			client.http = source.Client()
+			proof, err := client.VerifyOrganization(t.Context(), "org-1", identityTenant, "project-1")
+			if lateUnavailable {
+				if !errors.Is(err, ErrIdentityUnavailable) || proof.State == "active" {
+					t.Fatal("a successful grant point read replaced unavailable organization evidence")
+				}
+			} else if err != nil || proof.State != "active" {
+				t.Fatalf("independent evidence blocked the exact grant branch: state=%s error=%v", proof.State, err)
+			}
+			if pointCalls.Load() != 1 {
+				t.Fatal("verification must use exactly one authoritative grant point read")
+			}
+		})
+	}
+}
