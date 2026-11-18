@@ -27,6 +27,8 @@ func TestStaffMFAResetIntentBindsExactReviewedSourceWithoutAccountAuthority(t *t
 		strings.Replace(staffMFAIntentJSON, `"reason":"Lost authenticator reported in person"`, `"reason":"lost\ndevice"`, 1),
 		strings.Replace(staffMFAIntentJSON, `"reason":"Lost authenticator reported in person"`, `"reason":"`+strings.Repeat("x", 501)+`"`, 1),
 		strings.Replace(staffMFAIntentJSON, `"commandId"`, `"CommandId"`, 1),
+		strings.Replace(staffMFAIntentJSON, `019f39c2-1738-7998-b5de-6d4214f614e0`, `efb09160-2825-445e-af8d-a1b5f61f1e02`, 1),
+		strings.Replace(staffMFAIntentJSON, `019f39c2-1738-7998-b5de-6d4214f614e1`, `efb09160-2825-445e-af8d-a1b5f61f1e02`, 1),
 		strings.TrimSuffix(staffMFAIntentJSON, "}") + `,"subject":"chosen-by-browser"}`,
 		strings.TrimSuffix(staffMFAIntentJSON, "}") + `,"expectedLinkVersion":4}`,
 		staffMFAIntentJSON + ` {}`,

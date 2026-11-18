@@ -8,8 +8,8 @@ import (
 
 // StaffMFAResetInput selects a reviewed Staff link, never a browser-chosen account.
 type StaffMFAResetInput struct {
-	CommandID            string `json:"commandId" format:"uuid" required:"true"`
-	ExpectedLinkID       string `json:"expectedLinkId" format:"uuid" required:"true"`
+	CommandID            string `json:"commandId" format:"uuid" required:"true" pattern:"^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"`
+	ExpectedLinkID       string `json:"expectedLinkId" format:"uuid" required:"true" pattern:"^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"`
 	ExpectedLinkVersion  int64  `json:"expectedLinkVersion" required:"true" minValue:"1" maxValue:"9007199254740991"`
 	ExpectedStaffVersion int64  `json:"expectedStaffVersion" required:"true" minValue:"1" maxValue:"9007199254740991"`
 	Reason               string `json:"reason" required:"true" clean:"true" max:"500"`
@@ -33,7 +33,7 @@ type StaffMFARecoveryTarget struct {
 	EmployerID   string `json:"employerId" format:"uuid" required:"true"`
 	StaffID      string `json:"staffId" format:"uuid" required:"true"`
 	StaffVersion int64  `json:"staffVersion" required:"true" minValue:"1" maxValue:"9007199254740991"`
-	LinkID       string `json:"linkId" format:"uuid" required:"true"`
+	LinkID       string `json:"linkId" format:"uuid" required:"true" pattern:"^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"`
 	LinkVersion  int64  `json:"linkVersion" required:"true" minValue:"1" maxValue:"9007199254740991"`
 	Subject      string `json:"subject" pattern:"^[A-Za-z0-9_-]{1,200}$" required:"true"`
 }
