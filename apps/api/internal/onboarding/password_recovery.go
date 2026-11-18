@@ -24,18 +24,19 @@ func passwordRecoveryCodeHash(id, browser, code string) []byte {
 }
 
 // StartPasswordRecovery reserves a dedicated mailbox challenge before any account lookup.
-func (s *Service) StartPasswordRecovery(ctx context.Context, in customercontract.PasswordRecoveryStart) error {
+func (s *Service) StartPasswordRecovery(ctx context.Context, in customercontract.PasswordRecoveryStart) (customercontract.PasswordRecoveryAccepted, error) {
+	var empty customercontract.PasswordRecoveryAccepted
 	if in.Validate() != nil {
-		return ErrInvalid
+		return empty, ErrInvalid
 	}
 	if s.store == nil || s.signupMail == nil {
-		return ErrUnavailable
+		return empty, ErrUnavailable
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	value, err := rand.Int(rand.Reader, big.NewInt(100000000))
 	if err != nil {
-		return ErrUnavailable
+		return empty, ErrUnavailable
 	}
 	code := fmt.Sprintf("%08d", value.Int64())
 	browser, _ := hex.DecodeString(in.BrowserHash)
@@ -44,16 +45,30 @@ func (s *Service) StartPasswordRecovery(ctx context.Context, in customercontract
 	tenant, _ := uuid.Parse(in.TenantID)
 	send, err := s.store.ReservePasswordRecovery(ctx, store.PasswordRecoveryReservation{ID: id, TenantID: tenant, BrowserHash: browser, SourceHash: source, Email: strings.ToLower(in.Email), CodeHash: passwordRecoveryCodeHash(in.ID, in.BrowserHash, code), CreatedAt: time.Now().UTC()})
 	if errors.Is(err, store.ErrPasswordRecoveryLimited) {
-		return store.ErrPasswordRecoveryLimited
+		return empty, store.ErrPasswordRecoveryLimited
 	}
 	if errors.Is(err, store.ErrConflict) {
-		return ErrConflict
+		return empty, ErrConflict
 	}
 	if err != nil {
-		return ErrUnavailable
+		return empty, ErrUnavailable
 	}
+	retained, err := s.store.RetainedPasswordRecovery(ctx, id, tenant, browser, strings.ToLower(in.Email))
+	if errors.Is(err, store.ErrNotFound) {
+		return empty, ErrNotFound
+	}
+	if err != nil {
+		return empty, ErrUnavailable
+	}
+	receipt := customercontract.PasswordRecoveryAccepted{State: "check_email", ChallengeID: retained.String()}
 	if !send {
-		return nil
+		return receipt, nil
+	}
+	if retained != id {
+		if err = s.store.AppendAudit(ctx, audit.Event{ActorType: audit.ActorSystem, ActorID: customerWorkload, ProductKey: "helivanta", OrgID: tenant.String(), Action: "account.password_recovery.suppressed", Outcome: audit.OutcomeSuccess, RequestID: in.ID}); err != nil {
+			return empty, ErrUnavailable
+		}
+		return receipt, nil
 	}
 	_, sendErr := s.signupMail.SendPasswordRecovery(ctx, in.ID, in.Email, code)
 	// Preserve an uncertain dispatch even when the browser abandons its request.
@@ -61,9 +76,9 @@ func (s *Service) StartPasswordRecovery(ctx context.Context, in customercontract
 	defer recordCancel()
 	recordErr := s.store.RecordPasswordRecoveryDelivery(recordCtx, id, sendErr == nil)
 	if sendErr != nil || recordErr != nil {
-		return ErrUnavailable
+		return empty, ErrUnavailable
 	}
-	return nil
+	return receipt, nil
 }
 
 // VerifyPasswordRecovery consumes only this browser's purpose-bound mailbox code.

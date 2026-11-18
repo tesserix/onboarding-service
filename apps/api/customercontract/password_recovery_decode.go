@@ -49,3 +49,14 @@ func (in *PasswordRecoveryPassword) UnmarshalJSON(raw []byte) error {
 	*in = PasswordRecoveryPassword(value)
 	return nil
 }
+
+// UnmarshalJSON rejects ambiguous delivery receipt bindings at the private boundary.
+func (in *PasswordRecoveryAccepted) UnmarshalJSON(raw []byte) error {
+	type wire PasswordRecoveryAccepted
+	var value wire
+	if !utf8.Valid(raw) || strictProjectionObject(raw, reflect.TypeFor[wire]()) != nil || json.Unmarshal(raw, &value) != nil || PasswordRecoveryAccepted(value).Validate() != nil {
+		return ErrInvalid
+	}
+	*in = PasswordRecoveryAccepted(value)
+	return nil
+}

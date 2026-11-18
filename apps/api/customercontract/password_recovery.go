@@ -81,7 +81,21 @@ func (PasswordRecoveryPassword) GoString() string { return "[redacted password r
 
 // PasswordRecoveryAccepted does not reveal native account existence or delivery certainty.
 type PasswordRecoveryAccepted struct {
-	State string `json:"state" enum:"check_email" required:"true"`
+	State       string `json:"state" enum:"check_email" required:"true"`
+	ChallengeID string `json:"challengeId,omitempty" format:"uuid"`
+}
+
+func (in PasswordRecoveryAccepted) Validate() error {
+	if in.State != "check_email" {
+		return ErrInvalid
+	}
+	if in.ChallengeID != "" {
+		id, err := uuid.Parse(in.ChallengeID)
+		if err != nil || id.Version() != 7 || id.Variant() != uuid.RFC4122 || id.String() != in.ChallengeID {
+			return ErrInvalid
+		}
+	}
+	return nil
 }
 
 // PasswordRecoveryVerified acknowledges mailbox proof without authenticating an account.

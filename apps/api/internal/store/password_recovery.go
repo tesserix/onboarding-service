@@ -176,3 +176,13 @@ func (s *Store) PurgePasswordRecovery(ctx context.Context) error {
 	_, err := s.pool.Exec(ctx, `DELETE FROM password_recovery_challenges WHERE id IN (SELECT id FROM password_recovery_challenges WHERE created_at<clock_timestamp()-interval '24 hours' ORDER BY created_at,id LIMIT 5000)`)
 	return err
 }
+
+// RetainedPasswordRecovery keeps a verified browser on its original challenge after a suppressed resend.
+func (s *Store) RetainedPasswordRecovery(ctx context.Context, requested, tenant uuid.UUID, browser []byte, email string) (uuid.UUID, error) {
+	var id uuid.UUID
+	err := s.pool.QueryRow(ctx, `SELECT id FROM password_recovery_challenges WHERE tenant_id=$1 AND browser_hash=$2 AND email=$3 AND expires_at>clock_timestamp() AND (id=$4 OR verified_at IS NOT NULL) ORDER BY (verified_at IS NOT NULL) DESC,created_at DESC,id DESC LIMIT 1`, tenant, browser, email, requested).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, ErrNotFound
+	}
+	return id, err
+}

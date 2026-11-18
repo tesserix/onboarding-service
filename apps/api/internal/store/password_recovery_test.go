@@ -234,3 +234,26 @@ func TestPasswordRecoveryCleanupErasesExpiredContactButNeverReusesTheCommand(t *
 		t.Fatal("purged command was reused for another delivery", err)
 	}
 }
+
+func TestRecoveryResendRetainsTheAlreadyVerifiedChallengeIdentity(t *testing.T) {
+	s := newStore(t)
+	in := recoveryReservation()
+	if _, err := s.ReservePasswordRecovery(t.Context(), in); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.VerifyPasswordRecovery(t.Context(), in.ID, in.BrowserHash, in.CodeHash, in.CreatedAt); err != nil {
+		t.Fatal(err)
+	}
+	retry := in
+	retry.ID = uuid.Must(uuid.NewV7())
+	if send, err := s.ReservePasswordRecovery(t.Context(), retry); err != nil || send {
+		t.Fatal("verified challenge authorized new email", err)
+	}
+	retained, err := s.RetainedPasswordRecovery(t.Context(), retry.ID, retry.TenantID, retry.BrowserHash, retry.Email)
+	if err != nil || retained != in.ID {
+		t.Fatal("suppressed resend lost original verified capability", err)
+	}
+	if _, err := s.RetainedPasswordRecovery(t.Context(), retry.ID, uuid.New(), retry.BrowserHash, retry.Email); !errors.Is(err, ErrNotFound) {
+		t.Fatal("foreign tenant selected a verified challenge", err)
+	}
+}

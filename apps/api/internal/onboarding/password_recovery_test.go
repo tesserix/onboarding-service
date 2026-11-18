@@ -48,10 +48,10 @@ func TestPasswordRecoveryChallengeSendsWithoutAccountLookupAndStopsAfterProof(t 
 	hash := sha256.Sum256([]byte("browser"))
 	source := sha256.Sum256([]byte(uuid.NewString()))
 	in := customercontract.PasswordRecoveryStart{ID: uuid.Must(uuid.NewV7()).String(), TenantID: uuid.NewString(), Email: "Person@example.test", BrowserHash: hex.EncodeToString(hash[:]), SourceHash: hex.EncodeToString(source[:])}
-	if err := svc.StartPasswordRecovery(t.Context(), in); err != nil || len(code) != 8 || calls != 1 {
+	if _, err := svc.StartPasswordRecovery(t.Context(), in); err != nil || len(code) != 8 || calls != 1 {
 		t.Fatal("challenge delivery", err)
 	}
-	if err := svc.StartPasswordRecovery(t.Context(), in); err != nil || calls != 1 {
+	if _, err := svc.StartPasswordRecovery(t.Context(), in); err != nil || calls != 1 {
 		t.Fatal("command replay dispatched mail", err)
 	}
 	proof := customercontract.PasswordRecoveryProof{ID: in.ID, BrowserHash: in.BrowserHash, Code: code}
@@ -61,9 +61,10 @@ func TestPasswordRecoveryChallengeSendsWithoutAccountLookupAndStopsAfterProof(t 
 	if err := svc.VerifyPasswordRecovery(t.Context(), proof); !errors.Is(err, ErrNotFound) {
 		t.Fatal("proof replay admitted", err)
 	}
+	originalID := in.ID
 	in.ID = uuid.Must(uuid.NewV7()).String()
-	if err := svc.StartPasswordRecovery(t.Context(), in); err != nil || calls != 1 {
-		t.Fatal("verified challenge sent more mail", err)
+	if retained, err := svc.StartPasswordRecovery(t.Context(), in); err != nil || calls != 1 || retained.ChallengeID != originalID {
+		t.Fatal("verified challenge sent more mail or lost its receipt", err)
 	}
 }
 
@@ -81,14 +82,14 @@ func TestPasswordRecoverySeparatesMailboxPurposeAndRejectsInvalidInput(t *testin
 	if _, err := svc.ReadPasswordRecovery(t.Context(), customercontract.PasswordRecoveryAccess{ID: id, BrowserHash: browser}); !errors.Is(err, ErrUnavailable) {
 		t.Fatal("recovery status missing dependencies admitted", err)
 	}
-	if err := svc.StartPasswordRecovery(t.Context(), customercontract.PasswordRecoveryStart{}); !errors.Is(err, ErrInvalid) {
+	if _, err := svc.StartPasswordRecovery(t.Context(), customercontract.PasswordRecoveryStart{}); !errors.Is(err, ErrInvalid) {
 		t.Fatal("invalid start admitted", err)
 	}
 	if err := svc.VerifyPasswordRecovery(t.Context(), customercontract.PasswordRecoveryProof{}); !errors.Is(err, ErrInvalid) {
 		t.Fatal("invalid proof admitted", err)
 	}
 	in := customercontract.PasswordRecoveryStart{ID: id, TenantID: uuid.NewString(), BrowserHash: browser, SourceHash: browser, Email: "person@example.test"}
-	if err := svc.StartPasswordRecovery(t.Context(), in); !errors.Is(err, ErrUnavailable) {
+	if _, err := svc.StartPasswordRecovery(t.Context(), in); !errors.Is(err, ErrUnavailable) {
 		t.Fatal("missing persistence admitted", err)
 	}
 	if err := svc.VerifyPasswordRecovery(t.Context(), customercontract.PasswordRecoveryProof{ID: id, BrowserHash: browser, Code: code}); !errors.Is(err, ErrUnavailable) {

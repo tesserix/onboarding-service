@@ -17,7 +17,8 @@ func (d Deps) startPasswordRecovery(c *gin.Context) {
 		abort(c, 503, "identity unavailable")
 		return
 	}
-	if err := d.Service.StartPasswordRecovery(c.Request.Context(), in); err != nil {
+	result, err := d.Service.StartPasswordRecovery(c.Request.Context(), in)
+	if err != nil {
 		if errors.Is(err, store.ErrPasswordRecoveryLimited) {
 			c.Header("Retry-After", "3600")
 			abort(c, 429, "try again later")
@@ -26,7 +27,7 @@ func (d Deps) startPasswordRecovery(c *gin.Context) {
 		respondErr(c, d.logger(), err)
 		return
 	}
-	c.JSON(202, customercontract.PasswordRecoveryAccepted{State: "check_email"})
+	c.JSON(202, result)
 }
 
 func (d Deps) verifyPasswordRecovery(c *gin.Context) {

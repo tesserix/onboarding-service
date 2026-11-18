@@ -37,7 +37,7 @@ export type PasswordRecoveryResult = z.infer<typeof PasswordRecoveryResultContra
 export const PasswordRecoveryStatusContract = z.object({"state":z.enum(["ready","locked","processing","applied","completed","refused","unconfirmed"])}).strict();
 export type PasswordRecoveryStatus = z.infer<typeof PasswordRecoveryStatusContract>;
 
-export const PasswordRecoveryAcceptedContract = z.object({"state":z.enum(["check_email"])}).strict();
+export const PasswordRecoveryAcceptedContract = z.object({"state":z.enum(["check_email"]),"challengeId":z.string().uuid().optional()}).strict();
 export type PasswordRecoveryAccepted = z.infer<typeof PasswordRecoveryAcceptedContract>;
 
 export const PasswordRecoveryVerifiedContract = z.object({"state":z.enum(["verified"])}).strict();

@@ -100,3 +100,17 @@ func TestPasswordRecoveryCompletionRequiresItsOwnImmutableCommand(t *testing.T) 
 		t.Fatal("password completion admitted without a separate immutable native command")
 	}
 }
+
+func TestPasswordRecoveryDeliveryReceiptRejectsAmbiguousIdentifiers(t *testing.T) {
+	id := uuid.Must(uuid.NewV7()).String()
+	var receipt customercontract.PasswordRecoveryAccepted
+	for _, raw := range []string{
+		`{"state":"check_email","challengeId":"` + id + `","challengeId":"` + id + `"}`,
+		`{"state":"check_email","CHALLENGEID":"` + id + `"}`,
+		`{"state":"check_email","challengeId":null}`,
+	} {
+		if err := json.Unmarshal([]byte(raw), &receipt); err == nil {
+			t.Fatal("ambiguous retained challenge was accepted")
+		}
+	}
+}

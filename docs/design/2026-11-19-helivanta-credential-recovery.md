@@ -251,3 +251,14 @@ acknowledged-but-unavailable projection, command replay and uncertain native
 outcomes. The actual native reset/new-password sign-in browser journey and
 administrator MFA workflow remain required. Do not infer release readiness from
 unit adapters or compilation of database tests.
+
+Delivery receipts now carry an optional private `challengeId`. The identity owner
+always supplies the actual retained challenge after a successful start, including
+an earlier verified challenge when a resend is suppressed. The HMS broker must
+validate this binding, preserve the same browser secret and strip the private ID
+from its public response. A retry keeps the same delivery ID; explicit resend
+chooses a new ID with the same browser secret. Neither extends the original
+verified proof's expiry. If verification wins between reservation and receipt
+selection, the newly reserved delivery is not sent and a suppression audit is
+appended; its quota reservation is retained conservatively until normal cleanup.
+This avoids creating a capability pointing to a challenge that was never admitted.
