@@ -33,8 +33,9 @@ func (PasswordRecoveryReservation) GoString() string {
 
 // PasswordRecoveryRecipient is disclosed only after the browser proves its mailbox.
 type PasswordRecoveryRecipient struct {
-	TenantID uuid.UUID
-	Email    string
+	TenantID   uuid.UUID
+	Email      string
+	VerifiedAt time.Time
 }
 
 func (PasswordRecoveryRecipient) String() string   { return "[redacted password recovery recipient]" }
@@ -138,7 +139,7 @@ func (s *Store) VerifyPasswordRecovery(ctx context.Context, id uuid.UUID, browse
 // VerifiedPasswordRecovery reads only the retained, unexpired browser's verified scope.
 func (s *Store) VerifiedPasswordRecovery(ctx context.Context, id uuid.UUID, browser []byte, now time.Time) (PasswordRecoveryRecipient, error) {
 	var out PasswordRecoveryRecipient
-	err := s.pool.QueryRow(ctx, `SELECT tenant_id,email FROM password_recovery_challenges WHERE id=$1 AND browser_hash=$2 AND verified_at IS NOT NULL AND expires_at>greatest($3::timestamptz,clock_timestamp())`, id, browser, now).Scan(&out.TenantID, &out.Email)
+	err := s.pool.QueryRow(ctx, `SELECT tenant_id,email,verified_at FROM password_recovery_challenges WHERE id=$1 AND browser_hash=$2 AND verified_at IS NOT NULL AND expires_at>greatest($3::timestamptz,clock_timestamp())`, id, browser, now).Scan(&out.TenantID, &out.Email, &out.VerifiedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return out, ErrNotFound
 	}

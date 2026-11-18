@@ -56,13 +56,14 @@ func (in PasswordRecoveryProof) Validate() error {
 
 // PasswordRecoveryPassword is a private native handoff, never persisted or logged.
 type PasswordRecoveryPassword struct {
+	CommandID   string `json:"commandId" format:"uuid" required:"true"`
 	ID          string `json:"id" format:"uuid" required:"true"`
 	BrowserHash string `json:"browserHash" required:"true" pattern:"^[a-f0-9]{64}$"`
 	Password    string `json:"password" required:"true" max:"200"`
 }
 
 func (in PasswordRecoveryPassword) Validate() error {
-	if (PasswordRecoveryAccess{in.ID, in.BrowserHash}).Validate() != nil || in.Password == "" ||
+	if (PasswordRecoveryAccess{in.CommandID, in.BrowserHash}).Validate() != nil || (PasswordRecoveryAccess{in.ID, in.BrowserHash}).Validate() != nil || in.Password == "" ||
 		!utf8.ValidString(in.Password) || utf8.RuneCountInString(in.Password) > 200 {
 		return ErrInvalid
 	}
@@ -90,5 +91,10 @@ type PasswordRecoveryVerified struct {
 
 // PasswordRecoveryStatus is available only to the browser with verified mailbox proof.
 type PasswordRecoveryStatus struct {
-	State string `json:"state" enum:"ready,locked" required:"true"`
+	State string `json:"state" enum:"ready,locked,processing,applied,completed,refused,unconfirmed" required:"true"`
+}
+
+// PasswordRecoveryResult reports retained native outcome without authenticating the recipient.
+type PasswordRecoveryResult struct {
+	State string `json:"state" enum:"processing,applied,completed,refused,unconfirmed" required:"true"`
 }

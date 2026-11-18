@@ -112,6 +112,17 @@ func (s *Service) ReadPasswordRecovery(ctx context.Context, in customercontract.
 	if err != nil {
 		return empty, err
 	}
+	operation, commandErr := s.store.LatestPasswordRecoveryCommand(ctx, id, browser)
+	if commandErr == nil && operation.State != "refused" {
+		result, err := s.passwordRecoveryReceipt(ctx, operation, recipient, org, browser)
+		if err != nil {
+			return empty, err
+		}
+		return customercontract.PasswordRecoveryStatus(result), nil
+	}
+	if commandErr != nil && !errors.Is(commandErr, store.ErrNotFound) {
+		return empty, ErrUnavailable
+	}
 	account, err := s.signupIdentity.TenantRecoveryAccount(ctx, org, recipient.Email)
 	if errors.Is(err, zitadel.ErrIdentityMissing) {
 		return empty, ErrNotFound
@@ -140,6 +151,9 @@ func (s *Service) ReadPasswordRecovery(ctx context.Context, in customercontract.
 		return empty, ErrUnavailable
 	}
 	state := "ready"
+	if commandErr == nil && operation.State == "refused" {
+		state = "refused"
+	}
 	if account.Locked {
 		state = "locked"
 	}

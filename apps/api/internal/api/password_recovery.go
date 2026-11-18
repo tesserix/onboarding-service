@@ -61,3 +61,20 @@ func (d Deps) readPasswordRecovery(c *gin.Context) {
 	}
 	c.JSON(200, result)
 }
+
+func (d Deps) completePasswordRecovery(c *gin.Context) {
+	var in customercontract.PasswordRecoveryPassword
+	if !decodeHospital(c, &in) {
+		return
+	}
+	if d.Service == nil {
+		abort(c, 503, "identity unavailable")
+		return
+	}
+	result, err := d.Service.CompletePasswordRecovery(c.Request.Context(), in)
+	if err != nil {
+		respondErr(c, d.logger(), err)
+		return
+	}
+	c.JSON(200, result)
+}

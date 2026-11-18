@@ -38,7 +38,7 @@ func TestPasswordRecoveryPinsTheTenantAndBrowserBeforeMailboxProof(t *testing.T)
 func TestPasswordRecoveryProofAndPasswordStayPrivateAndBounded(t *testing.T) {
 	id := uuid.Must(uuid.NewV7()).String()
 	proof := customercontract.PasswordRecoveryProof{ID: id, BrowserHash: strings.Repeat("a", 64), Code: "12345678"}
-	password := customercontract.PasswordRecoveryPassword{ID: id, BrowserHash: proof.BrowserHash, Password: "synthetic-password"}
+	password := customercontract.PasswordRecoveryPassword{CommandID: uuid.Must(uuid.NewV7()).String(), ID: id, BrowserHash: proof.BrowserHash, Password: "synthetic-password"}
 	if proof.Validate() != nil || password.Validate() != nil {
 		t.Fatal("valid recipient input refused")
 	}
@@ -73,7 +73,7 @@ func TestPasswordRecoveryWireRejectsDuplicateRecasedNullAndMissingFields(t *test
 		{`{"id":"` + id + `","tenantId":"` + uuid.NewString() + `","browserHash":"` + hash + `","sourceHash":"` + hash + `","email":"person@example.test"}`, func() any { return new(customercontract.PasswordRecoveryStart) }},
 		{`{"id":"` + id + `","browserHash":"` + hash + `"}`, func() any { return new(customercontract.PasswordRecoveryAccess) }},
 		{`{"id":"` + id + `","browserHash":"` + hash + `","code":"12345678"}`, func() any { return new(customercontract.PasswordRecoveryProof) }},
-		{`{"id":"` + id + `","browserHash":"` + hash + `","password":"valid-password"}`, func() any { return new(customercontract.PasswordRecoveryPassword) }},
+		{`{"id":"` + id + `","browserHash":"` + hash + `","commandId":"` + uuid.Must(uuid.NewV7()).String() + `","password":"valid-password"}`, func() any { return new(customercontract.PasswordRecoveryPassword) }},
 	}
 	for _, fixture := range fixtures {
 		if err := json.Unmarshal([]byte(fixture.body), fixture.target()); err != nil {
@@ -91,5 +91,12 @@ func TestPasswordRecoveryWireRejectsDuplicateRecasedNullAndMissingFields(t *test
 				t.Fatalf("ambiguous recovery input admitted: %s", raw)
 			}
 		}
+	}
+}
+
+func TestPasswordRecoveryCompletionRequiresItsOwnImmutableCommand(t *testing.T) {
+	input := customercontract.PasswordRecoveryPassword{ID: uuid.Must(uuid.NewV7()).String(), BrowserHash: strings.Repeat("a", 64), Password: "synthetic-password"}
+	if input.Validate() == nil {
+		t.Fatal("password completion admitted without a separate immutable native command")
 	}
 }

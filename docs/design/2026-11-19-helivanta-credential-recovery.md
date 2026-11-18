@@ -122,8 +122,8 @@ Only digests are stored; raw codes, passwords and native reset proofs are absent
 
 The separate `password_recovery_challenges` table is prepared in infrastructure
 PR [#1712](https://github.com/tesserix/tesserix-k8s/pull/1712), schema commit
-`d8e2ddee123bafe38f62b9ba81497a4ed4bfcfd0`. CI fetches that exact canonical schema
-with SHA-256 `cefe10aeac3a460551af6d67c04ae2d967fa1d1dee2a72dc50e8665c1dd0a55b`.
+`2776a61e60d844e50fdd745cf9e98bc46052cbe1`. CI fetches that exact canonical schema
+with SHA-256 `91e8d3e66f36384d28d110049bc166f7f46e3a04af3aba6a90b03fb908817f65`.
 This is a test dependency; no live migration is implied or approved by this pin.
 
 Delivery reservations serialize across replicas. Limits are 3/hour and 10/24h
@@ -155,9 +155,8 @@ rearming verification and makes delivery outcomes final. Sensitive reads and
 later password completion must still reauthorize current native/customer scope.
 
 Remaining before release: hosted PostgreSQL results for these transitions and
-quotas; the retained native password-completion command and reconciliation;
-Global
-API/browser integration and native reset/new-password sign-in acceptance; the
+quotas and native password-completion command/reconciliation;
+Global API/browser integration and native reset/new-password sign-in acceptance; the
 separate Staff MFA workflow. The candidate routes have no public UI consumer yet
 and must not be presented as completed recovery. Keep the schema PR unmerged until
 its live migration has specific approval after review and database verification.
@@ -185,3 +184,70 @@ login authority. The service rechecks customer scope and mailbox proof after
 native I/O and commits its sensitive-read audit before either status is returned.
 Native, scope, persistence or audit uncertainty fails closed. No subject or
 private contact is returned in this receipt.
+
+## Native completion command design
+
+One verified mailbox capability may attempt at most five distinct completion
+commands. Each command has a separate immutable UUID; a retry returns its retained
+receipt and performs no native mutation. A known native password-policy refusal
+consumes that attempt, allowing a new command within the same unexpired mailbox
+proof. No password, password commitment, native code or native session token is
+retained. Mailbox verification must postdate the current native password-change
+cutoff; an earlier proof cannot reset a subsequently changed credential.
+
+The owner checks the exact native account and managed tenant, reserves the
+command and attributable audit, then obtains the native reset code and submits
+that proof with the new password in request memory. Native complexity policy is
+authoritative. Only an explicit allowlist of native policy error IDs known to
+return before mutation may produce `refused`. Any uncertain dispatch, malformed
+response, dependency error or lost result remains `unconfirmed`; it cannot admit
+a new password mutation for that native account. Do not infer completion from
+password presence or a changed timestamp without an acknowledged native write.
+
+An acknowledged native response must bind resource owner and positive event
+sequence/change time. Retain that minimized evidence as `applied`, and complete
+only after a current owned native read confirms the credential cutoff. If this
+read is unavailable, the same command can be read/reconciled without repeating
+the password write. All final disclosures recheck the managed tenant and mailbox
+capability and commit audit. A completed capability grants no login; ordinary
+password and MFA sign-in remain mandatory.
+
+A database constraint and per-account admission lock serialize concurrent
+commands. Processing/applied/unconfirmed commands block another mutation for the
+same tenant/account. A completed native cutoff fences a second command prepared
+from older native evidence. Crash-before-dispatch is conservatively unconfirmed;
+there is no automatic replay of the non-idempotent native endpoint. Support must
+investigate retained unconfirmed evidence; users may try normal sign-in with the
+new password. Do not release this fence through a timer or optimistic retry.
+
+This command uses the existing identity owner's retained admission boundary,
+rather than adding Temporal. The native API offers no idempotency key, and
+Temporal activity retries would not make its password writes safe; persisting
+passwords in workflow history is also forbidden. There is no asynchronous
+password payload or compensating password write. The workflow has a bounded
+30-second request and explicit retained uncertain outcomes, with no new worker,
+queue or standing infrastructure. Existing 10-request/second planning and 99.9%
+service target apply; interactive native completion may use the full deadline.
+This section is a design; implementations and hosted/native acceptance must
+prove each transition before release.
+
+The candidate private `/password-recovery/password` handler now accepts
+`PasswordRecoveryPassword`, including its distinct required `commandId`. Its
+`PasswordRecoveryResult` reports the retained command state. Status restores the
+latest browser-bound receipt and reconciles `applied` without another write.
+A `refused` result permits a distinct new command, capped at five per mailbox
+proof; a repeated command with any password payload returns the old receipt.
+The native adapter's safe policy allowlist is pinned to `DOMAIN-HuJf6`,
+`DOMAIN-co3Xw`, `DOMAIN-VoaRj`, `DOMAIN-ZBv4H`, `DOMAIN-ZDLwA` in the native
+`internal/domain/policy_password_complexity.go`. Generic 400/412 responses,
+unrecognized error details and ambiguous successes are unconfirmed, not refusal.
+Acknowledgements use native `object.v2.Details` owner, sequence and change date.
+The existing native reset-code primitive (`returnCode`) sends no further email;
+its proof stays only in request memory and uses the dedicated recovery ledger.
+
+Current implementation is still awaiting hosted PostgreSQL validation of command
+serialization, attempt limits, stale-proof refusal, known-policy refusal,
+acknowledged-but-unavailable projection, command replay and uncertain native
+outcomes. The actual native reset/new-password sign-in browser journey and
+administrator MFA workflow remain required. Do not infer release readiness from
+unit adapters or compilation of database tests.
