@@ -58,6 +58,18 @@ func TestRecoverySessionRequiresExactFreshNativeProof(t *testing.T) {
 		{name: "future_change", edit: func(m map[string]any) { m["changeDate"] = now.Add(time.Hour) }, unavailable: true},
 		{name: "change_before_creation", edit: func(m map[string]any) { m["changeDate"] = reset.Add(-time.Second) }, unavailable: true},
 		{name: "duplicate_session_id", edit: func(m map[string]any) { m["ID"] = "another-session" }, unavailable: true},
+		{name: "recased_session_id", edit: func(m map[string]any) { m["ID"] = m["id"]; delete(m, "id") }, unavailable: true},
+		{name: "recased_creation", edit: func(m map[string]any) { m["CreationDate"] = m["creationDate"]; delete(m, "creationDate") }, unavailable: true},
+		{name: "recased_primary", edit: func(m map[string]any) {
+			f := m["factors"].(map[string]any)
+			f["Password"] = f["password"]
+			delete(f, "password")
+		}, unavailable: true},
+		{name: "recased_primary_time", edit: func(m map[string]any) {
+			f := recoveryTestFactor(m, "password")
+			f["VerifiedAt"] = f["verifiedAt"]
+			delete(f, "verifiedAt")
+		}, unavailable: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			raw, err := json.Marshal(base)

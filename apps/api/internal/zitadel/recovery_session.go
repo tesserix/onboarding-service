@@ -54,18 +54,52 @@ func (c *Client) VerifyRecoverySession(ctx context.Context, orgID, subject, sess
 		return empty, ErrIdentityUnavailable
 	}
 	client := *c.http
+	client.Jar = nil
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	var response *struct {
-		Session *recoveryNativeSession `json:"session"`
-	}
-	err = c.readIdentity(ctx, &client, token, http.MethodGet, "/v2/sessions/"+sessionID, orgID, nil, &response)
+	var raw json.RawMessage
+	err = c.readIdentity(ctx, &client, token, http.MethodGet, "/v2/sessions/"+sessionID, orgID, nil, &raw)
 	if errors.Is(err, ErrIdentityMissing) {
 		return empty, ErrRecoverySessionRejected
 	}
-	if err != nil || ctx.Err() != nil || response == nil || response.Session == nil {
+	if err != nil || ctx.Err() != nil {
 		return empty, ErrIdentityUnavailable
 	}
-	return verifyRecoverySession(response.Session, orgID, subject, sessionID, resetAt, enrolledAt, time.Now())
+	session, err := decodeRecoverySession(raw)
+	if err != nil {
+		return empty, err
+	}
+	return verifyRecoverySession(session, orgID, subject, sessionID, resetAt, enrolledAt, time.Now())
+}
+
+func decodeRecoverySession(raw []byte) (*recoveryNativeSession, error) {
+	root, err := identityObject(raw, "session")
+	if err != nil {
+		return nil, ErrIdentityUnavailable
+	}
+	session, err := identityObject(root["session"], "id", "sequence", "creationDate", "changeDate", "expirationDate", "factors")
+	if err != nil {
+		return nil, ErrIdentityUnavailable
+	}
+	factors, err := identityObject(session["factors"], "user", "password", "totp")
+	if err != nil {
+		return nil, ErrIdentityUnavailable
+	}
+	if _, err = identityObject(factors["user"], "id", "organizationId", "verifiedAt"); err != nil {
+		return nil, ErrIdentityUnavailable
+	}
+	for _, name := range []string{"password", "totp"} {
+		value := factors[name]
+		if len(value) != 0 && !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			if _, err = identityObject(value, "verifiedAt"); err != nil {
+				return nil, ErrIdentityUnavailable
+			}
+		}
+	}
+	var out recoveryNativeSession
+	if json.Unmarshal(root["session"], &out) != nil {
+		return nil, ErrIdentityUnavailable
+	}
+	return &out, nil
 }
 
 func verifyRecoverySession(s *recoveryNativeSession, orgID, subject, sessionID string, resetAt, enrolledAt, now time.Time) (RecoverySessionProof, error) {
