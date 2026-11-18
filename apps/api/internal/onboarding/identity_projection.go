@@ -24,11 +24,19 @@ func (s *Service) CustomerIdentityProjection(ctx context.Context, in customercon
 	if err != nil {
 		return empty, err
 	}
-	result, err := s.signupIdentity.IdentityProjection(ctx, org, in.Subject, in.Purpose)
+	var result customercontract.IdentityProjection
+	if in.IncludeCredentialState {
+		result, err = s.signupIdentity.IdentityCredentialProjection(ctx, org, in.Subject)
+	} else {
+		result, err = s.signupIdentity.IdentityProjection(ctx, org, in.Subject, in.Purpose)
+	}
 	if err != nil || result.Validate() != nil || result.TenantID != in.TenantID || result.Subject != in.Subject || result.OrganizationID != org || result.Purpose != in.Purpose {
 		return empty, ErrUnavailable
 	}
-	if in.Purpose == "assignment_candidate" {
+	if result.State == "active" && in.IncludeCredentialState != (result.Credentials != nil) {
+		return empty, ErrUnavailable
+	}
+	if in.Purpose == "assignment_candidate" || in.IncludeCredentialState {
 		currentOrg, err := s.customerIdentityScope(ctx, in.TenantID)
 		if err != nil {
 			return empty, err
@@ -52,8 +60,9 @@ func (s *Service) CustomerIdentityProjection(ctx context.Context, in customercon
 		}
 	}
 	detail, err := json.Marshal(struct {
-		Purpose string `json:"purpose"`
-	}{Purpose: in.Purpose})
+		Purpose         string `json:"purpose"`
+		CredentialState bool   `json:"credentialState,omitempty"`
+	}{Purpose: in.Purpose, CredentialState: in.IncludeCredentialState})
 	if err != nil {
 		return empty, ErrUnavailable
 	}

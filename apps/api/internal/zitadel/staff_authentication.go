@@ -2,6 +2,7 @@ package zitadel
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -12,6 +13,10 @@ func (c *Client) StaffPasswordConfigured(ctx context.Context, org, user string) 
 	if !identitySourceID.MatchString(org) || !identitySourceID.MatchString(user) {
 		return false, ErrIdentityUnavailable
 	}
+	return c.passwordConfigured(ctx, org, user)
+}
+
+func (c *Client) passwordConfigured(ctx context.Context, org, user string) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	token, err := c.tokens.Token(ctx)
@@ -28,7 +33,18 @@ func (c *Client) StaffPasswordConfigured(ctx context.Context, org, user string) 
 	client := *c.http
 	client.Jar = nil
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	if c.readIdentity(ctx, &client, token, http.MethodGet, "/v2/users/"+user+"/authentication_methods", org, nil, &result) != nil || result.Details == nil || len(result.Methods) > 8 {
+	var raw json.RawMessage
+	if c.readIdentity(ctx, &client, token, http.MethodGet, "/v2/users/"+user+"/authentication_methods", org, nil, &raw) != nil {
+		return false, ErrIdentityUnavailable
+	}
+	fields, err := identityObject(raw, "details", "authMethodTypes")
+	if err != nil {
+		return false, ErrIdentityUnavailable
+	}
+	if _, err = identityObject(fields["details"], "totalResult", "timestamp"); err != nil {
+		return false, ErrIdentityUnavailable
+	}
+	if json.Unmarshal(raw, &result) != nil || result.Details == nil || len(result.Methods) > 8 {
 		return false, ErrIdentityUnavailable
 	}
 	if result.Details.Total == nil {

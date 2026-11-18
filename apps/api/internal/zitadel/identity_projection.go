@@ -16,6 +16,15 @@ import (
 )
 
 func (c *Client) IdentityProjection(ctx context.Context, org, subject, purpose string) (customercontract.IdentityProjection, error) {
+	return c.identityProjection(ctx, org, subject, purpose, false)
+}
+
+// IdentityCredentialProjection adds native password-change evidence to current status.
+func (c *Client) IdentityCredentialProjection(ctx context.Context, org, subject string) (customercontract.IdentityProjection, error) {
+	return c.identityProjection(ctx, org, subject, "status", true)
+}
+
+func (c *Client) identityProjection(ctx context.Context, org, subject, purpose string, credentials bool) (customercontract.IdentityProjection, error) {
 	base := customercontract.IdentityProjection{TenantID: strings.TrimPrefix(org, "helivanta-"), OrganizationID: org, Subject: subject, State: "inactive", Admission: "unassessed", Purpose: purpose}
 	if purpose == "membership" {
 		base.Admission = "ineligible"
@@ -38,7 +47,11 @@ func (c *Client) IdentityProjection(ctx context.Context, org, subject, purpose s
 		}
 		return customercontract.IdentityProjection{}, ErrIdentityUnavailable
 	}
-	return nativeIdentityProjection(raw, base)
+	out, err := nativeIdentityProjection(raw, base)
+	if err != nil || !credentials || out.State != "active" {
+		return out, err
+	}
+	return c.identityCredentials(ctx, subject, raw, out)
 }
 
 func nativeIdentityProjection(raw json.RawMessage, out customercontract.IdentityProjection) (customercontract.IdentityProjection, error) {
