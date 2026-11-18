@@ -13,7 +13,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tesserix/onboarding-service/api/customercontract"
+	"github.com/tesserix/onboarding-service/api/internal/audit"
 	"github.com/tesserix/onboarding-service/api/internal/store"
+	"github.com/tesserix/onboarding-service/api/internal/zitadel"
 )
 
 func passwordRecoveryCodeHash(id, browser, code string) []byte {
@@ -84,4 +86,62 @@ func (s *Service) VerifyPasswordRecovery(ctx context.Context, in customercontrac
 		return ErrUnavailable
 	}
 	return nil
+}
+
+// ReadPasswordRecovery checks current native eligibility only after mailbox proof.
+func (s *Service) ReadPasswordRecovery(ctx context.Context, in customercontract.PasswordRecoveryAccess) (customercontract.PasswordRecoveryStatus, error) {
+	var empty customercontract.PasswordRecoveryStatus
+	if in.Validate() != nil {
+		return empty, ErrInvalid
+	}
+	if s.store == nil || s.signupIdentity == nil || s.idp == nil {
+		return empty, ErrUnavailable
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	id, _ := uuid.Parse(in.ID)
+	browser, _ := hex.DecodeString(in.BrowserHash)
+	recipient, err := s.store.VerifiedPasswordRecovery(ctx, id, browser, time.Now().UTC())
+	if errors.Is(err, store.ErrNotFound) {
+		return empty, ErrNotFound
+	}
+	if err != nil {
+		return empty, ErrUnavailable
+	}
+	org, err := s.customerIdentityScope(ctx, recipient.TenantID.String())
+	if err != nil {
+		return empty, err
+	}
+	account, err := s.signupIdentity.TenantRecoveryAccount(ctx, org, recipient.Email)
+	if errors.Is(err, zitadel.ErrIdentityMissing) {
+		return empty, ErrNotFound
+	}
+	if err != nil {
+		return empty, ErrUnavailable
+	}
+	current, err := s.customerIdentityScope(ctx, recipient.TenantID.String())
+	if err != nil {
+		return empty, err
+	}
+	if current != org {
+		return empty, ErrNotFound
+	}
+	proof, err := s.store.VerifiedPasswordRecovery(ctx, id, browser, time.Now().UTC())
+	if errors.Is(err, store.ErrNotFound) {
+		return empty, ErrNotFound
+	}
+	if err != nil {
+		return empty, ErrUnavailable
+	}
+	if proof != recipient {
+		return empty, ErrNotFound
+	}
+	if err = s.store.AppendAudit(ctx, audit.Event{ActorType: audit.ActorSystem, ActorID: customerWorkload, ProductKey: "helivanta", OrgID: recipient.TenantID.String(), Action: "account.password_recovery.status_read", Outcome: audit.OutcomeSuccess, RequestID: in.ID}); err != nil {
+		return empty, ErrUnavailable
+	}
+	state := "ready"
+	if account.Locked {
+		state = "locked"
+	}
+	return customercontract.PasswordRecoveryStatus{State: state}, nil
 }

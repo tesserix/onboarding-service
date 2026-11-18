@@ -44,3 +44,20 @@ func (d Deps) verifyPasswordRecovery(c *gin.Context) {
 	}
 	c.JSON(200, customercontract.PasswordRecoveryVerified{State: "verified"})
 }
+
+func (d Deps) readPasswordRecovery(c *gin.Context) {
+	var in customercontract.PasswordRecoveryAccess
+	if !decodeHospital(c, &in) {
+		return
+	}
+	if d.Service == nil {
+		abort(c, 503, "identity unavailable")
+		return
+	}
+	result, err := d.Service.ReadPasswordRecovery(c.Request.Context(), in)
+	if err != nil {
+		respondErr(c, d.logger(), err)
+		return
+	}
+	c.JSON(200, result)
+}

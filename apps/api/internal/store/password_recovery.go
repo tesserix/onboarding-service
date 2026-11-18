@@ -64,6 +64,13 @@ func (s *Store) ReservePasswordRecovery(ctx context.Context, in PasswordRecovery
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
+		var retained bool
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM password_recovery_delivery_ids WHERE id=$1)`, in.ID).Scan(&retained); err != nil {
+			return err
+		}
+		if retained {
+			return nil
+		}
 		var verified bool
 		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM password_recovery_challenges WHERE tenant_id=$1 AND browser_hash=$2 AND email=$3 AND verified_at IS NOT NULL AND expires_at>greatest($4::timestamptz,clock_timestamp()))`, in.TenantID, in.BrowserHash, in.Email, in.CreatedAt).Scan(&verified); err != nil {
 			return err
@@ -84,6 +91,9 @@ func (s *Store) ReservePasswordRecovery(ctx context.Context, in PasswordRecovery
 		}
 		if global >= 1000 || recipientHour >= 3 || recipientDay >= 10 || sourceHour >= 10 || sourceDay >= 30 {
 			return ErrPasswordRecoveryLimited
+		}
+		if _, err = tx.Exec(ctx, `INSERT INTO password_recovery_delivery_ids(id,created_at) VALUES($1,$2)`, in.ID, in.CreatedAt); err != nil {
+			return err
 		}
 		_, err = tx.Exec(ctx, `INSERT INTO password_recovery_challenges(id,tenant_id,browser_hash,source_hash,email,code_hash,created_at,updated_at,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$7,$7::timestamptz+interval '10 minutes')`, in.ID, in.TenantID, in.BrowserHash, in.SourceHash, in.Email, in.CodeHash, in.CreatedAt)
 		if err != nil {
@@ -156,4 +166,12 @@ func (s *Store) RecordPasswordRecoveryDelivery(ctx context.Context, id uuid.UUID
 		}
 		return appendAudit(ctx, tx, audit.Event{ActorType: audit.ActorSystem, ActorID: "helivanta-api", ProductKey: "helivanta", OrgID: tenant.String(), Action: "account.password_recovery.delivery", Outcome: result, RequestID: id.String()})
 	})
+}
+
+// PurgePasswordRecovery erases expired contact/proof data in bounded batches, retaining delivery IDs and audit.
+func (s *Store) PurgePasswordRecovery(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_, err := s.pool.Exec(ctx, `DELETE FROM password_recovery_challenges WHERE id IN (SELECT id FROM password_recovery_challenges WHERE created_at<clock_timestamp()-interval '24 hours' ORDER BY created_at,id LIMIT 5000)`)
+	return err
 }

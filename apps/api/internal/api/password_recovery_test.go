@@ -17,7 +17,7 @@ func TestPasswordRecoveryChallengeRequiresExactPrivateWorkloadAndStrictInput(t *
 	browser := strings.Repeat("a", 64)
 	validStart := `{"id":"` + id + `","tenantId":"` + uuid.NewString() + `","email":"person@example.test","browserHash":"` + browser + `","sourceHash":"` + browser + `"}`
 	validProof := `{"id":"` + id + `","browserHash":"` + browser + `","code":"12345678"}`
-	for _, path := range []string{"/internal/v1/customer-signups/password-recovery/start", "/internal/v1/customer-signups/password-recovery/verify"} {
+	for _, path := range []string{"/internal/v1/customer-signups/password-recovery/start", "/internal/v1/customer-signups/password-recovery/verify", "/internal/v1/customer-signups/password-recovery/status"} {
 		for _, authorization := range [][]string{nil, {"Bearer browser"}, {"Bearer foreign-workload"}, {"Bearer workload", "Bearer workload"}} {
 			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
 			for _, value := range authorization {
@@ -32,6 +32,9 @@ func TestPasswordRecoveryChallengeRequiresExactPrivateWorkloadAndStrictInput(t *
 		body := validStart
 		if strings.HasSuffix(path, "verify") {
 			body = validProof
+		}
+		if strings.HasSuffix(path, "status") {
+			body = `{"id":"` + id + `","browserHash":"` + browser + `"}`
 		}
 		for _, tc := range []struct {
 			body   string

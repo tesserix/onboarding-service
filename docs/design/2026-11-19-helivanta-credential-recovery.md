@@ -122,8 +122,8 @@ Only digests are stored; raw codes, passwords and native reset proofs are absent
 
 The separate `password_recovery_challenges` table is prepared in infrastructure
 PR [#1712](https://github.com/tesserix/tesserix-k8s/pull/1712), schema commit
-`3862a04393146b6639d03d2c2dc469bbb08c3f7f`. CI fetches that exact canonical schema
-with SHA-256 `24e3f8a7b4569c46d6e44acf4c32dc6ddd428b5fe4fc334634db83e8827f6b9f`.
+`d8e2ddee123bafe38f62b9ba81497a4ed4bfcfd0`. CI fetches that exact canonical schema
+with SHA-256 `cefe10aeac3a460551af6d67c04ae2d967fa1d1dee2a72dc50e8665c1dd0a55b`.
 This is a test dependency; no live migration is implied or approved by this pin.
 
 Delivery reservations serialize across replicas. Limits are 3/hour and 10/24h
@@ -156,8 +156,32 @@ later password completion must still reauthorize current native/customer scope.
 
 Remaining before release: hosted PostgreSQL results for these transitions and
 quotas; the retained native password-completion command and reconciliation;
-bounded personal-data retention with non-reusable command tombstones; Global
+Global
 API/browser integration and native reset/new-password sign-in acceptance; the
 separate Staff MFA workflow. The candidate routes have no public UI consumer yet
 and must not be presented as completed recovery. Keep the schema PR unmerged until
 its live migration has specific approval after review and database verification.
+
+An hourly existing maintenance loop now purges mailbox challenge rows older than
+24 hours in batches of at most 5,000 under a five-second database deadline.
+Contact, browser/source digests and mailbox code digests disappear; the audit
+ledger and `password_recovery_delivery_ids` retain only the already used random
+delivery ID and its creation time. The application cannot update or delete those
+IDs. A replay after cleanup authorizes no new mail. At the supported load ceiling,
+the batch budget exceeds one hour of new reservations; scheduling adds up to one
+hour to normal personal-data deletion latency. Backups retain their existing
+independent retention policy; purging the live table does not erase backups.
+
+The private `POST /internal/v1/customer-signups/password-recovery/status` route
+accepts only the browser-bound `PasswordRecoveryAccess`. Before native lookup,
+the service requires an unexpired verified mailbox challenge and current managed
+customer organization/product enrollment. Native search is bounded to two results
+inside that exact organization with the verified email; ambiguous, foreign,
+inactive or unverified accounts disclose no recovery status. The common lookup
+keeps ordinary login restricted to active accounts. Only the recovery observer
+can recognize a locked account, and it returns `locked` without unlocking it.
+An eligible active account returns `ready`, which grants no password-change or
+login authority. The service rechecks customer scope and mailbox proof after
+native I/O and commits its sensitive-read audit before either status is returned.
+Native, scope, persistence or audit uncertainty fails closed. No subject or
+private contact is returned in this receipt.

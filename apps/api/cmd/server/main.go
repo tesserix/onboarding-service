@@ -270,6 +270,9 @@ func purgeIdempotencyKeys(ctx context.Context, st *store.Store, log *slog.Logger
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			if err := st.PurgePasswordRecovery(ctx); err != nil {
+				log.Warn("could not purge expired password recovery challenges", "error", err)
+			}
 			if err := st.PurgeDiscovery(ctx); err != nil {
 				log.Warn("could not purge expired discovery challenges", "error", err)
 			}

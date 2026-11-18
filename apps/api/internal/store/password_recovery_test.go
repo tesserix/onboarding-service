@@ -214,3 +214,23 @@ func TestPasswordRecoveryApplicationCannotRewriteAuthorityOrRearmProof(t *testin
 		t.Fatal("failed rewrite destroyed proof", err)
 	}
 }
+
+func TestPasswordRecoveryCleanupErasesExpiredContactButNeverReusesTheCommand(t *testing.T) {
+	s := newStore(t)
+	in := recoveryReservation()
+	in.CreatedAt = time.Now().UTC().Add(-25 * time.Hour)
+	if send, err := s.ReservePasswordRecovery(t.Context(), in); err != nil || !send {
+		t.Fatal("old reservation setup", err)
+	}
+	if err := s.PurgePasswordRecovery(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := s.pool.QueryRow(t.Context(), `SELECT count(*) FROM password_recovery_challenges WHERE id=$1`, in.ID).Scan(&count); err != nil || count != 0 {
+		t.Fatal("expired personal data retained", err)
+	}
+	in.CreatedAt = time.Now().UTC()
+	if send, err := s.ReservePasswordRecovery(t.Context(), in); err != nil || send {
+		t.Fatal("purged command was reused for another delivery", err)
+	}
+}

@@ -30,6 +30,7 @@ func (d Deps) registerCustomers(r *gin.Engine) {
 	group.POST("/account-discovery/choices", d.accountChoices)
 	group.POST("/password-recovery/start", d.startPasswordRecovery)
 	group.POST("/password-recovery/verify", d.verifyPasswordRecovery)
+	group.POST("/password-recovery/status", d.readPasswordRecovery)
 	group.POST("/login-target", d.customerLoginTarget)
 	for _, action := range []string{"status", "email", "password", "resend"} {
 		group.POST("/staff-invitations/"+action, d.staffRecipient(action))

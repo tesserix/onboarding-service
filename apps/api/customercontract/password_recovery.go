@@ -87,3 +87,8 @@ type PasswordRecoveryAccepted struct {
 type PasswordRecoveryVerified struct {
 	State string `json:"state" enum:"verified" required:"true"`
 }
+
+// PasswordRecoveryStatus is available only to the browser with verified mailbox proof.
+type PasswordRecoveryStatus struct {
+	State string `json:"state" enum:"ready,locked" required:"true"`
+}
