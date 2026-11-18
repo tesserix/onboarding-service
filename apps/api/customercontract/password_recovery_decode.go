@@ -93,3 +93,25 @@ func (in *PasswordRecoveryCode) UnmarshalJSON(raw []byte) error {
 	*in = PasswordRecoveryCode(value)
 	return nil
 }
+
+// UnmarshalJSON rejects invented or ambiguous recovery outcomes.
+func (in *PasswordRecoveryStatus) UnmarshalJSON(raw []byte) error {
+	type wire PasswordRecoveryStatus
+	var value wire
+	if !utf8.Valid(raw) || strictProjectionObject(raw, reflect.TypeFor[wire]()) != nil || json.Unmarshal(raw, &value) != nil || PasswordRecoveryStatus(value).Validate() != nil {
+		return ErrInvalid
+	}
+	*in = PasswordRecoveryStatus(value)
+	return nil
+}
+
+// UnmarshalJSON rejects invented or ambiguous recovery outcomes.
+func (in *PasswordRecoveryResult) UnmarshalJSON(raw []byte) error {
+	type wire PasswordRecoveryResult
+	var value wire
+	if !utf8.Valid(raw) || strictProjectionObject(raw, reflect.TypeFor[wire]()) != nil || json.Unmarshal(raw, &value) != nil || PasswordRecoveryResult(value).Validate() != nil {
+		return ErrInvalid
+	}
+	*in = PasswordRecoveryResult(value)
+	return nil
+}

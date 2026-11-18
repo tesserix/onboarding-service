@@ -2,6 +2,9 @@ package customercontract
 
 import (
 	"github.com/google/uuid"
+	"reflect"
+	"slices"
+	"strings"
 )
 
 // PasswordRecoveryStart binds a dedicated mailbox challenge to one tenant.
@@ -108,4 +111,19 @@ type PasswordRecoveryStatus struct {
 // PasswordRecoveryResult reports retained native outcome without authenticating the recipient.
 type PasswordRecoveryResult struct {
 	State string `json:"state" enum:"processing,applied,completed,refused,unconfirmed" required:"true"`
+}
+
+func (in PasswordRecoveryStatus) Validate() error {
+	return recoveryState(reflect.TypeFor[PasswordRecoveryStatus](), in.State)
+}
+func (in PasswordRecoveryResult) Validate() error {
+	return recoveryState(reflect.TypeFor[PasswordRecoveryResult](), in.State)
+}
+
+func recoveryState(kind reflect.Type, value string) error {
+	field, ok := kind.FieldByName("State")
+	if !ok || value == "" || !slices.Contains(strings.Split(field.Tag.Get("enum"), ","), value) {
+		return ErrInvalid
+	}
+	return nil
 }

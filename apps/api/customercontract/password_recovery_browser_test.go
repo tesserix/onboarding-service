@@ -31,3 +31,13 @@ func TestRecoveryBrowserInputsCannotSupplyTenantOrPrivateCapability(t *testing.T
 		}
 	}
 }
+
+func TestRecoveryReceiptsRejectInventedOrAmbiguousOutcomes(t *testing.T) {
+	for _, target := range []func() any{func() any { return new(customercontract.PasswordRecoveryStatus) }, func() any { return new(customercontract.PasswordRecoveryResult) }} {
+		for _, raw := range []string{`{"state":"invented_success"}`, `{"state":"completed","state":"unconfirmed"}`, `{"STATE":"completed"}`, `{"state":null}`} {
+			if json.Unmarshal([]byte(raw), target()) == nil {
+				t.Fatal("unverified recovery outcome admitted")
+			}
+		}
+	}
+}
