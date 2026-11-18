@@ -91,6 +91,14 @@ verified product workload is trusted to attest its own current principal; no
 public target-profile lookup is added. These current-user self reads preserve
 accepted legacy memberships without granting foreign subjects new roles.
 
+The [account-recovery prerequisite](../design/2026-11-19-helivanta-credential-recovery.md)
+adds an explicit `includeCredentialState: true` opt-in for status reads. An
+active-human reply then contains native password-change evidence, with no
+password, hash or factor secret. Requests without the flag keep the state-only
+shape. This source implementation does not itself invalidate any Helivanta
+session or deliver returning-account recovery; the consumer admission and full
+reset journey remain required.
+
 Status/membership responses never contain presentation PII. Only profile-purpose
 responses may contain profile fields, with no new identity master or durable
 profile cache. Requests and results bind purpose, tenant, scoped org and subject;

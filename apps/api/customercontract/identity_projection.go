@@ -3,20 +3,25 @@ package customercontract
 import (
 	"net/mail"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 )
 
 // IdentityProjectionInput is accepted only from the verified product workload.
 type IdentityProjectionInput struct {
-	Purpose           string `json:"purpose" required:"true" enum:"status,membership,profile,assignment_candidate"`
-	TenantID          string `json:"tenantId" format:"uuid" required:"true"`
-	Subject           string `json:"subject" required:"true" pattern:"^[A-Za-z0-9_-]{1,200}$"`
-	RequestID         string `json:"requestId" format:"uuid" required:"true"`
-	IncludeTenantName bool   `json:"includeTenantName,omitempty"`
+	Purpose                string `json:"purpose" required:"true" enum:"status,membership,profile,assignment_candidate"`
+	TenantID               string `json:"tenantId" format:"uuid" required:"true"`
+	Subject                string `json:"subject" required:"true" pattern:"^[A-Za-z0-9_-]{1,200}$"`
+	RequestID              string `json:"requestId" format:"uuid" required:"true"`
+	IncludeTenantName      bool   `json:"includeTenantName,omitempty"`
+	IncludeCredentialState bool   `json:"includeCredentialState,omitempty"`
 }
 
 func (v IdentityProjectionInput) Validate() error {
+	if v.IncludeCredentialState && v.Purpose != "status" {
+		return ErrInvalid
+	}
 	if v.IncludeTenantName && v.Purpose != "profile" {
 		return ErrInvalid
 	}
@@ -48,6 +53,26 @@ type AssignmentCandidateIdentity IdentityProfile
 
 func (v AssignmentCandidateIdentity) Validate() error { return IdentityProfile(v).Validate() }
 
+// IdentityCredentialState contains native change evidence, never a credential.
+type IdentityCredentialState struct {
+	PasswordConfigured bool   `json:"passwordConfigured" required:"true"`
+	PasswordChangedAt  string `json:"passwordChangedAt,omitempty"`
+}
+
+func (v IdentityCredentialState) Validate() error {
+	if !v.PasswordConfigured {
+		if v.PasswordChangedAt != "" {
+			return ErrInvalid
+		}
+		return nil
+	}
+	changed, err := time.Parse(time.RFC3339Nano, v.PasswordChangedAt)
+	if err != nil || !changed.After(time.Unix(0, 0)) {
+		return ErrInvalid
+	}
+	return nil
+}
+
 // IdentityProjection separates current-state checks from new-grant authority.
 // OrganizationID identifies the authorized tenant scope, not a foreign user's org.
 type IdentityProjection struct {
@@ -60,9 +85,13 @@ type IdentityProjection struct {
 	Profile        *IdentityProfile             `json:"profile,omitempty"`
 	TenantName     string                       `json:"tenantName,omitempty" max:"200" clean:"true"`
 	Candidate      *AssignmentCandidateIdentity `json:"candidate,omitempty"`
+	Credentials    *IdentityCredentialState     `json:"credentials,omitempty"`
 }
 
 func (v IdentityProjection) Validate() error {
+	if v.Credentials != nil && (v.Purpose != "status" || v.State != "active" || v.Credentials.Validate() != nil) {
+		return ErrInvalid
+	}
 	if validateTaggedFields(v, "") != nil || v.OrganizationID != "helivanta-"+v.TenantID {
 		return ErrInvalid
 	}

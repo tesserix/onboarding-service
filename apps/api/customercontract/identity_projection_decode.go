@@ -25,9 +25,12 @@ func strictProjectionObject(raw []byte, kind reflect.Type) error {
 		return ErrInvalid
 	}
 	fields := make(map[string]reflect.Type, kind.NumField())
+	required := make(map[string]bool, kind.NumField())
 	for i := range kind.NumField() {
 		field := kind.Field(i)
-		fields[strings.Split(field.Tag.Get("json"), ",")[0]] = field.Type
+		name := strings.Split(field.Tag.Get("json"), ",")[0]
+		fields[name] = field.Type
+		required[name] = field.Tag.Get("required") == "true"
 	}
 	seen := make(map[string]bool, len(fields))
 	for decoder.More() {
@@ -48,6 +51,9 @@ func strictProjectionObject(raw []byte, kind reflect.Type) error {
 		if decoder.Decode(&value) != nil {
 			return ErrInvalid
 		}
+		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			return ErrInvalid
+		}
 		if field.Kind() == reflect.Pointer {
 			field = field.Elem()
 		}
@@ -57,6 +63,11 @@ func strictProjectionObject(raw []byte, kind reflect.Type) error {
 	}
 	if token, err := decoder.Token(); err != nil || token != json.Delim('}') {
 		return ErrInvalid
+	}
+	for name, required := range required {
+		if required && !seen[name] {
+			return ErrInvalid
+		}
 	}
 	var extra any
 	if decoder.Decode(&extra) != io.EOF {
