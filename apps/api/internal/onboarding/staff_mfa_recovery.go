@@ -101,7 +101,9 @@ func staffMFAStoreError(err error) error {
 func (s *Service) checkStaffMFATarget(ctx context.Context, p authz.Principal, scope store.StaffIdentityScope, subject string) error {
 	err := s.staffMFASource.CheckStaffMFARecoveryTarget(ctx, scope.ProviderOrgID, subject)
 	if errors.Is(err, zitadel.ErrRecoveryTargetIneligible) {
-		s.auditTarget(ctx, p, "staff.mfa.recovery.target", scope.OrgID.String(), scope.CommandID.String(), audit.OutcomeDenied, nil)
+		s.auditTarget(ctx, p, "staff.mfa.recovery.target", scope.OrgID.String(), scope.CommandID.String(), audit.OutcomeDenied, struct {
+			ActorSubject string `json:"actor_subject"`
+		}{scope.ActorSubject})
 		return ErrNotFound
 	}
 	if err != nil {

@@ -95,10 +95,11 @@ func (f *fakeIdentity) CreateIDP(context.Context, string, zitadel.IDPSpec) (stri
 func (f *fakeIdentity) DeleteIDP(context.Context, string, string) error { return nil }
 
 const (
-	platformToken = "platform-token"
-	productToken  = "product-token"
-	otherToken    = "other-product-token"
-	platformOrg   = "TESSERIX-ORG-ID"
+	platformToken  = "platform-token"
+	productToken   = "product-token"
+	helivantaToken = "helivanta-product-token"
+	otherToken     = "other-product-token"
+	platformOrg    = "TESSERIX-ORG-ID"
 )
 
 type harness struct {
@@ -107,6 +108,7 @@ type harness struct {
 	sessions    *auth.SessionCodec
 	identity    *fakeIdentity
 	fixturePool *pgxpool.Pool
+	tokens      stubTokens
 }
 
 func newHarness(t *testing.T, options ...onboarding.Option) *harness {
@@ -122,7 +124,7 @@ func newHarness(t *testing.T, options ...onboarding.Option) *harness {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
-	for _, table := range []string{"customer_signups", "idps", "domains", "org_products", "organizations", "products", "idempotency_keys"} {
+	for _, table := range []string{"staff_mfa_recovery_commands", "customer_signups", "idps", "domains", "org_products", "organizations", "products", "idempotency_keys"} {
 		if _, err := pool.Exec(context.Background(), "DELETE FROM "+table); err != nil {
 			t.Fatalf("clean %s: %v", table, err)
 		}
@@ -147,9 +149,10 @@ func newHarness(t *testing.T, options ...onboarding.Option) *harness {
 	svc := onboarding.New(st, identity, authz.New(st), nil, options...)
 
 	tokens := stubTokens{claims: map[string]auth.Claims{
-		platformToken: {Subject: "sam", Email: "sam@tesserix.app", OrgID: platformOrg, Roles: []string{authz.RolePlatformAdmin}},
-		productToken:  {Subject: "svc-planning-poker"},
-		otherToken:    {Subject: "svc-mark8ly"},
+		platformToken:  {Subject: "sam", Email: "sam@tesserix.app", OrgID: platformOrg, Roles: []string{authz.RolePlatformAdmin}},
+		productToken:   {Subject: "svc-planning-poker"},
+		helivantaToken: {Subject: "svc-helivanta"},
+		otherToken:     {Subject: "svc-mark8ly"},
 	}}
 
 	return &harness{
@@ -161,6 +164,7 @@ func newHarness(t *testing.T, options ...onboarding.Option) *harness {
 		sessions:    sessions,
 		identity:    identity,
 		fixturePool: pool,
+		tokens:      tokens,
 	}
 }
 

@@ -1,7 +1,9 @@
 # Helivanta Staff authenticator recovery
 
 Work for [Helivanta #1703](https://github.com/tesserix/helivanta/issues/1703).
-These internal components do not yet register or release a Staff reset API.
+Private workload command endpoints are implemented. Public HMS authorization,
+revocation/admission wiring and the enrollment UI are still incomplete; this is
+not a released Staff recovery journey.
 
 Workforce owns the reviewed Staff/account link and exact employment/link versions.
 IAM owns current administrator authority, ordinary-target protection and application
@@ -22,6 +24,42 @@ distinct. Shape validation supplies no native ownership, permission, active
 employment or reviewed-link authority.
 
 ## Durable lifecycle
+
+The private API is scoped to the authenticated, currently registered Helivanta
+product machine and the tenant's active product/native organization grant. A
+tenant-owner token, console human, another product or a client header cannot
+replace that workload authority.
+
+| Method | Path under `/v1/orgs/{tenant}/staff-mfa-recoveries/{command}` | Body/result                                                              |
+| ------ | ------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `PUT`  | Base path                                                     | `StaffMFARecoveryRequest`; retains preparation only                      |
+| `POST` | `/dispatch`                                                   | `StaffMFADispatchRequest`; matching committed application fence required |
+| `POST` | `/cancel`                                                     | Exact original `StaffMFARecoveryRequest`; prepared only                  |
+| `GET`  | Base path, exactly one `actor_subject` query                  | Private `StaffMFARecoverySnapshot`; never implicitly prepares            |
+
+Mutation responses use the minimal canonical `StaffMFARecoveryReceipt`. Processing
+or uncertain dispatch returns 202 with retained state; acknowledged removal still
+waits for enrollment and is not completion. Requests are strict, bounded to 8 KiB
+and must match tenant/command path IDs. Responses are `no-store`. Generic replay
+caching is excluded so every retry reauthorizes current entitlement and exact
+intent. The private snapshot contains original source/reason for backend recovery;
+it must not be forwarded wholesale to the browser.
+
+The application fence is an authenticated HMS assertion, not proof supplied by a
+browser. HMS must commit actual idempotent revocation before invoking dispatch and
+verify fresh administrator/ordinary-target and reviewed Workforce source authority.
+Owner native checks additionally reject foreign/unverified/non-human/passwordless
+accounts and any native organization member. That exact member query is bounded
+to the target user, rather than treating a truncated member list as absence.
+TOTP presence is only a pre-dispatch check, never proof of new enrollment. A known
+unenrolled target cancels a prepared command without a native write.
+
+Native HTTP runs outside database transactions. Acknowledgement or uncertainty is
+retained in an independent bounded transaction even if the caller disconnects or
+entitlement is withdrawn. Disclosure is reauthorized after I/O; no native retry
+follows lost acknowledgement. Per-attempt audit correlation remains separate from
+the immutable command ID. Completed admission, source checks, forced enrollment
+and HMS session enforcement still require the remaining consumer integration.
 
 The additive table is in
 [tesserix-k8s #1713](https://github.com/tesserix/tesserix-k8s/pull/1713).
