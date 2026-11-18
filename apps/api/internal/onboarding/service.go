@@ -78,6 +78,8 @@ type Service struct {
 	hospitals            *HospitalConfig
 	staffProduct         string
 	staffSource          StaffIdentitySource
+	staffMFAProduct      string
+	staffMFASource       StaffMFARecoverySource
 	staffRecoveryProject string
 	staffRecoverySource  StaffRecoveryOperatorSource
 	signupIdentity       *zitadel.Client

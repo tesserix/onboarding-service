@@ -76,6 +76,7 @@ func generateContracts() (string, error) {
 		{"CustomerSecurityInput", reflect.TypeFor[customercontract.SecurityInput]()},
 		{"CustomerSecurityRequest", reflect.TypeFor[customercontract.SecurityRequest]()},
 		{"StaffMFAResetInput", reflect.TypeFor[customercontract.StaffMFAResetInput]()},
+		{"StaffMFARecoveryReceipt", reflect.TypeFor[customercontract.StaffMFARecoveryReceipt]()},
 	} {
 		schema, err := contractSchema(contract.kind, "")
 		if err != nil {

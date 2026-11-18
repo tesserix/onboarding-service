@@ -18,6 +18,8 @@ func TestStaffTOTPConfiguredIsPresenceOnlyAndRejectsAmbiguousMethods(t *testing.
 		{`{"details":{"totalResult":"2"},"authMethodTypes":["AUTHENTICATION_METHOD_TYPE_TOTP","AUTHENTICATION_METHOD_TYPE_TOTP"]}`, false, true},
 		{`{"details":{"totalResult":"0"},"authMethodTypes":["AUTHENTICATION_METHOD_TYPE_TOTP"]}`, false, true},
 		{`{"details":{"totalResult":"1"},"authMethodTypes":["UNKNOWN"]}`, false, true},
+		{`{"details":{"timestamp":"2026-01-01T00:00:00Z"},"authMethodTypes":null}`, false, true},
+		{`{"details":{"totalResult":null,"timestamp":"2026-01-01T00:00:00Z"}}`, false, true},
 	} {
 		client := newProjectionClient(t, func(w http.ResponseWriter, r *http.Request) {
 			require.Equal(t, http.MethodGet, r.Method)

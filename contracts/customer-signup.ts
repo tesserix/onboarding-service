@@ -109,3 +109,6 @@ export type CustomerSecurityRequest = z.infer<typeof CustomerSecurityRequestCont
 export const StaffMFAResetInputContract = z.object({"commandId":z.string().uuid().min(1).regex(new RegExp("^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")),"expectedLinkId":z.string().uuid().min(1).regex(new RegExp("^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")),"expectedLinkVersion":z.number().int().safe().min(1).max(9007199254740991),"expectedStaffVersion":z.number().int().safe().min(1).max(9007199254740991),"reason":z.string().refine(value=>[...value].length<=500,{message:'Use up to 500 characters'}).refine(value=>value===value.trim()&&!/[\u0000-\u001f\u007f-\u009f]/.test(value),{message:'Use text without surrounding spaces or control characters'}).min(1)}).strict();
 export type StaffMFAResetInput = z.infer<typeof StaffMFAResetInputContract>;
 
+export const StaffMFARecoveryReceiptContract = z.object({"commandId":z.string().uuid().min(1).regex(new RegExp("^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")),"state":z.enum(["prepared","processing","awaiting_enrollment","unconfirmed","cancelled","completed"])}).strict();
+export type StaffMFARecoveryReceipt = z.infer<typeof StaffMFARecoveryReceiptContract>;
+

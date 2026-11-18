@@ -189,6 +189,11 @@ func (f *fakeIdentity) DeleteIDP(context.Context, string, string) error {
 }
 
 func newService(t *testing.T) (*Service, *fakeIdentity, *store.Store) {
+	svc, identity, st, _ := newServiceWithFixturePool(t)
+	return svc, identity, st
+}
+
+func newServiceWithFixturePool(t *testing.T) (*Service, *fakeIdentity, *store.Store, *pgxpool.Pool) {
 	t.Helper()
 	dsn := os.Getenv("ONBOARDING_TEST_DSN")
 	if dsn == "" {
@@ -199,7 +204,7 @@ func newService(t *testing.T) (*Service, *fakeIdentity, *store.Store) {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
-	for _, table := range []string{"password_recovery_commands", "password_recovery_challenges", "account_discovery_challenges", "customer_signups", "idps", "domains", "org_products", "organizations", "products", "idempotency_keys"} {
+	for _, table := range []string{"staff_mfa_recovery_commands", "password_recovery_commands", "password_recovery_challenges", "account_discovery_challenges", "customer_signups", "idps", "domains", "org_products", "organizations", "products", "idempotency_keys"} {
 		if _, err := pool.Exec(context.Background(), "DELETE FROM "+table); err != nil {
 			t.Fatalf("clean %s: %v", table, err)
 		}
@@ -207,7 +212,7 @@ func newService(t *testing.T) (*Service, *fakeIdentity, *store.Store) {
 
 	st := store.New(pool)
 	id := newFakeIdentity()
-	return New(st, id, authz.New(st), nil), id, st
+	return New(st, id, authz.New(st), nil), id, st, pool
 }
 
 func seedProduct(t *testing.T, s *store.Store, key string) {

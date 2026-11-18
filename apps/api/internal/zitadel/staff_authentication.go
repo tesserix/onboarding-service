@@ -1,6 +1,7 @@
 package zitadel
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -23,7 +24,7 @@ func (c *Client) passwordConfigured(ctx context.Context, org, user string) (bool
 
 // StaffTOTPConfigured is a pre-dispatch presence check, never enrollment proof.
 func (c *Client) StaffTOTPConfigured(ctx context.Context, org, user string) (bool, error) {
-	if !identitySourceID.MatchString(org) || !identitySourceID.MatchString(user) {
+	if c == nil || c.tokens == nil || c.http == nil || !identitySourceID.MatchString(org) || !identitySourceID.MatchString(user) {
 		return false, ErrIdentityUnavailable
 	}
 	methods, err := c.authenticationMethods(ctx, org, user)
@@ -55,8 +56,14 @@ func (c *Client) authenticationMethods(ctx context.Context, org, user string) (m
 	if err != nil {
 		return nil, ErrIdentityUnavailable
 	}
-	if _, err = identityObject(fields["details"], "totalResult", "timestamp"); err != nil {
+	details, err := identityObject(fields["details"], "totalResult", "timestamp")
+	if err != nil {
 		return nil, ErrIdentityUnavailable
+	}
+	for _, value := range []json.RawMessage{fields["authMethodTypes"], details["totalResult"]} {
+		if len(value) != 0 && bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			return nil, ErrIdentityUnavailable
+		}
 	}
 	if json.Unmarshal(raw, &result) != nil || result.Details == nil || len(result.Methods) > 8 {
 		return nil, ErrIdentityUnavailable
