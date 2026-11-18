@@ -262,3 +262,13 @@ verified proof's expiry. If verification wins between reservation and receipt
 selection, the newly reserved delivery is not sent and a suppression audit is
 appended; its quota reservation is retained conservatively until normal cleanup.
 This avoids creating a capability pointing to a challenge that was never admitted.
+
+Browser request models are also canonical here: `PasswordRecoveryRequest` carries
+only a native `auth_request_id`, stable delivery `request_id` and email;
+`PasswordRecoveryCode` carries the code; `PasswordRecoverySubmit` carries the
+stable native `command_id` and transient password. Private tenant, browser digest
+and capability selectors are rejected from browser bodies. Strict decoders reject
+ambiguous fields, and private/public password validation shares the same rule.
+The broker supplies the private scope and capability itself. New delivery intents
+choose a new request UUID; network retries retain it, including retries of an
+explicit resend. A boolean resend flag alone cannot distinguish these safely.

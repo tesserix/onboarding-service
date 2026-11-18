@@ -2,7 +2,6 @@ package customercontract
 
 import (
 	"github.com/google/uuid"
-	"unicode/utf8"
 )
 
 // PasswordRecoveryStart binds a dedicated mailbox challenge to one tenant.
@@ -32,8 +31,7 @@ type PasswordRecoveryAccess struct {
 }
 
 func (in PasswordRecoveryAccess) Validate() error {
-	id, err := uuid.Parse(in.ID)
-	if err != nil || id.Version() != 7 || id.Variant() != uuid.RFC4122 || id.String() != in.ID || !discoveryHash(in.BrowserHash) {
+	if !recoveryCommandID(in.ID) || !discoveryHash(in.BrowserHash) {
 		return ErrInvalid
 	}
 	return nil
@@ -63,8 +61,7 @@ type PasswordRecoveryPassword struct {
 }
 
 func (in PasswordRecoveryPassword) Validate() error {
-	if (PasswordRecoveryAccess{in.CommandID, in.BrowserHash}).Validate() != nil || (PasswordRecoveryAccess{in.ID, in.BrowserHash}).Validate() != nil || in.Password == "" ||
-		!utf8.ValidString(in.Password) || utf8.RuneCountInString(in.Password) > 200 {
+	if (PasswordRecoverySubmit{CommandID: in.CommandID, Password: in.Password}).Validate() != nil || (PasswordRecoveryAccess{in.ID, in.BrowserHash}).Validate() != nil {
 		return ErrInvalid
 	}
 	return nil

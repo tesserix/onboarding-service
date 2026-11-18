@@ -60,3 +60,36 @@ func (in *PasswordRecoveryAccepted) UnmarshalJSON(raw []byte) error {
 	*in = PasswordRecoveryAccepted(value)
 	return nil
 }
+
+// UnmarshalJSON rejects ambiguous browser recovery inputs.
+func (in *PasswordRecoveryRequest) UnmarshalJSON(raw []byte) error {
+	type wire PasswordRecoveryRequest
+	var value wire
+	if !utf8.Valid(raw) || strictProjectionObject(raw, reflect.TypeFor[wire]()) != nil || json.Unmarshal(raw, &value) != nil || PasswordRecoveryRequest(value).Validate() != nil {
+		return ErrInvalid
+	}
+	*in = PasswordRecoveryRequest(value)
+	return nil
+}
+
+// UnmarshalJSON rejects ambiguous browser recovery inputs.
+func (in *PasswordRecoverySubmit) UnmarshalJSON(raw []byte) error {
+	type wire PasswordRecoverySubmit
+	var value wire
+	if !utf8.Valid(raw) || strictProjectionObject(raw, reflect.TypeFor[wire]()) != nil || json.Unmarshal(raw, &value) != nil || PasswordRecoverySubmit(value).Validate() != nil {
+		return ErrInvalid
+	}
+	*in = PasswordRecoverySubmit(value)
+	return nil
+}
+
+// UnmarshalJSON rejects ambiguous browser recovery inputs.
+func (in *PasswordRecoveryCode) UnmarshalJSON(raw []byte) error {
+	type wire PasswordRecoveryCode
+	var value wire
+	if !utf8.Valid(raw) || strictProjectionObject(raw, reflect.TypeFor[wire]()) != nil || json.Unmarshal(raw, &value) != nil || PasswordRecoveryCode(value).Validate() != nil {
+		return ErrInvalid
+	}
+	*in = PasswordRecoveryCode(value)
+	return nil
+}
