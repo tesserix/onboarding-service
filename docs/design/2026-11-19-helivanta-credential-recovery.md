@@ -303,3 +303,29 @@ running. Processing, applied and unconfirmed fences are never released by expiry
 or cleanup. Processing age is measured from dispatch, not original preparation.
 The schema candidate has not been applied live. Real hosted PostgreSQL race tests,
 consumer cookie integration, browser UI and native acceptance remain required.
+
+## Isolated native-browser CI fixture
+
+The `identityfixture` build remains excluded from production artifacts. Its
+normal mode still exposes only the two current identity/login reads and readiness.
+An explicit `-password-recovery-outbox` flag, restricted to the mailbox directory
+beside its private fixture manifest, enables only the six private recovery paths.
+Startup still requires the exact development native issuer, loopback fixture
+PostgreSQL database and explicit fixture environment; production destinations and
+arbitrary database credentials are refused.
+
+This opt-in uses the real owner service, retained PostgreSQL commands and native
+Zitadel reset/code/projection calls. Only the mail provider transport is captured
+without network I/O. It accepts the two dedicated `password-recovery-native` spec
+addresses, the recovery mail purpose and its immutable delivery ID. Captured
+mailbox proofs are restricted to private 0700 directories and 0600 files; native
+reset proofs and passwords are never captured. The browser test consumes and
+removes its exact mailbox file. Other mail recipients, purposes, endpoints and
+conflicting proof payloads are refused. No production mail credentials are used.
+
+Fixture unit tests cover default read-only gating, the exact optional command
+allowlist, synthetic recipient/purpose restrictions, idempotent capture and
+private path/permission enforcement. These tests do not prove the native browser
+journey. The HMS hosted test must still perform recovery through Global API,
+reject the old password and admit normal new-password sign-in; production QA
+acceptance remains separate and requires its named identity/schema approvals.

@@ -1,6 +1,6 @@
 //go:build identityfixture
 
-// The fixture binary is excluded from production builds and serves only reads.
+// The fixture binary is excluded from production builds; credential recovery is explicit and isolated.
 package main
 
 import (
@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -69,6 +70,7 @@ func run() error {
 	manifestPath := flag.String("manifest", "dev/zitadel/secrets/identity-fixture.json", "local public identity manifest")
 	patPath := flag.String("pat-file", "dev/zitadel/secrets/helivanta-seed.pat", "local native seed credential file")
 	dsn := flag.String("dsn", "postgres://helivanta:helivanta@127.0.0.1:5432/onboarding_fixture?sslmode=disable", "isolated local fixture database")
+	recoveryDir := flag.String("password-recovery-outbox", "", "explicit isolated recovery mailbox; empty keeps read-only mode")
 	flag.Parse()
 	if err := validateConfig(os.Getenv("HELIVANTA_IDENTITY_FIXTURE"), os.Getenv("ZITADEL_ISSUER_URL"), *dsn); err != nil {
 		return err
@@ -128,16 +130,26 @@ func run() error {
 			return errors.New("local fixture enrollment unavailable")
 		}
 	}
-	service := onboarding.New(st, onboarding.ZitadelIdentity{Client: native}, authz.New(st), nil, onboarding.WithCustomerIdentity(native))
-	router := api.NewRouter(api.Deps{Service: service, Store: st, CustomerWorkloads: fixtureVerifier{}, DisableLegacyConsole: true})
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if (r.Method == http.MethodPost && (r.URL.Path == "/internal/v1/customer-signups/identity-projection" || r.URL.Path == "/internal/v1/customer-signups/login-target")) || (r.Method == http.MethodGet && r.URL.Path == "/readyz") {
-			router.ServeHTTP(w, r)
-			return
+	options := []onboarding.Option{onboarding.WithCustomerIdentity(native)}
+	writeTimeout := 15 * time.Second
+	recoveryEnabled := *recoveryDir != ""
+	if recoveryEnabled {
+		manifestAbsolute, e := filepath.Abs(*manifestPath)
+		if e != nil || *recoveryDir != filepath.Join(filepath.Dir(manifestAbsolute), "password-recovery-mailbox") {
+			return errors.New("recovery requires its isolated fixture mailbox")
 		}
-		http.NotFound(w, r)
-	})
-	server := &http.Server{Addr: "127.0.0.1:18787", Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 30 * time.Second}
+		mail, cleanup, e := newRecoveryMailbox(*recoveryDir)
+		if e != nil {
+			return e
+		}
+		defer cleanup()
+		options = append(options, onboarding.WithCustomerMail(mail))
+		writeTimeout = 35 * time.Second
+	}
+	service := onboarding.New(st, onboarding.ZitadelIdentity{Client: native}, authz.New(st), nil, options...)
+	router := api.NewRouter(api.Deps{Service: service, Store: st, CustomerWorkloads: fixtureVerifier{}, DisableLegacyConsole: true})
+	handler := fixtureHandler(router, recoveryEnabled)
+	server := &http.Server{Addr: "127.0.0.1:18787", Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: writeTimeout, IdleTimeout: 30 * time.Second}
 	done := make(chan error, 1)
 	go func() { done <- server.ListenAndServe() }()
 	select {
