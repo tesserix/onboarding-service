@@ -38,3 +38,17 @@ func TestPasswordRecoveryIntentHasNoCredentialPayloadAndStrictCommandSelection(t
 		t.Fatal("ready receipt invented a command")
 	}
 }
+
+func TestCancellationRestoresCommandFromPrivateBrowserMarker(t *testing.T) {
+	var in PasswordRecoveryCancellation
+	for _, raw := range []string{`{}`, `{"command_id":"019f39c2-1738-7998-b5de-6d4214f614e0"}`} {
+		if err := json.Unmarshal([]byte(raw), &in); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, raw := range []string{`{"command_id":null}`, `{"password":"forbidden"}`, `{"command_id":"bad"}`} {
+		if json.Unmarshal([]byte(raw), &in) == nil {
+			t.Fatal("ambiguous cancellation accepted")
+		}
+	}
+}

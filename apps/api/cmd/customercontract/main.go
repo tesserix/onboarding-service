@@ -52,6 +52,7 @@ func generateContracts() (string, error) {
 		{"PasswordRecoveryIntent", reflect.TypeFor[customercontract.PasswordRecoveryIntent]()},
 		{"PasswordRecoveryRead", reflect.TypeFor[customercontract.PasswordRecoveryRead]()},
 		{"PasswordRecoveryCommand", reflect.TypeFor[customercontract.PasswordRecoveryCommand]()},
+		{"PasswordRecoveryCancellation", reflect.TypeFor[customercontract.PasswordRecoveryCancellation]()},
 		{"PasswordRecoveryCode", reflect.TypeFor[customercontract.PasswordRecoveryCode]()},
 		{"PasswordRecoverySubmit", reflect.TypeFor[customercontract.PasswordRecoverySubmit]()},
 		{"PasswordRecoveryPassword", reflect.TypeFor[customercontract.PasswordRecoveryPassword]()},

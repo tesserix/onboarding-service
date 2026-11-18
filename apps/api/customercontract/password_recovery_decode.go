@@ -148,3 +148,14 @@ func (in *PasswordRecoveryCommand) UnmarshalJSON(raw []byte) error {
 	*in = PasswordRecoveryCommand(value)
 	return nil
 }
+
+// UnmarshalJSON rejects ambiguous cancellation selectors.
+func (in *PasswordRecoveryCancellation) UnmarshalJSON(raw []byte) error {
+	type wire PasswordRecoveryCancellation
+	var value wire
+	if !utf8.Valid(raw) || strictProjectionObject(raw, reflect.TypeFor[wire]()) != nil || json.Unmarshal(raw, &value) != nil || PasswordRecoveryCancellation(value).Validate() != nil {
+		return ErrInvalid
+	}
+	*in = PasswordRecoveryCancellation(value)
+	return nil
+}

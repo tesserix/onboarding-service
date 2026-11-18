@@ -40,6 +40,9 @@ export type PasswordRecoveryRead = z.infer<typeof PasswordRecoveryReadContract>;
 export const PasswordRecoveryCommandContract = z.object({"command_id":z.string().uuid().min(1)}).strict();
 export type PasswordRecoveryCommand = z.infer<typeof PasswordRecoveryCommandContract>;
 
+export const PasswordRecoveryCancellationContract = z.object({"command_id":z.string().uuid().optional()}).strict();
+export type PasswordRecoveryCancellation = z.infer<typeof PasswordRecoveryCancellationContract>;
+
 export const PasswordRecoveryCodeContract = z.object({"code":z.string().min(1).regex(new RegExp("^[0-9]{8}$"))}).strict();
 export type PasswordRecoveryCode = z.infer<typeof PasswordRecoveryCodeContract>;
 

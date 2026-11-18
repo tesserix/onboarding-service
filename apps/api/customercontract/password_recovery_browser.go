@@ -62,3 +62,15 @@ func (in PasswordRecoveryCommand) Validate() error {
 	}
 	return nil
 }
+
+// PasswordRecoveryCancellation can select the HttpOnly active intent after browser reload.
+type PasswordRecoveryCancellation struct {
+	CommandID string `json:"command_id,omitempty" format:"uuid"`
+}
+
+func (in PasswordRecoveryCancellation) Validate() error {
+	if in.CommandID != "" && !recoveryCommandID(in.CommandID) {
+		return ErrInvalid
+	}
+	return nil
+}
