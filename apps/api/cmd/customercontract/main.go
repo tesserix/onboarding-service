@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 )
 
@@ -74,6 +75,7 @@ func generateContracts() (string, error) {
 		{"CustomerSecurityView", reflect.TypeFor[customercontract.SecurityView]()},
 		{"CustomerSecurityInput", reflect.TypeFor[customercontract.SecurityInput]()},
 		{"CustomerSecurityRequest", reflect.TypeFor[customercontract.SecurityRequest]()},
+		{"StaffMFAResetInput", reflect.TypeFor[customercontract.StaffMFAResetInput]()},
 	} {
 		schema, err := contractSchema(contract.kind, "")
 		if err != nil {
@@ -97,6 +99,9 @@ func contractSchema(kind reflect.Type, choices string) (string, error) {
 	}
 	if kind.Kind() == reflect.Bool {
 		return "z.boolean()", nil
+	}
+	if kind.Kind() == reflect.Int64 {
+		return "z.number().int().safe()", nil
 	}
 	if kind.Kind() == reflect.String {
 		if values, ok := reflect.Zero(kind).Interface().(interface{ Values() []string }); ok {
@@ -163,6 +168,15 @@ func contractFields(kind reflect.Type) ([]string, error) {
 		}
 		if maximum := field.Tag.Get("maxItems"); maximum != "" {
 			schema += ".max(" + maximum + ")"
+		}
+		for _, bound := range []struct{ tag, method string }{{"minValue", "min"}, {"maxValue", "max"}} {
+			if raw := field.Tag.Get(bound.tag); raw != "" {
+				limit, err := strconv.ParseInt(raw, 10, 64)
+				if err != nil || field.Type.Kind() != reflect.Int64 {
+					return nil, fmt.Errorf("invalid numeric bound on %s", field.Name)
+				}
+				schema += "." + bound.method + "(" + strconv.FormatInt(limit, 10) + ")"
+			}
 		}
 		if field.Tag.Get("format") == "email" {
 			schema += ".email()"

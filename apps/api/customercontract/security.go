@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -67,6 +68,16 @@ func validateTaggedFields(input any, state string) error {
 			return ErrInvalid
 		}
 		if entry.Kind() != reflect.String {
+			if entry.Kind() == reflect.Int64 {
+				for _, bound := range []string{"minValue", "maxValue"} {
+					if raw := field.Tag.Get(bound); raw != "" {
+						limit, err := strconv.ParseInt(raw, 10, 64)
+						if err != nil || bound == "minValue" && entry.Int() < limit || bound == "maxValue" && entry.Int() > limit {
+							return ErrInvalid
+						}
+					}
+				}
+			}
 			continue
 		}
 		text := entry.String()
