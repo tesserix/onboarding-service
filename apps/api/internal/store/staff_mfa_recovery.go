@@ -57,7 +57,7 @@ func scanStaffMFA(row pgx.Row) (StaffMFARecoveryCommand, error) {
 func staffMFAShape(c StaffMFARecoveryCommand, event audit.Event, action string) error {
 	if c.Request.Validate() != nil || c.MachineSubject == "" || c.ProviderProjectID == "" || c.ProviderOrgID != "helivanta-"+c.Request.Target.TenantID ||
 		event.ActorType != audit.ActorProduct || event.ActorID != c.MachineSubject || event.ProductKey != "helivanta" ||
-		event.OrgID != c.Request.Target.TenantID || event.Target != c.Request.Intent.CommandID || event.RequestID != c.Request.Intent.CommandID ||
+		event.OrgID != c.Request.Target.TenantID || event.Target != c.Request.Intent.CommandID || event.RequestID == "" || len(event.RequestID) > 200 ||
 		event.Outcome != audit.OutcomeSuccess || event.Action != "staff.mfa.recovery."+action {
 		return ErrConflict
 	}

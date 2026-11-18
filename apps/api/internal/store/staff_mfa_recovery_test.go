@@ -142,6 +142,30 @@ func TestStaffMFARecoveryRejectsInvalidCommandsBeforeDatabaseIO(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
+func TestStaffMFARecoveryPreservesIndependentRequestCorrelation(t *testing.T) {
+	s, command := staffMFAFixture(t)
+	event := staffMFAEvent(command, "prepare")
+	event.RequestID = "independent-prepare-request"
+	_, _, err := s.PrepareStaffMFARecovery(t.Context(), command, event)
+	require.NoError(t, err)
+	event = staffMFAEvent(command, "dispatch")
+	event.RequestID = "independent-dispatch-request"
+	_, send, err := s.DispatchStaffMFARecovery(t.Context(), command, command.Request.Intent.CommandID, event)
+	require.NoError(t, err)
+	require.True(t, send)
+	chain, err := s.AuditChain(t.Context())
+	require.NoError(t, err)
+	require.NoError(t, audit.Verify(chain))
+	var seen []string
+	for _, entry := range chain {
+		if entry.Target == command.Request.Intent.CommandID {
+			seen = append(seen, entry.RequestID)
+		}
+	}
+	require.Contains(t, seen, "independent-prepare-request")
+	require.Contains(t, seen, "independent-dispatch-request")
+}
+
 func TestStaffMFARecoveryRejectsChangedFrozenFactsAndForeignScope(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
