@@ -45,6 +45,17 @@ caching is excluded so every retry reauthorizes current entitlement and exact
 intent. The private snapshot contains original source/reason for backend recovery;
 it must not be forwarded wholesale to the browser.
 
+`apps/api/staffclient` exposes `PrepareMFA`, `DispatchMFA`, `CancelMFA` and
+`GetMFA` using these canonical contracts. It requires the Helivanta product and
+exact tenant, command and actor scope before sending a mutation. Returned receipts
+must match the command; private snapshots must additionally match tenant and
+actor. Responses are bounded and strictly decoded. The existing fixed internal
+owner destination, workload token, timeout, cookie exclusion and redirect refusal
+apply. An uncertain transport outcome is returned without an automatic write
+retry; consumers recover through the retained command rather than issuing a new
+reset. These client methods do not supply HMS administrator authorization or
+prove a committed application fence.
+
 The application fence is an authenticated HMS assertion, not proof supplied by a
 browser. HMS must commit actual idempotent revocation before invoking dispatch and
 verify fresh administrator/ordinary-target and reviewed Workforce source authority.
