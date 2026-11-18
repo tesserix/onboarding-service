@@ -1,0 +1,51 @@
+package customercontract
+
+import (
+	"encoding/json"
+	"reflect"
+	"unicode/utf8"
+)
+
+// UnmarshalJSON rejects ambiguous or incomplete recovery authority at the wire boundary.
+func (in *PasswordRecoveryStart) UnmarshalJSON(raw []byte) error {
+	type wire PasswordRecoveryStart
+	var value wire
+	if !utf8.Valid(raw) || strictProjectionObject(raw, reflect.TypeFor[wire]()) != nil || json.Unmarshal(raw, &value) != nil || PasswordRecoveryStart(value).Validate() != nil {
+		return ErrInvalid
+	}
+	*in = PasswordRecoveryStart(value)
+	return nil
+}
+
+// UnmarshalJSON rejects ambiguous or incomplete recovery authority at the wire boundary.
+func (in *PasswordRecoveryAccess) UnmarshalJSON(raw []byte) error {
+	type wire PasswordRecoveryAccess
+	var value wire
+	if !utf8.Valid(raw) || strictProjectionObject(raw, reflect.TypeFor[wire]()) != nil || json.Unmarshal(raw, &value) != nil || PasswordRecoveryAccess(value).Validate() != nil {
+		return ErrInvalid
+	}
+	*in = PasswordRecoveryAccess(value)
+	return nil
+}
+
+// UnmarshalJSON rejects ambiguous or incomplete recovery authority at the wire boundary.
+func (in *PasswordRecoveryProof) UnmarshalJSON(raw []byte) error {
+	type wire PasswordRecoveryProof
+	var value wire
+	if !utf8.Valid(raw) || strictProjectionObject(raw, reflect.TypeFor[wire]()) != nil || json.Unmarshal(raw, &value) != nil || PasswordRecoveryProof(value).Validate() != nil {
+		return ErrInvalid
+	}
+	*in = PasswordRecoveryProof(value)
+	return nil
+}
+
+// UnmarshalJSON rejects ambiguous or incomplete recovery authority at the wire boundary.
+func (in *PasswordRecoveryPassword) UnmarshalJSON(raw []byte) error {
+	type wire PasswordRecoveryPassword
+	var value wire
+	if !utf8.Valid(raw) || strictProjectionObject(raw, reflect.TypeFor[wire]()) != nil || json.Unmarshal(raw, &value) != nil || PasswordRecoveryPassword(value).Validate() != nil {
+		return ErrInvalid
+	}
+	*in = PasswordRecoveryPassword(value)
+	return nil
+}

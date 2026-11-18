@@ -1,6 +1,7 @@
 package customercontract_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -58,6 +59,37 @@ func TestPasswordRecoveryProofAndPasswordStayPrivateAndBounded(t *testing.T) {
 	for _, v := range []any{proof, &proof, password, &password} {
 		if text := fmt.Sprintf("%v %+v %#v", v, v, v); strings.Contains(text, proof.Code) || strings.Contains(text, password.Password) || strings.Contains(text, proof.BrowserHash) {
 			t.Fatal("private recovery input exposed in diagnostics")
+		}
+	}
+}
+
+func TestPasswordRecoveryWireRejectsDuplicateRecasedNullAndMissingFields(t *testing.T) {
+	id := uuid.Must(uuid.NewV7()).String()
+	hash := strings.Repeat("a", 64)
+	fixtures := []struct {
+		body   string
+		target func() any
+	}{
+		{`{"id":"` + id + `","tenantId":"` + uuid.NewString() + `","browserHash":"` + hash + `","sourceHash":"` + hash + `","email":"person@example.test"}`, func() any { return new(customercontract.PasswordRecoveryStart) }},
+		{`{"id":"` + id + `","browserHash":"` + hash + `"}`, func() any { return new(customercontract.PasswordRecoveryAccess) }},
+		{`{"id":"` + id + `","browserHash":"` + hash + `","code":"12345678"}`, func() any { return new(customercontract.PasswordRecoveryProof) }},
+		{`{"id":"` + id + `","browserHash":"` + hash + `","password":"valid-password"}`, func() any { return new(customercontract.PasswordRecoveryPassword) }},
+	}
+	for _, fixture := range fixtures {
+		if err := json.Unmarshal([]byte(fixture.body), fixture.target()); err != nil {
+			t.Fatal("valid recovery input refused", err)
+		}
+		for _, raw := range []string{
+			strings.TrimSuffix(fixture.body, "}") + `,"id":"` + id + `"}`,
+			strings.Replace(fixture.body, `"id":`, `"ID":`, 1),
+			strings.Replace(fixture.body, `"id":"`+id+`"`, `"id":null`, 1),
+			strings.Replace(fixture.body, `"id":"`+id+`",`, "", 1),
+			strings.TrimSuffix(fixture.body, "}") + `,"role":"owner"}`,
+			`{}`, `null`,
+		} {
+			if err := json.Unmarshal([]byte(raw), fixture.target()); err == nil {
+				t.Fatalf("ambiguous recovery input admitted: %s", raw)
+			}
 		}
 	}
 }

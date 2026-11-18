@@ -77,3 +77,13 @@ func (PasswordRecoveryProof) String() string      { return "[redacted password r
 func (PasswordRecoveryProof) GoString() string    { return "[redacted password recovery proof]" }
 func (PasswordRecoveryPassword) String() string   { return "[redacted password recovery password]" }
 func (PasswordRecoveryPassword) GoString() string { return "[redacted password recovery password]" }
+
+// PasswordRecoveryAccepted does not reveal native account existence or delivery certainty.
+type PasswordRecoveryAccepted struct {
+	State string `json:"state" enum:"check_email" required:"true"`
+}
+
+// PasswordRecoveryVerified acknowledges mailbox proof without authenticating an account.
+type PasswordRecoveryVerified struct {
+	State string `json:"state" enum:"verified" required:"true"`
+}
