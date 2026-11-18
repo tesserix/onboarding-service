@@ -39,45 +39,21 @@ func (s *Service) CompletePasswordRecovery(ctx context.Context, in customercontr
 		return empty, err
 	}
 	operation, err := s.store.PasswordRecoveryCommand(ctx, command, challenge, browser)
-	if err == nil {
-		return s.passwordRecoveryReceipt(ctx, operation, recipient, org, browser)
-	}
-	if !errors.Is(err, store.ErrNotFound) {
-		return empty, ErrUnavailable
-	}
-	account, err := s.signupIdentity.TenantRecoveryAccount(ctx, org, recipient.Email)
-	if errors.Is(err, zitadel.ErrIdentityMissing) {
-		return empty, ErrNotFound
-	}
-	if err != nil {
-		return empty, ErrUnavailable
-	}
-	if account.Locked {
+	if errors.Is(err, store.ErrNotFound) {
 		return empty, ErrConflict
 	}
-	credentials, err := s.signupIdentity.RecoveryCredentialState(ctx, org, account.Subject, recipient.Email)
-	if errors.Is(err, zitadel.ErrIdentityMissing) {
-		return empty, ErrNotFound
-	}
 	if err != nil {
 		return empty, ErrUnavailable
 	}
-	var baseline time.Time
-	if credentials.PasswordConfigured {
-		baseline, err = time.Parse(time.RFC3339Nano, credentials.PasswordChangedAt)
-		if err != nil {
-			return empty, ErrUnavailable
-		}
-		if !recipient.VerifiedAt.After(baseline) {
-			return empty, ErrNotFound
-		}
+	if operation.State != "prepared" {
+		return empty, ErrConflict
 	}
-	if current, err := s.customerIdentityScope(ctx, recipient.TenantID.String()); err != nil {
+	account, baseline, err := s.passwordRecoveryCandidate(ctx, recipient, org)
+	if err != nil {
 		return empty, err
-	} else if current != org {
-		return empty, ErrNotFound
 	}
-	operation, dispatch, err := s.store.ReservePasswordRecoveryCommand(ctx, command, challenge, browser, recipient.TenantID, account.Subject, baseline)
+
+	operation, err = s.store.DispatchPasswordRecoveryCommand(ctx, command, challenge, browser, recipient.TenantID, account.Subject, baseline)
 	if errors.Is(err, store.ErrNotFound) {
 		return empty, ErrNotFound
 	}
@@ -86,9 +62,6 @@ func (s *Service) CompletePasswordRecovery(ctx context.Context, in customercontr
 	}
 	if err != nil {
 		return empty, ErrUnavailable
-	}
-	if !dispatch {
-		return s.passwordRecoveryReceipt(ctx, operation, recipient, org, browser)
 	}
 	code, err := s.signupIdentity.SignupCode(ctx, account.Subject, true)
 	if err != nil {
@@ -147,7 +120,7 @@ func (s *Service) passwordRecoveryReceipt(ctx context.Context, op store.Password
 	if op.TenantID != recipient.TenantID {
 		return empty, ErrNotFound
 	}
-	if op.State == "processing" && time.Since(op.CreatedAt) > 30*time.Second {
+	if op.State == "processing" && time.Since(op.UpdatedAt) > 30*time.Second {
 		if err := s.store.RecordPasswordRecoveryCommand(ctx, op.ID, "unconfirmed", "", time.Time{}); err != nil {
 			return empty, ErrUnavailable
 		}
@@ -185,5 +158,5 @@ func (s *Service) passwordRecoveryReceipt(ctx context.Context, op store.Password
 	if err = s.store.AppendAudit(ctx, audit.Event{ActorType: audit.ActorSystem, ActorID: customerWorkload, ProductKey: "helivanta", OrgID: op.TenantID.String(), Action: "account.password_recovery.receipt_read", Outcome: audit.OutcomeSuccess, RequestID: op.ID.String()}); err != nil {
 		return empty, ErrUnavailable
 	}
-	return customercontract.PasswordRecoveryResult{State: op.State}, nil
+	return customercontract.PasswordRecoveryResult{State: op.State, CommandID: op.ID.String()}, nil
 }

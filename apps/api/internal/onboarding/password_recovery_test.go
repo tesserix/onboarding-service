@@ -76,10 +76,10 @@ func TestPasswordRecoverySeparatesMailboxPurposeAndRejectsInvalidInput(t *testin
 		t.Fatal("proof not bound to purpose and command")
 	}
 	svc := &Service{}
-	if _, err := svc.ReadPasswordRecovery(t.Context(), customercontract.PasswordRecoveryAccess{}); !errors.Is(err, ErrInvalid) {
+	if _, err := svc.ReadPasswordRecovery(t.Context(), customercontract.PasswordRecoveryRead{}); !errors.Is(err, ErrInvalid) {
 		t.Fatal("invalid recovery status admitted", err)
 	}
-	if _, err := svc.ReadPasswordRecovery(t.Context(), customercontract.PasswordRecoveryAccess{ID: id, BrowserHash: browser}); !errors.Is(err, ErrUnavailable) {
+	if _, err := svc.ReadPasswordRecovery(t.Context(), customercontract.PasswordRecoveryRead{ID: id, BrowserHash: browser}); !errors.Is(err, ErrUnavailable) {
 		t.Fatal("recovery status missing dependencies admitted", err)
 	}
 	if _, err := svc.StartPasswordRecovery(t.Context(), customercontract.PasswordRecoveryStart{}); !errors.Is(err, ErrInvalid) {
@@ -133,7 +133,7 @@ func TestPasswordRecoveryStatusRequiresProofAndRechecksTenantEligibility(t *test
 	}))
 	defer native.Close()
 	svc.signupIdentity = zitadel.New(native.URL, zitadel.StaticToken("synthetic"), "platform", nil)
-	access := customercontract.PasswordRecoveryAccess{ID: id.String(), BrowserHash: browser}
+	access := customercontract.PasswordRecoveryRead{ID: id.String(), BrowserHash: browser}
 	if _, err := svc.ReadPasswordRecovery(t.Context(), access); !errors.Is(err, ErrNotFound) || calls != 0 {
 		t.Fatal("account lookup before mailbox proof", err)
 	}

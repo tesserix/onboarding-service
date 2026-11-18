@@ -16,15 +16,15 @@ type PasswordRecoveryOperation struct {
 	ID, ChallengeID, TenantID          uuid.UUID
 	Subject, State, NativeSequence     string
 	BaselineChangedAt, NativeChangedAt *time.Time
-	CreatedAt                          time.Time
+	CreatedAt, UpdatedAt               time.Time
 }
 
-const recoveryCommandColumns = `id,challenge_id,tenant_id,subject,state,native_sequence,baseline_changed_at,native_changed_at,created_at`
+const recoveryCommandColumns = `id,challenge_id,tenant_id,subject,state,native_sequence,baseline_changed_at,native_changed_at,created_at,updated_at`
 
 func scanRecoveryOperation(row pgx.Row) (PasswordRecoveryOperation, error) {
 	var out PasswordRecoveryOperation
 	var sequence *string
-	err := row.Scan(&out.ID, &out.ChallengeID, &out.TenantID, &out.Subject, &out.State, &sequence, &out.BaselineChangedAt, &out.NativeChangedAt, &out.CreatedAt)
+	err := row.Scan(&out.ID, &out.ChallengeID, &out.TenantID, &out.Subject, &out.State, &sequence, &out.BaselineChangedAt, &out.NativeChangedAt, &out.CreatedAt, &out.UpdatedAt)
 	if sequence != nil {
 		out.NativeSequence = *sequence
 	}
@@ -39,8 +39,8 @@ func (s *Store) PasswordRecoveryCommand(ctx context.Context, id, challenge uuid.
 	return scanRecoveryOperation(s.pool.QueryRow(ctx, `SELECT `+recoveryCommandColumns+` FROM password_recovery_commands WHERE id=$1 AND challenge_id=$2 AND EXISTS(SELECT 1 FROM password_recovery_challenges c WHERE c.id=$2 AND c.tenant_id=password_recovery_commands.tenant_id AND c.browser_hash=$3 AND c.verified_at IS NOT NULL AND c.expires_at>clock_timestamp())`, id, challenge, browser))
 }
 
-// ReservePasswordRecoveryCommand serializes native writes before leaving the database boundary.
-func (s *Store) ReservePasswordRecoveryCommand(ctx context.Context, id, challenge uuid.UUID, browser []byte, tenant uuid.UUID, subject string, baseline time.Time) (PasswordRecoveryOperation, bool, error) {
+// PreparePasswordRecoveryCommand retains a cancellable intent without native I/O.
+func (s *Store) PreparePasswordRecoveryCommand(ctx context.Context, id, challenge uuid.UUID, browser []byte, tenant uuid.UUID, subject string, baseline time.Time) (PasswordRecoveryOperation, bool, error) {
 	var out PasswordRecoveryOperation
 	send := false
 	if id.Version() != 7 || id.Variant() != uuid.RFC4122 || len(browser) != 32 || tenant == uuid.Nil || subject == "" {
@@ -76,8 +76,16 @@ func (s *Store) ReservePasswordRecoveryCommand(ctx context.Context, id, challeng
 		if !baseline.IsZero() {
 			nativeBaseline = &baseline
 		}
+		expired, expireErr := scanRecoveryOperation(tx.QueryRow(ctx, `UPDATE password_recovery_commands SET state='cancelled',updated_at=clock_timestamp() WHERE tenant_id=$1 AND subject=$2 AND state='prepared' AND NOT EXISTS(SELECT 1 FROM password_recovery_challenges c WHERE c.id=password_recovery_commands.challenge_id AND c.expires_at>clock_timestamp()) RETURNING `+recoveryCommandColumns, tenant, subject))
+		if expireErr == nil {
+			if err := appendAudit(ctx, tx, audit.Event{ActorType: audit.ActorSystem, ActorID: "helivanta-api", ProductKey: "helivanta", OrgID: tenant.String(), Action: "account.password_recovery.preparation_expired", Outcome: audit.OutcomeSuccess, RequestID: expired.ID.String()}); err != nil {
+				return err
+			}
+		} else if !errors.Is(expireErr, ErrNotFound) {
+			return expireErr
+		}
 		var fenced bool
-		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM password_recovery_commands WHERE tenant_id=$1 AND subject=$2 AND (state IN ('processing','applied','unconfirmed') OR (state='completed' AND ($3::timestamptz IS NULL OR native_changed_at>$3))))`, tenant, subject, nativeBaseline).Scan(&fenced); err != nil {
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM password_recovery_commands WHERE tenant_id=$1 AND subject=$2 AND (state IN ('prepared','processing','applied','unconfirmed') OR (state='completed' AND ($3::timestamptz IS NULL OR native_changed_at>$3))))`, tenant, subject, nativeBaseline).Scan(&fenced); err != nil {
 			return err
 		}
 		if fenced {
@@ -94,7 +102,7 @@ func (s *Store) ReservePasswordRecoveryCommand(ctx context.Context, id, challeng
 		if err != nil {
 			return err
 		}
-		if err = appendAudit(ctx, tx, audit.Event{ActorType: audit.ActorSystem, ActorID: "helivanta-api", ProductKey: "helivanta", OrgID: tenant.String(), Action: "account.password_recovery.admitted", Outcome: audit.OutcomeSuccess, RequestID: id.String()}); err != nil {
+		if err = appendAudit(ctx, tx, audit.Event{ActorType: audit.ActorSystem, ActorID: "helivanta-api", ProductKey: "helivanta", OrgID: tenant.String(), Action: "account.password_recovery.prepared", Outcome: audit.OutcomeSuccess, RequestID: id.String()}); err != nil {
 			return err
 		}
 		send = true
@@ -149,4 +157,40 @@ func (s *Store) RecordPasswordRecoveryCommand(ctx context.Context, id uuid.UUID,
 // LatestPasswordRecoveryCommand restores a receipt only for its verified browser capability.
 func (s *Store) LatestPasswordRecoveryCommand(ctx context.Context, challenge uuid.UUID, browser []byte) (PasswordRecoveryOperation, error) {
 	return scanRecoveryOperation(s.pool.QueryRow(ctx, `SELECT `+recoveryCommandColumns+` FROM password_recovery_commands WHERE challenge_id=$1 AND EXISTS(SELECT 1 FROM password_recovery_challenges c WHERE c.id=$1 AND c.tenant_id=password_recovery_commands.tenant_id AND c.browser_hash=$2 AND c.verified_at IS NOT NULL AND c.expires_at>clock_timestamp()) ORDER BY created_at DESC,id DESC LIMIT 1`, challenge, browser))
+}
+
+// DispatchPasswordRecoveryCommand atomically admits one password only for an exact prepared intent.
+func (s *Store) DispatchPasswordRecoveryCommand(ctx context.Context, id, challenge uuid.UUID, browser []byte, tenant uuid.UUID, subject string, baseline time.Time) (PasswordRecoveryOperation, error) {
+	var out PasswordRecoveryOperation
+	var nativeBaseline *time.Time
+	if !baseline.IsZero() {
+		nativeBaseline = &baseline
+	}
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		var err error
+		out, err = scanRecoveryOperation(tx.QueryRow(ctx, `UPDATE password_recovery_commands SET state='processing',updated_at=clock_timestamp() WHERE id=$1 AND challenge_id=$2 AND tenant_id=$3 AND subject=$4 AND state='prepared' AND baseline_changed_at IS NOT DISTINCT FROM $5::timestamptz AND EXISTS(SELECT 1 FROM password_recovery_challenges c WHERE c.id=$2 AND c.tenant_id=$3 AND c.browser_hash=$6 AND c.verified_at IS NOT NULL AND c.expires_at>clock_timestamp() AND ($5::timestamptz IS NULL OR c.verified_at>$5)) RETURNING `+recoveryCommandColumns, id, challenge, tenant, subject, nativeBaseline, browser))
+		if errors.Is(err, ErrNotFound) {
+			return ErrConflict
+		}
+		if err != nil {
+			return err
+		}
+		return appendAudit(ctx, tx, audit.Event{ActorType: audit.ActorSystem, ActorID: "helivanta-api", ProductKey: "helivanta", OrgID: tenant.String(), Action: "account.password_recovery.admitted", Outcome: audit.OutcomeSuccess, RequestID: id.String()})
+	})
+	return out, err
+}
+
+// CancelPasswordRecoveryCommand fences late password submissions; only prepared can be cancelled.
+func (s *Store) CancelPasswordRecoveryCommand(ctx context.Context, id, challenge uuid.UUID, browser []byte) error {
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		var tenant uuid.UUID
+		err := tx.QueryRow(ctx, `UPDATE password_recovery_commands SET state='cancelled',updated_at=clock_timestamp() WHERE id=$1 AND challenge_id=$2 AND state='prepared' AND EXISTS(SELECT 1 FROM password_recovery_challenges c WHERE c.id=$2 AND c.tenant_id=password_recovery_commands.tenant_id AND c.browser_hash=$3 AND c.verified_at IS NOT NULL AND c.expires_at>clock_timestamp()) RETURNING tenant_id`, id, challenge, browser).Scan(&tenant)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrConflict
+		}
+		if err != nil {
+			return err
+		}
+		return appendAudit(ctx, tx, audit.Event{ActorType: audit.ActorSystem, ActorID: "helivanta-api", ProductKey: "helivanta", OrgID: tenant.String(), Action: "account.password_recovery.cancelled", Outcome: audit.OutcomeSuccess, RequestID: id.String()})
+	})
 }

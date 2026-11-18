@@ -55,6 +55,38 @@ func (in PasswordRecoveryProof) Validate() error {
 	return nil
 }
 
+// PasswordRecoveryIntent prepares or cancels a command without accepting credentials.
+type PasswordRecoveryIntent struct {
+	CommandID   string `json:"commandId" format:"uuid" required:"true"`
+	ID          string `json:"id" format:"uuid" required:"true"`
+	BrowserHash string `json:"browserHash" required:"true" pattern:"^[a-f0-9]{64}$"`
+}
+
+func (in PasswordRecoveryIntent) Validate() error {
+	if !recoveryCommandID(in.CommandID) || (PasswordRecoveryAccess{in.ID, in.BrowserHash}).Validate() != nil {
+		return ErrInvalid
+	}
+	return nil
+}
+func (PasswordRecoveryIntent) String() string   { return "[redacted password recovery intent]" }
+func (PasswordRecoveryIntent) GoString() string { return "[redacted password recovery intent]" }
+
+// PasswordRecoveryRead optionally restores one exact retained command.
+type PasswordRecoveryRead struct {
+	ID          string `json:"id" format:"uuid" required:"true"`
+	BrowserHash string `json:"browserHash" required:"true" pattern:"^[a-f0-9]{64}$"`
+	CommandID   string `json:"commandId,omitempty" format:"uuid"`
+}
+
+func (in PasswordRecoveryRead) Validate() error {
+	if (PasswordRecoveryAccess{in.ID, in.BrowserHash}).Validate() != nil || (in.CommandID != "" && !recoveryCommandID(in.CommandID)) {
+		return ErrInvalid
+	}
+	return nil
+}
+func (PasswordRecoveryRead) String() string   { return "[redacted password recovery read]" }
+func (PasswordRecoveryRead) GoString() string { return "[redacted password recovery read]" }
+
 // PasswordRecoveryPassword is a private native handoff, never persisted or logged.
 type PasswordRecoveryPassword struct {
 	CommandID   string `json:"commandId" format:"uuid" required:"true"`
@@ -105,18 +137,26 @@ type PasswordRecoveryVerified struct {
 
 // PasswordRecoveryStatus is available only to the browser with verified mailbox proof.
 type PasswordRecoveryStatus struct {
-	State string `json:"state" enum:"ready,locked,processing,applied,completed,refused,unconfirmed" required:"true"`
+	State     string `json:"state" enum:"ready,locked,prepared,processing,applied,completed,refused,unconfirmed,cancelled" required:"true"`
+	CommandID string `json:"commandId,omitempty" format:"uuid"`
 }
 
 // PasswordRecoveryResult reports retained native outcome without authenticating the recipient.
 type PasswordRecoveryResult struct {
-	State string `json:"state" enum:"processing,applied,completed,refused,unconfirmed" required:"true"`
+	State     string `json:"state" enum:"prepared,processing,applied,completed,refused,unconfirmed,cancelled" required:"true"`
+	CommandID string `json:"commandId,omitempty" format:"uuid"`
 }
 
 func (in PasswordRecoveryStatus) Validate() error {
+	if in.CommandID != "" && (!recoveryCommandID(in.CommandID) || in.State == "ready" || in.State == "locked") {
+		return ErrInvalid
+	}
 	return recoveryState(reflect.TypeFor[PasswordRecoveryStatus](), in.State)
 }
 func (in PasswordRecoveryResult) Validate() error {
+	if in.CommandID != "" && !recoveryCommandID(in.CommandID) {
+		return ErrInvalid
+	}
 	return recoveryState(reflect.TypeFor[PasswordRecoveryResult](), in.State)
 }
 

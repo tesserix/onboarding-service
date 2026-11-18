@@ -47,7 +47,7 @@ func (d Deps) verifyPasswordRecovery(c *gin.Context) {
 }
 
 func (d Deps) readPasswordRecovery(c *gin.Context) {
-	var in customercontract.PasswordRecoveryAccess
+	var in customercontract.PasswordRecoveryRead
 	if !decodeHospital(c, &in) {
 		return
 	}
@@ -73,6 +73,40 @@ func (d Deps) completePasswordRecovery(c *gin.Context) {
 		return
 	}
 	result, err := d.Service.CompletePasswordRecovery(c.Request.Context(), in)
+	if err != nil {
+		respondErr(c, d.logger(), err)
+		return
+	}
+	c.JSON(200, result)
+}
+
+func (d Deps) preparePasswordRecovery(c *gin.Context) {
+	var in customercontract.PasswordRecoveryIntent
+	if !decodeHospital(c, &in) {
+		return
+	}
+	if d.Service == nil {
+		abort(c, 503, "identity unavailable")
+		return
+	}
+	result, err := d.Service.PreparePasswordRecovery(c.Request.Context(), in)
+	if err != nil {
+		respondErr(c, d.logger(), err)
+		return
+	}
+	c.JSON(200, result)
+}
+
+func (d Deps) cancelPasswordRecovery(c *gin.Context) {
+	var in customercontract.PasswordRecoveryIntent
+	if !decodeHospital(c, &in) {
+		return
+	}
+	if d.Service == nil {
+		abort(c, 503, "identity unavailable")
+		return
+	}
+	result, err := d.Service.CancelPasswordRecovery(c.Request.Context(), in)
 	if err != nil {
 		respondErr(c, d.logger(), err)
 		return

@@ -122,8 +122,8 @@ Only digests are stored; raw codes, passwords and native reset proofs are absent
 
 The separate `password_recovery_challenges` table is prepared in infrastructure
 PR [#1712](https://github.com/tesserix/tesserix-k8s/pull/1712), schema commit
-`2776a61e60d844e50fdd745cf9e98bc46052cbe1`. CI fetches that exact canonical schema
-with SHA-256 `91e8d3e66f36384d28d110049bc166f7f46e3a04af3aba6a90b03fb908817f65`.
+`363dce21216c5e4830a33465d988f043b5ee960d`. CI fetches that exact canonical schema
+with SHA-256 `413ac8a6fa38bf83f0fa50fd864d3f9bac30ecc2fd753f4071121b48b52ebeb9`.
 This is a test dependency; no live migration is implied or approved by this pin.
 
 Delivery reservations serialize across replicas. Limits are 3/hour and 10/24h
@@ -188,15 +188,18 @@ private contact is returned in this receipt.
 ## Native completion command design
 
 One verified mailbox capability may attempt at most five distinct completion
-commands. Each command has a separate immutable UUID; a retry returns its retained
-receipt and performs no native mutation. A known native password-policy refusal
+commands. Each command has a separate immutable UUID; preparation retries and read-only status restore its retained
+receipt without native mutation. Repeated password bodies return conflict and
+direct the recipient to read the exact receipt. A known native password-policy refusal
 consumes that attempt, allowing a new command within the same unexpired mailbox
 proof. No password, password commitment, native code or native session token is
 retained. Mailbox verification must postdate the current native password-change
 cutoff; an earlier proof cannot reset a subsequently changed credential.
 
-The owner checks the exact native account and managed tenant, reserves the
-command and attributable audit, then obtains the native reset code and submits
+The owner checks the exact native account and managed tenant, prepares the
+command and attributable audit without a password. A later submission rechecks
+account, mailbox and credential baseline and atomically changes only that
+prepared intent to processing, then obtains the native reset code and submits
 that proof with the new password in request memory. Native complexity policy is
 authoritative. Only an explicit allowlist of native policy error IDs known to
 return before mutation may produce `refused`. Any uncertain dispatch, malformed
@@ -213,7 +216,7 @@ capability and commit audit. A completed capability grants no login; ordinary
 password and MFA sign-in remain mandatory.
 
 A database constraint and per-account admission lock serialize concurrent
-commands. Processing/applied/unconfirmed commands block another mutation for the
+commands. Prepared/processing/applied/unconfirmed commands block another mutation for the
 same tenant/account. A completed native cutoff fences a second command prepared
 from older native evidence. Crash-before-dispatch is conservatively unconfirmed;
 there is no automatic replay of the non-idempotent native endpoint. Support must
@@ -236,7 +239,7 @@ The candidate private `/password-recovery/password` handler now accepts
 `PasswordRecoveryResult` reports the retained command state. Status restores the
 latest browser-bound receipt and reconciles `applied` without another write.
 A `refused` result permits a distinct new command, capped at five per mailbox
-proof; a repeated command with any password payload returns the old receipt.
+proof; a repeated command with any password payload returns conflict and requires a read-only receipt.
 The native adapter's safe policy allowlist is pinned to `DOMAIN-HuJf6`,
 `DOMAIN-co3Xw`, `DOMAIN-VoaRj`, `DOMAIN-ZBv4H`, `DOMAIN-ZDLwA` in the native
 `internal/domain/policy_password_complexity.go`. Generic 400/412 responses,
@@ -272,3 +275,31 @@ ambiguous fields, and private/public password validation shares the same rule.
 The broker supplies the private scope and capability itself. New delivery intents
 choose a new request UUID; network retries retain it, including retries of an
 explicit resend. A boolean resend flag alone cannot distinguish these safely.
+
+## Prepared intent and lost browser responses
+
+The private `/password-recovery/prepare` and `/cancel` commands accept only
+`PasswordRecoveryIntent`, which has no credential field. Prepare durably retains
+`prepared`, binds the exact current account and credential baseline and performs
+no reset-code or password write. The browser must receive preparation and its
+host-only active-command cookie before sending a password. A missing, cancelled,
+already processing or differently bound intent cannot dispatch. Cancellation
+atomically changes only prepared to cancelled. To cancel a possibly late missing
+preparation, the service reserves the exact intent before cancelling it; a later
+prepare retry sees retained cancelled and cannot revive it. Cancellation loses
+if submission has already changed the intent to processing.
+
+Private status accepts `PasswordRecoveryRead` with optional `commandId`. An exact
+unknown selector returns not found, never ready or an older result. Without a
+selector it restores the latest retained command, including prepared and known
+terminal outcomes. Private receipts carry optional commandId for the broker to
+validate, retain only in its HttpOnly capability and strip from public JSON.
+Public `PasswordRecoveryCommand` accepts only command_id for prepare/cancel.
+The canonical Go definitions generate the browser Zod models.
+
+Only expired prepared intents may be cancelled automatically during admission of
+a new verified proof. Their cancelled record prevents any late password from
+running. Processing, applied and unconfirmed fences are never released by expiry
+or cleanup. Processing age is measured from dispatch, not original preparation.
+The schema candidate has not been applied live. Real hosted PostgreSQL race tests,
+consumer cookie integration, browser UI and native acceptance remain required.

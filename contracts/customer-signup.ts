@@ -31,6 +31,15 @@ export type CustomerWorkspaceInput = z.infer<typeof CustomerWorkspaceInputContra
 export const PasswordRecoveryRequestContract = z.object({"auth_request_id":z.string().min(1).regex(new RegExp("^[A-Za-z0-9_-]{1,200}$")),"request_id":z.string().uuid().min(1),"email":z.string().email().refine(value=>[...value].length<=200,{message:'Use up to 200 characters'}).refine(value=>value===value.trim()&&!/[\u0000-\u001f\u007f-\u009f]/.test(value),{message:'Use text without surrounding spaces or control characters'}).min(1)}).strict();
 export type PasswordRecoveryRequest = z.infer<typeof PasswordRecoveryRequestContract>;
 
+export const PasswordRecoveryIntentContract = z.object({"commandId":z.string().uuid().min(1),"id":z.string().uuid().min(1),"browserHash":z.string().min(1).regex(new RegExp("^[a-f0-9]{64}$"))}).strict();
+export type PasswordRecoveryIntent = z.infer<typeof PasswordRecoveryIntentContract>;
+
+export const PasswordRecoveryReadContract = z.object({"id":z.string().uuid().min(1),"browserHash":z.string().min(1).regex(new RegExp("^[a-f0-9]{64}$")),"commandId":z.string().uuid().optional()}).strict();
+export type PasswordRecoveryRead = z.infer<typeof PasswordRecoveryReadContract>;
+
+export const PasswordRecoveryCommandContract = z.object({"command_id":z.string().uuid().min(1)}).strict();
+export type PasswordRecoveryCommand = z.infer<typeof PasswordRecoveryCommandContract>;
+
 export const PasswordRecoveryCodeContract = z.object({"code":z.string().min(1).regex(new RegExp("^[0-9]{8}$"))}).strict();
 export type PasswordRecoveryCode = z.infer<typeof PasswordRecoveryCodeContract>;
 
@@ -40,10 +49,10 @@ export type PasswordRecoverySubmit = z.infer<typeof PasswordRecoverySubmitContra
 export const PasswordRecoveryPasswordContract = z.object({"commandId":z.string().uuid().min(1),"id":z.string().uuid().min(1),"browserHash":z.string().min(1).regex(new RegExp("^[a-f0-9]{64}$")),"password":z.string().refine(value=>[...value].length<=200,{message:'Use up to 200 characters'}).min(1)}).strict();
 export type PasswordRecoveryPassword = z.infer<typeof PasswordRecoveryPasswordContract>;
 
-export const PasswordRecoveryResultContract = z.object({"state":z.enum(["processing","applied","completed","refused","unconfirmed"])}).strict();
+export const PasswordRecoveryResultContract = z.object({"state":z.enum(["prepared","processing","applied","completed","refused","unconfirmed","cancelled"]),"commandId":z.string().uuid().optional()}).strict();
 export type PasswordRecoveryResult = z.infer<typeof PasswordRecoveryResultContract>;
 
-export const PasswordRecoveryStatusContract = z.object({"state":z.enum(["ready","locked","processing","applied","completed","refused","unconfirmed"])}).strict();
+export const PasswordRecoveryStatusContract = z.object({"state":z.enum(["ready","locked","prepared","processing","applied","completed","refused","unconfirmed","cancelled"]),"commandId":z.string().uuid().optional()}).strict();
 export type PasswordRecoveryStatus = z.infer<typeof PasswordRecoveryStatusContract>;
 
 export const PasswordRecoveryAcceptedContract = z.object({"state":z.enum(["check_email"]),"challengeId":z.string().uuid().optional()}).strict();

@@ -50,3 +50,15 @@ func recoveryCommandID(value string) bool {
 	id, err := uuid.Parse(value)
 	return err == nil && id.Version() == 7 && id.Variant() == uuid.RFC4122 && id.String() == value
 }
+
+// PasswordRecoveryCommand selects a browser intent without a credential payload.
+type PasswordRecoveryCommand struct {
+	CommandID string `json:"command_id" required:"true" format:"uuid"`
+}
+
+func (in PasswordRecoveryCommand) Validate() error {
+	if !recoveryCommandID(in.CommandID) {
+		return ErrInvalid
+	}
+	return nil
+}

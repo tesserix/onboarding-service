@@ -18,7 +18,7 @@ import (
 )
 
 func TestPasswordRecoveryCompletesNativeWriteOnceAndPreservesUncertainOutcomes(t *testing.T) {
-	for _, mode := range []string{"completed", "refused", "unconfirmed", "applied"} {
+	for _, mode := range []string{"completed", "refused", "unconfirmed", "applied", "cancelled", "late_prepare"} {
 		t.Run(mode, func(t *testing.T) {
 			svc, idp, st := newService(t)
 			seedProduct(t, st, "helivanta")
@@ -85,18 +85,57 @@ func TestPasswordRecoveryCompletesNativeWriteOnceAndPreservesUncertainOutcomes(t
 			defer native.Close()
 			svc.signupIdentity = zitadel.New(native.URL, zitadel.StaticToken("synthetic"), "platform", nil)
 			in := customercontract.PasswordRecoveryPassword{CommandID: uuid.Must(uuid.NewV7()).String(), ID: challenge.String(), BrowserHash: hex.EncodeToString(browser), Password: "synthetic-password"}
+			if _, err := svc.CompletePasswordRecovery(t.Context(), in); !errors.Is(err, ErrConflict) || nativeWrites.Load() != 0 {
+				t.Fatal("password without prepared intent was dispatched", err)
+			}
+			intent := customercontract.PasswordRecoveryIntent{CommandID: in.CommandID, ID: in.ID, BrowserHash: in.BrowserHash}
+			if mode == "late_prepare" {
+				cancelled, err := svc.CancelPasswordRecovery(t.Context(), intent)
+				if err != nil || cancelled.State != "cancelled" {
+					t.Fatal("missing intent cancellation not retained", err)
+				}
+				prepared, err := svc.PreparePasswordRecovery(t.Context(), intent)
+				if err != nil || prepared.State != "cancelled" || nativeWrites.Load() != 0 {
+					t.Fatal("late preparation revived cancellation", err)
+				}
+				if _, err = svc.CompletePasswordRecovery(t.Context(), in); !errors.Is(err, ErrConflict) || nativeWrites.Load() != 0 {
+					t.Fatal("late password bypassed cancellation", err)
+				}
+				return
+			}
+			prepared, err := svc.PreparePasswordRecovery(t.Context(), intent)
+			if err != nil || prepared.State != "prepared" || prepared.CommandID != in.CommandID || nativeWrites.Load() != 0 {
+				t.Fatal("preparation changed native credentials", err)
+			}
+			status, err := svc.ReadPasswordRecovery(t.Context(), customercontract.PasswordRecoveryRead{ID: in.ID, BrowserHash: in.BrowserHash, CommandID: uuid.Must(uuid.NewV7()).String()})
+			if !errors.Is(err, ErrNotFound) {
+				t.Fatal("unknown exact selector fell back to older receipt", status, err)
+			}
+			if mode == "cancelled" {
+				cancelled, err := svc.CancelPasswordRecovery(t.Context(), intent)
+				if err != nil || cancelled.State != "cancelled" {
+					t.Fatal("prepared cancellation failed", err)
+				}
+				if _, err = svc.CompletePasswordRecovery(t.Context(), in); !errors.Is(err, ErrConflict) || nativeWrites.Load() != 0 {
+					t.Fatal("cancelled late submit dispatched", err)
+				}
+				return
+			}
 			result, err := svc.CompletePasswordRecovery(t.Context(), in)
 			if err != nil || result.State != mode || nativeWrites.Load() != 1 {
 				t.Fatalf("native completion got %q writes=%d err=%v", result.State, nativeWrites.Load(), err)
 			}
 			in.Password = "a different retry payload must never dispatch"
-			replay, err := svc.CompletePasswordRecovery(t.Context(), in)
-			if err != nil || replay.State != mode || nativeWrites.Load() != 1 {
-				t.Fatal("native password command replayed", err)
+			if _, err := svc.CompletePasswordRecovery(t.Context(), in); !errors.Is(err, ErrConflict) || nativeWrites.Load() != 1 {
+				t.Fatal("password replay did not require read-only recovery", err)
+			}
+			replay, err := svc.ReadPasswordRecovery(t.Context(), customercontract.PasswordRecoveryRead{ID: in.ID, BrowserHash: in.BrowserHash, CommandID: in.CommandID})
+			if err != nil || replay.State != mode || replay.CommandID != in.CommandID || nativeWrites.Load() != 1 {
+				t.Fatal("read-only receipt lost exact outcome", err)
 			}
 			if mode == "applied" {
 				readUnavailable.Store(false)
-				replay, err = svc.CompletePasswordRecovery(t.Context(), in)
+				replay, err = svc.ReadPasswordRecovery(t.Context(), customercontract.PasswordRecoveryRead{ID: in.ID, BrowserHash: in.BrowserHash, CommandID: in.CommandID})
 				if err != nil || replay.State != "completed" || nativeWrites.Load() != 1 {
 					t.Fatal("acknowledged native write could not reconcile without another write", err)
 				}

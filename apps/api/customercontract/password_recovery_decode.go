@@ -115,3 +115,36 @@ func (in *PasswordRecoveryResult) UnmarshalJSON(raw []byte) error {
 	*in = PasswordRecoveryResult(value)
 	return nil
 }
+
+// UnmarshalJSON refuses ambiguous recovery command selectors.
+func (in *PasswordRecoveryIntent) UnmarshalJSON(raw []byte) error {
+	type wire PasswordRecoveryIntent
+	var value wire
+	if !utf8.Valid(raw) || strictProjectionObject(raw, reflect.TypeFor[wire]()) != nil || json.Unmarshal(raw, &value) != nil || PasswordRecoveryIntent(value).Validate() != nil {
+		return ErrInvalid
+	}
+	*in = PasswordRecoveryIntent(value)
+	return nil
+}
+
+// UnmarshalJSON refuses ambiguous recovery command selectors.
+func (in *PasswordRecoveryRead) UnmarshalJSON(raw []byte) error {
+	type wire PasswordRecoveryRead
+	var value wire
+	if !utf8.Valid(raw) || strictProjectionObject(raw, reflect.TypeFor[wire]()) != nil || json.Unmarshal(raw, &value) != nil || PasswordRecoveryRead(value).Validate() != nil {
+		return ErrInvalid
+	}
+	*in = PasswordRecoveryRead(value)
+	return nil
+}
+
+// UnmarshalJSON refuses ambiguous recovery command selectors.
+func (in *PasswordRecoveryCommand) UnmarshalJSON(raw []byte) error {
+	type wire PasswordRecoveryCommand
+	var value wire
+	if !utf8.Valid(raw) || strictProjectionObject(raw, reflect.TypeFor[wire]()) != nil || json.Unmarshal(raw, &value) != nil || PasswordRecoveryCommand(value).Validate() != nil {
+		return ErrInvalid
+	}
+	*in = PasswordRecoveryCommand(value)
+	return nil
+}
