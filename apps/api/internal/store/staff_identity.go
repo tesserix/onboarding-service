@@ -88,7 +88,7 @@ func (s *Store) PrepareStaffIdentity(ctx context.Context, c StaffIdentityCommand
 		inserted, err := tx.Exec(ctx, `INSERT INTO staff_identity_commands
  (id,org_id,product_key,machine_subject,actor_subject,provider_org_id,provider_project_id,
  provider_user_id,binding_nonce,email,given_name,family_name,reason)
- VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT(id) DO NOTHING`,
+ VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT DO NOTHING`,
 			c.ID, c.OrgID, c.ProductKey, c.MachineSubject, c.ActorSubject, c.ProviderOrgID, c.ProviderProjectID,
 			c.ProviderUserID, c.BindingNonce, c.Email, c.GivenName, c.FamilyName, c.Reason)
 		if err != nil {
