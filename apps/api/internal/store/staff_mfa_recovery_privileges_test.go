@@ -49,4 +49,8 @@ func TestStaffMFARecoveryApplicationRoleCanRunLifecycleButCannotRewriteHistory(t
 	require.NoError(t, err)
 	require.Equal(t, "completed", current.State)
 	require.Equal(t, removed, current.NativeChangedAt)
+	requirement, err := app.StaffMFARecoveryRequirement(t.Context(), command.Request.Target.Subject)
+	require.NoError(t, err)
+	require.Equal(t, "completed", requirement.State)
+	require.Equal(t, command.Request.Intent.CommandID, requirement.GenerationID)
 }

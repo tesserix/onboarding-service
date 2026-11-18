@@ -70,7 +70,7 @@ func (s *Store) CompleteStaffMFARecovery(ctx context.Context, c StaffMFARecovery
 			return err
 		}
 		var currentID string
-		if err = tx.QueryRow(ctx, `SELECT id::text FROM staff_mfa_recovery_commands WHERE org_id=$1 AND target_subject=$2 AND state<>'cancelled' ORDER BY generation DESC LIMIT 1`, c.Request.Target.TenantID, c.Request.Target.Subject).Scan(&currentID); err != nil {
+		if err = tx.QueryRow(ctx, `SELECT id::text FROM staff_mfa_recovery_commands WHERE target_subject=$1 AND state<>'cancelled' ORDER BY generation DESC LIMIT 1`, c.Request.Target.Subject).Scan(&currentID); err != nil {
 			return err
 		}
 		if currentID != c.Request.Intent.CommandID {

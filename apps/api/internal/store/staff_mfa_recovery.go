@@ -73,7 +73,7 @@ func lockStaffMFA(ctx context.Context, tx pgx.Tx, c StaffMFARecoveryCommand) err
 		ProviderOrgID: c.ProviderOrgID, ProviderProjectID: c.ProviderProjectID}); err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,8021987))`, c.Request.Target.TenantID+":"+c.Request.Target.Subject)
+	_, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,8021987))`, c.Request.Target.Subject)
 	return err
 }
 
@@ -109,7 +109,7 @@ func (s *Store) PrepareStaffMFARecovery(ctx context.Context, c StaffMFARecoveryC
 			return err
 		}
 		var fenced bool
-		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM staff_mfa_recovery_commands WHERE org_id=$1 AND target_subject=$2 AND state IN ('prepared','processing','awaiting_enrollment','unconfirmed'))`, c.Request.Target.TenantID, c.Request.Target.Subject).Scan(&fenced); err != nil {
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM staff_mfa_recovery_commands WHERE target_subject=$1 AND state IN ('prepared','processing','awaiting_enrollment','unconfirmed'))`, c.Request.Target.Subject).Scan(&fenced); err != nil {
 			return err
 		}
 		if fenced {

@@ -36,6 +36,19 @@ func (s *Service) CustomerIdentityProjection(ctx context.Context, in customercon
 	if result.State == "active" && in.IncludeCredentialState != (result.Credentials != nil) {
 		return empty, ErrUnavailable
 	}
+	if result.MFARecovery != nil {
+		return empty, ErrUnavailable
+	}
+	if in.IncludeMFARecovery && result.State == "active" {
+		requirement, err := s.store.StaffMFARecoveryRequirement(ctx, in.Subject)
+		if err != nil {
+			return empty, ErrUnavailable
+		}
+		result.MFARecovery = &requirement
+		if result.Validate() != nil {
+			return empty, ErrUnavailable
+		}
+	}
 	if in.Purpose == "assignment_candidate" || in.IncludeCredentialState {
 		currentOrg, err := s.customerIdentityScope(ctx, in.TenantID)
 		if err != nil {
@@ -62,7 +75,8 @@ func (s *Service) CustomerIdentityProjection(ctx context.Context, in customercon
 	detail, err := json.Marshal(struct {
 		Purpose         string `json:"purpose"`
 		CredentialState bool   `json:"credentialState,omitempty"`
-	}{Purpose: in.Purpose, CredentialState: in.IncludeCredentialState})
+		MFARecovery     bool   `json:"mfaRecovery,omitempty"`
+	}{Purpose: in.Purpose, CredentialState: in.IncludeCredentialState, MFARecovery: in.IncludeMFARecovery})
 	if err != nil {
 		return empty, ErrUnavailable
 	}

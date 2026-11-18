@@ -64,7 +64,10 @@ func validateTaggedFields(input any, state string) error {
 	for i := range value.NumField() {
 		field := value.Type().Field(i)
 		entry := value.Field(i)
-		if (field.Tag.Get("required") == "true" || (field.Tag.Get("requireWhen") != "" && field.Tag.Get("requireWhen") == state)) && entry.IsZero() {
+		if (field.Tag.Get("required") == "true" || (field.Tag.Get("requireWhen") != "" && slices.Contains(strings.Split(field.Tag.Get("requireWhen"), ","), state))) && entry.IsZero() {
+			return ErrInvalid
+		}
+		if field.Tag.Get("forbidWhen") != "" && field.Tag.Get("forbidWhen") == state && !entry.IsZero() {
 			return ErrInvalid
 		}
 		if entry.Kind() != reflect.String {

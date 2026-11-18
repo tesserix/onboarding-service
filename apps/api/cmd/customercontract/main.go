@@ -77,6 +77,7 @@ func generateContracts() (string, error) {
 		{"CustomerSecurityRequest", reflect.TypeFor[customercontract.SecurityRequest]()},
 		{"StaffMFAResetInput", reflect.TypeFor[customercontract.StaffMFAResetInput]()},
 		{"StaffMFARecoveryReceipt", reflect.TypeFor[customercontract.StaffMFARecoveryReceipt]()},
+		{"StaffMFARecoveryRequirement", reflect.TypeFor[customercontract.StaffMFARecoveryRequirement]()},
 	} {
 		schema, err := contractSchema(contract.kind, "")
 		if err != nil {
@@ -135,7 +136,17 @@ func contractSchema(kind reflect.Type, choices string) (string, error) {
 			name := strings.Split(field.Tag.Get("json"), ",")[0]
 			key, _ := json.Marshal(name)
 			state, _ := json.Marshal(when)
-			schema += ".superRefine((value,ctx)=>{if(value.state===" + string(state) + "&&!value[" + string(key) + "]){ctx.addIssue({code:'custom',path:[" + string(key) + "],message:'Complete initial workspace binding required'});}})"
+			condition := "value.state===" + string(state)
+			if strings.Contains(when, ",") {
+				states, _ := json.Marshal(strings.Split(when, ","))
+				condition = string(states) + ".includes(value.state)"
+			}
+			schema += ".superRefine((value,ctx)=>{if(" + condition + "&&!value[" + string(key) + "]){ctx.addIssue({code:'custom',path:[" + string(key) + "],message:'Complete initial workspace binding required'});}})"
+		}
+		if when := field.Tag.Get("forbidWhen"); when != "" {
+			key, _ := json.Marshal(strings.Split(field.Tag.Get("json"), ",")[0])
+			state, _ := json.Marshal(when)
+			schema += ".superRefine((value,ctx)=>{if(value.state===" + string(state) + "&&value[" + string(key) + "]!==undefined){ctx.addIssue({code:'custom',path:[" + string(key) + "],message:'Field is unavailable in this state'});}})"
 		}
 	}
 	return schema, nil

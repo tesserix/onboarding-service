@@ -102,9 +102,26 @@ and admission require fresh scope authority.
 Completed records remain in latest-generation admission reads. A newer preparation
 prevents an older receipt from completing again. Prepared cancellation exposes
 the preceding completed requirement; IAM session revocation is never undone.
+Open-command uniqueness, the account lock and completion's latest-generation
+check use the exact native subject across tenant memberships. Tenant ownership
+and command/source disclosure remain scoped to the originating tenant and actor.
+See [subject-wide admission](adr/0008-subject-wide-mfa-recovery-admission.md).
 Canonical native timestamps remain text so nanoseconds survive PostgreSQL.
 Restricted column grants and transition guards prevent source rewrites, history
 deletion and illegal state jumps by the application role.
+
+The private customer identity projection accepts `includeMFARecovery: true` only
+with `includeCredentialState: true` and the `status` purpose. For an active exact
+subject, `mfaRecovery` explicitly reports `none`, `blocked`, `enrollment_required`
+or `completed`. Every non-`none` state carries `generationId`, the command UUID.
+This account-wide projection intentionally covers legacy same-subject tenant
+memberships, but reveals no originating tenant, employer, actor, reason or native
+evidence. Old callers retain their original shape. Inactive subjects receive no
+new recovery projection. Current tenant entitlement and native scope are checked
+again after source I/O, and disclosure requires its opt-in audit. Storage or audit
+failure is unavailable, never `none`. HMS still needs to opt in and enforce the
+returned requirement; a completed command does not prove the current session's
+fresh primary/factor evidence or admitted generation.
 
 ## Native evidence and remaining wiring
 
