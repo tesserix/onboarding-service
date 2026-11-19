@@ -88,6 +88,15 @@ export type CustomerLoginTargetInput = z.infer<typeof CustomerLoginTargetInputCo
 export const CustomerLoginTargetContract = z.object({"tenantId":z.string().uuid().min(1),"organizationId":z.string(),"subject":z.string().min(1).regex(new RegExp("^[A-Za-z0-9_-]{1,200}$"))}).strict();
 export type CustomerLoginTarget = z.infer<typeof CustomerLoginTargetContract>;
 
+export const CustomerLoginTargetsInputContract = z.object({"email":z.string().min(1),"requestId":z.string().uuid().min(1)}).strict();
+export type CustomerLoginTargetsInput = z.infer<typeof CustomerLoginTargetsInputContract>;
+
+export const CustomerLoginCandidateContract = z.object({"tenantId":z.string().uuid().min(1),"organizationId":z.string(),"subject":z.string().min(1).regex(new RegExp("^[A-Za-z0-9_-]{1,200}$")),"name":z.string().refine(value=>[...value].length<=200,{message:'Use up to 200 characters'}).refine(value=>value===value.trim()&&!/[\u0000-\u001f\u007f-\u009f]/.test(value),{message:'Use text without surrounding spaces or control characters'}).min(1),"account":z.string().refine(value=>[...value].length<=200,{message:'Use up to 200 characters'}).refine(value=>value===value.trim()&&!/[\u0000-\u001f\u007f-\u009f]/.test(value),{message:'Use text without surrounding spaces or control characters'}).min(1)}).strict();
+export type CustomerLoginCandidate = z.infer<typeof CustomerLoginCandidateContract>;
+
+export const CustomerLoginTargetsContract = z.object({"targets":z.array(z.object({"tenantId":z.string().uuid().min(1),"organizationId":z.string(),"subject":z.string().min(1).regex(new RegExp("^[A-Za-z0-9_-]{1,200}$")),"name":z.string().refine(value=>[...value].length<=200,{message:'Use up to 200 characters'}).refine(value=>value===value.trim()&&!/[\u0000-\u001f\u007f-\u009f]/.test(value),{message:'Use text without surrounding spaces or control characters'}).min(1),"account":z.string().refine(value=>[...value].length<=200,{message:'Use up to 200 characters'}).refine(value=>value===value.trim()&&!/[\u0000-\u001f\u007f-\u009f]/.test(value),{message:'Use text without surrounding spaces or control characters'}).min(1)}).strict()).max(5),"truncated":z.boolean()}).strict();
+export type CustomerLoginTargets = z.infer<typeof CustomerLoginTargetsContract>;
+
 export const CustomerIdentityProjectionInputContract = z.object({"purpose":z.enum(["status","membership","profile","assignment_candidate"]),"tenantId":z.string().uuid().min(1),"subject":z.string().min(1).regex(new RegExp("^[A-Za-z0-9_-]{1,200}$")),"requestId":z.string().uuid().min(1),"includeTenantName":z.boolean().optional(),"includeCredentialState":z.boolean().optional()}).strict();
 export type CustomerIdentityProjectionInput = z.infer<typeof CustomerIdentityProjectionInputContract>;
 

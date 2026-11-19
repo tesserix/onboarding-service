@@ -35,6 +35,7 @@ func (d Deps) registerCustomers(r *gin.Engine) {
 	group.POST("/password-recovery/prepare", d.preparePasswordRecovery)
 	group.POST("/password-recovery/cancel", d.cancelPasswordRecovery)
 	group.POST("/login-target", d.customerLoginTarget)
+	group.POST("/login-targets", d.customerLoginTargets)
 	for _, action := range []string{"status", "email", "password", "resend"} {
 		group.POST("/staff-invitations/"+action, d.staffRecipient(action))
 	}
@@ -51,6 +52,22 @@ func (d Deps) customerLoginTarget(c *gin.Context) {
 		return
 	}
 	result, err := d.Service.CustomerLoginTarget(c.Request.Context(), in)
+	if err != nil {
+		respondErr(c, d.logger(), err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+func (d Deps) customerLoginTargets(c *gin.Context) {
+	var in customercontract.LoginTargetsInput
+	if !decodeHospital(c, &in) {
+		return
+	}
+	if d.Service == nil {
+		abort(c, 503, "identity unavailable")
+		return
+	}
+	result, err := d.Service.CustomerLoginTargets(c.Request.Context(), in)
 	if err != nil {
 		respondErr(c, d.logger(), err)
 		return
