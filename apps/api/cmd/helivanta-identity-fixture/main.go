@@ -127,7 +127,7 @@ func run() error {
 	if err != nil {
 		return errors.New("local fixture product unavailable")
 	}
-	for _, id := range []string{"11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"} {
+	for _, id := range fixtureTenantIDs(*mfaEnabled) {
 		org := "helivanta-" + id
 		proof, e := native.VerifyOrganization(setup, org, id, manifest.ProjectID)
 		if e != nil || proof.State != "active" {

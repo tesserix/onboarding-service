@@ -9,10 +9,24 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
 )
+
+const (
+	fixtureMFAHospitalTenant = "11111111-1111-7111-8111-111111111111"
+	fixtureMFAPharmacyTenant = "22222222-2222-7222-8222-222222222222"
+)
+
+func fixtureTenantIDs(mfa bool) []string {
+	ids := []string{"11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"}
+	if mfa {
+		ids = append(ids, fixtureMFAHospitalTenant, fixtureMFAPharmacyTenant)
+	}
+	return ids
+}
 
 func fixtureMFAHandler(next http.Handler, enabled bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -25,7 +39,7 @@ func fixtureMFAHandler(next http.Handler, enabled bool) http.Handler {
 			return
 		}
 		parts := strings.Split(r.URL.Path, "/")
-		if len(parts) == 5 && parts[0] == "" && parts[1] == "v1" && parts[2] == "orgs" && parts[4] == "identity" && r.Method == http.MethodGet && (parts[3] == "11111111-1111-1111-1111-111111111111" || parts[3] == "22222222-2222-2222-2222-222222222222") {
+		if len(parts) == 5 && parts[0] == "" && parts[1] == "v1" && parts[2] == "orgs" && parts[4] == "identity" && r.Method == http.MethodGet && slices.Contains(fixtureTenantIDs(true), parts[3]) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -33,7 +47,7 @@ func fixtureMFAHandler(next http.Handler, enabled bool) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		if parts[0] != "" || parts[1] != "v1" || parts[2] != "orgs" || parts[4] != "staff-mfa-recoveries" || parts[3] != "11111111-1111-1111-1111-111111111111" && parts[3] != "22222222-2222-2222-2222-222222222222" {
+		if parts[0] != "" || parts[1] != "v1" || parts[2] != "orgs" || parts[4] != "staff-mfa-recoveries" || parts[3] != fixtureMFAHospitalTenant && parts[3] != fixtureMFAPharmacyTenant {
 			http.NotFound(w, r)
 			return
 		}

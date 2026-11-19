@@ -185,8 +185,13 @@ organization; startup verifies that account with Zitadel before registering it.
 Real native JWKS verification and the Helivanta project audience authenticate
 product workload calls. Human tokens and a substituted machine are rejected.
 
-Only exact Tenant A/B identity reads, UUIDv7 recovery command reads/preparations,
-explicit dispatch/cancel commands and the private admission endpoint are exposed
+The baseline Tenant A/B identity reads stay available. The opt-in additionally
+provisions two fixed UUIDv7/RFC 4122 tenants, `11111111-1111-7111-8111-111111111111`
+and `22222222-2222-7222-8222-222222222222`, with separately verified native
+organizations. Only these two canonical scopes admit MFA recovery commands;
+the older non-RFC sample IDs are not passed to the workload recovery client.
+Exact identity reads, UUIDv7 recovery command reads/preparations, explicit
+dispatch/cancel commands and the private admission endpoint are exposed
 in this mode. Other tenants, methods and paths stay unavailable. The fixture wires
 `WithStaffMFARecovery` to the real native adapter; it does not replace factor
 removal, enrollment, session proof, authorization or audit with browser mocks.
