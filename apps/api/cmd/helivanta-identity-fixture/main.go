@@ -49,9 +49,10 @@ func validateConfig(enabled, issuer, dsn string) error {
 }
 
 type fixtureManifest struct {
-	ProjectID     string `json:"projectId"`
-	MachineUserID string `json:"machineUserId,omitempty"`
-	AdminOrgID    string `json:"adminOrgId"`
+	ProjectID       string `json:"projectId"`
+	MachineUserID   string `json:"machineUserId,omitempty"`
+	MachineClientID string `json:"machineClientId,omitempty"`
+	AdminOrgID      string `json:"adminOrgId"`
 }
 type fixtureVerifier struct{}
 

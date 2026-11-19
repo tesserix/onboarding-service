@@ -195,3 +195,12 @@ This fixture capability alone is not evidence of successful native acceptance.
 Focused checks: `go -C apps/api test -race -tags identityfixture
 ./cmd/helivanta-identity-fixture` and the matching `go vet`/`go build` commands.
 No live tenant, credential or factor is changed by these fixture unit checks.
+
+
+The isolated manifest distinguishes `machineUserId` (native JWT subject and
+registered product authority) from `machineClientId` (the native machine's
+preferred OAuth login name). The latter is optional metadata consumed by the
+companion HMS fixture; it never replaces the subject used to authorize a product
+command. Pinned Zitadel v4.15.3 `GenerateMachineSecret` returns the preferred login
+name as `clientId`. Native token verification continues to bind the actual JWT
+subject to the registered machine account.
