@@ -98,7 +98,8 @@ func run() error {
 	if err != nil || len(raw) == 0 || len(raw) > 8192 {
 		return errors.New("local fixture native credential unavailable")
 	}
-	native := zitadel.New(localIssuer, zitadel.StaticToken(strings.TrimSpace(string(raw))), manifest.AdminOrgID, nil)
+	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	native := zitadel.New(localIssuer, zitadel.StaticToken(strings.TrimSpace(string(raw))), manifest.AdminOrgID, log)
 	pool, err := pgxpool.New(setup, *dsn)
 	if err != nil {
 		return errors.New("local fixture database unavailable")
@@ -167,8 +168,8 @@ func run() error {
 		options = append(options, onboarding.WithCustomerMail(mail))
 		writeTimeout = 35 * time.Second
 	}
-	service := onboarding.New(st, onboarding.ZitadelIdentity{Client: native}, authz.New(st), nil, options...)
-	router := api.NewRouter(api.Deps{Tokens: machineVerifier, Service: service, Store: st, CustomerWorkloads: fixtureVerifier{}, DisableLegacyConsole: true})
+	service := onboarding.New(st, onboarding.ZitadelIdentity{Client: native}, authz.New(st), log, options...)
+	router := api.NewRouter(api.Deps{Tokens: machineVerifier, Service: service, Store: st, CustomerWorkloads: fixtureVerifier{}, DisableLegacyConsole: true, Log: log})
 	handler := fixtureHandler(router, recoveryEnabled, *mfaEnabled)
 	server := &http.Server{Addr: "127.0.0.1:18787", Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: writeTimeout, IdleTimeout: 30 * time.Second}
 	done := make(chan error, 1)

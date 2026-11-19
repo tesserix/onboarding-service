@@ -112,17 +112,25 @@ func (s *Service) checkStaffMFATarget(ctx context.Context, p authz.Principal, sc
 	return nil
 }
 
-func (s *Service) PrepareStaffMFARecovery(ctx context.Context, p authz.Principal, in customercontract.StaffMFARecoveryRequest) (customercontract.StaffMFARecoveryReceipt, error) {
+func (s *Service) PrepareStaffMFARecovery(ctx context.Context, p authz.Principal, in customercontract.StaffMFARecoveryRequest) (_ customercontract.StaffMFARecoveryReceipt, resultErr error) {
 	var empty customercontract.StaffMFARecoveryReceipt
+	stage := "scope"
+	defer func() {
+		if s != nil && s.log != nil && errors.Is(resultErr, ErrUnavailable) {
+			s.log.Warn("Staff MFA recovery preparation unavailable", "stage", stage)
+		}
+	}()
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	scope, err := s.staffMFARequestScope(ctx, p, in, authz.ActionStaffMFAPrepare)
 	if err != nil {
 		return empty, err
 	}
+	stage = "target"
 	if err = s.checkStaffMFATarget(ctx, p, scope, in.Target.Subject); err != nil {
 		return empty, err
 	}
+	stage = "scope_recheck"
 	current, err := s.staffMFARequestScope(ctx, p, in, authz.ActionStaffMFAPrepare)
 	if err != nil {
 		return empty, err
@@ -130,10 +138,12 @@ func (s *Service) PrepareStaffMFARecovery(ctx context.Context, p authz.Principal
 	if current != scope {
 		return empty, ErrUnavailable
 	}
+	stage = "store"
 	command, _, err := s.store.PrepareStaffMFARecovery(ctx, staffMFACommand(scope, in), staffMFAEvent(ctx, scope, "prepare"))
 	if err != nil {
 		return empty, staffMFAStoreError(err)
 	}
+	stage = "scope_commit_recheck"
 	current, err = s.staffMFARequestScope(ctx, p, in, authz.ActionStaffMFAPrepare)
 	if err != nil {
 		return empty, err

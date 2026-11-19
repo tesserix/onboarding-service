@@ -230,3 +230,19 @@ companion HMS fixture; it never replaces the subject used to authorize a product
 command. Pinned Zitadel v4.15.3 `GenerateMachineSecret` returns the preferred login
 name as `clientId`. Native token verification continues to bind the actual JWT
 subject to the registered machine account.
+
+## Bounded unavailable diagnostics
+
+Preparation emits only its fixed stage when identity availability fails. The
+native target adapter separately emits a fixed proof stage. Neither warning
+contains account, tenant, command, actor, reason, credential or provider body.
+The isolated acceptance command injects a JSON logger so the consumer CI can
+select these fields and the normalized prepare-route HTTP status. This is
+operational failure evidence, not authorization or successful native acceptance.
+
+The diagnostic regressions failed before logging was added, then passed. Local
+validation passed the complete onboarding/native-adapter race suites, the
+identityfixture race suite, vet, Go build, golangci-lint and customer-contract
+check. No local application, database or container was started. The latest
+consumer native run at HMS `d6a8430a` still reported one pass and two 503 failures;
+its hospital/pharmacy recovery journeys remain unverified.

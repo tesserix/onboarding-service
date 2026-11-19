@@ -17,13 +17,20 @@ var ErrRecoveryTargetIneligible = errors.New("native account is not an ordinary 
 
 // CheckStaffMFARecoveryTarget protects the native boundary. IAM remains responsible
 // for current administrator/ordinary-target authority and Workforce for the link.
-func (c *Client) CheckStaffMFARecoveryTarget(ctx context.Context, org, subject string) error {
+func (c *Client) CheckStaffMFARecoveryTarget(ctx context.Context, org, subject string) (result error) {
+	stage := "configuration"
+	defer func() {
+		if c != nil && c.log != nil && errors.Is(result, ErrIdentityUnavailable) {
+			c.log.Warn("Staff MFA target proof unavailable", "stage", stage)
+		}
+	}()
 	base := customercontract.IdentityProjection{TenantID: strings.TrimPrefix(org, "helivanta-"), OrganizationID: org, Subject: subject, State: "inactive", Admission: "ineligible", Purpose: "membership"}
 	if c == nil || c.tokens == nil || c.http == nil || base.Validate() != nil {
 		return ErrIdentityUnavailable
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+	stage = "token"
 	token, err := c.tokens.Token(ctx)
 	if err != nil || token == "" {
 		return ErrIdentityUnavailable
@@ -32,6 +39,7 @@ func (c *Client) CheckStaffMFARecoveryTarget(ctx context.Context, org, subject s
 	client.Jar = nil
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	var raw json.RawMessage
+	stage = "user_read"
 	err = c.readIdentity(ctx, &client, token, http.MethodGet, "/v2/users/"+subject, org, nil, &raw)
 	if errors.Is(err, ErrIdentityMissing) {
 		return ErrRecoveryTargetIneligible
@@ -39,6 +47,7 @@ func (c *Client) CheckStaffMFARecoveryTarget(ctx context.Context, org, subject s
 	if err != nil {
 		return ErrIdentityUnavailable
 	}
+	stage = "user_projection"
 	account, err := nativeIdentityProjection(raw, base)
 	if err != nil {
 		return ErrIdentityUnavailable
@@ -46,15 +55,18 @@ func (c *Client) CheckStaffMFARecoveryTarget(ctx context.Context, org, subject s
 	if account.State != "active" || account.Admission != "eligible" {
 		return ErrRecoveryTargetIneligible
 	}
+	stage = "password_evidence"
 	if err = recoveryTargetPassword(raw); err != nil {
 		return err
 	}
 	var members json.RawMessage
+	stage = "member_read"
 	err = c.readIdentity(ctx, &client, token, http.MethodPost, "/management/v1/orgs/me/members/_search", org,
 		map[string]any{"query": map[string]any{"limit": 1}, "queries": []any{map[string]any{"userIdQuery": map[string]string{"userId": subject}}}}, &members)
 	if err != nil || ctx.Err() != nil {
 		return ErrIdentityUnavailable
 	}
+	stage = "member_proof"
 	return ordinaryRecoveryOrgMember(members, subject)
 }
 
