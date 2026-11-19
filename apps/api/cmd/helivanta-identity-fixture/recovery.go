@@ -21,8 +21,13 @@ import (
 var errFixtureMail = errors.New("isolated recovery mailbox unavailable")
 var fixtureCode = regexp.MustCompile(`^Your Helivanta password recovery code is ([0-9]{8})\.\n\n`)
 
-func fixtureHandler(next http.Handler, recovery bool) http.Handler {
+func fixtureHandler(next http.Handler, recovery bool, mfa ...bool) http.Handler {
+	mfaHandler := fixtureMFAHandler(next, len(mfa) == 1 && mfa[0])
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/v1/orgs/") || strings.HasPrefix(r.URL.Path, "/internal/v1/customer-signups/staff-mfa-recovery/") {
+			mfaHandler.ServeHTTP(w, r)
+			return
+		}
 		read := r.Method == http.MethodPost && slices.Contains([]string{
 			"/internal/v1/customer-signups/identity-projection",
 			"/internal/v1/customer-signups/login-target",

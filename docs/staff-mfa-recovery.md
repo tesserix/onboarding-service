@@ -1,9 +1,10 @@
 # Helivanta Staff authenticator recovery
 
 Work for [Helivanta #1703](https://github.com/tesserix/helivanta/issues/1703).
-Private workload command endpoints are implemented. Public HMS authorization,
-revocation/admission wiring and the enrollment UI are still incomplete; this is
-not a released Staff recovery journey.
+Private workload command endpoints are implemented. The companion HMS branch
+contains authorization, revocation/admission and enrollment UI work, but native
+end-to-end acceptance and deployment remain unverified. This is not a released
+Staff recovery journey.
 
 Workforce owns the reviewed Staff/account link and exact employment/link versions.
 IAM owns current administrator authority, ordinary-target protection and application
@@ -172,3 +173,25 @@ code and runtime gates are ready. Apply additive schema before owner/consumer
 release; retain history on code rollback. Complete hosted native-browser and
 deployed acceptance before enabling the UI or closing #1703. No new standing
 service, worker, pod or external credential store is introduced.
+
+
+## Isolated native acceptance fixture
+
+The build-tagged `helivanta-identity-fixture` command remains read-only by default.
+`-staff-mfa-recovery` is a separate explicit opt-in for disposable hosted CI. It
+requires the exact local Zitadel issuer and existing guarded development database.
+The manifest must identify a dedicated active native machine owned by the platform
+organization; startup verifies that account with Zitadel before registering it.
+Real native JWKS verification and the Helivanta project audience authenticate
+product workload calls. Human tokens and a substituted machine are rejected.
+
+Only exact Tenant A/B identity reads, UUIDv7 recovery command reads/preparations,
+explicit dispatch/cancel commands and the private admission endpoint are exposed
+in this mode. Other tenants, methods and paths stay unavailable. The fixture wires
+`WithStaffMFARecovery` to the real native adapter; it does not replace factor
+removal, enrollment, session proof, authorization or audit with browser mocks.
+This fixture capability alone is not evidence of successful native acceptance.
+
+Focused checks: `go -C apps/api test -race -tags identityfixture
+./cmd/helivanta-identity-fixture` and the matching `go vet`/`go build` commands.
+No live tenant, credential or factor is changed by these fixture unit checks.
