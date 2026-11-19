@@ -1,0 +1,169 @@
+package customercontract
+
+import (
+	"github.com/google/uuid"
+	"reflect"
+	"slices"
+	"strings"
+)
+
+// PasswordRecoveryStart binds a dedicated mailbox challenge to one tenant.
+// TenantID is supplied only by the workload's validated native auth request.
+type PasswordRecoveryStart struct {
+	ID          string `json:"id" format:"uuid" required:"true"`
+	TenantID    string `json:"tenantId" format:"uuid" required:"true"`
+	BrowserHash string `json:"browserHash" required:"true" pattern:"^[a-f0-9]{64}$"`
+	SourceHash  string `json:"sourceHash" required:"true" pattern:"^[a-f0-9]{64}$"`
+	Email       string `json:"email" format:"email" required:"true" max:"200" clean:"true"`
+}
+
+func (in PasswordRecoveryStart) Validate() error {
+	tenant, err := uuid.Parse(in.TenantID)
+	if err != nil || tenant == uuid.Nil || tenant.String() != in.TenantID ||
+		(PasswordRecoveryAccess{in.ID, in.BrowserHash}).Validate() != nil || !discoveryHash(in.SourceHash) ||
+		(DiscoveryRequest{Email: in.Email}).Validate() != nil {
+		return ErrInvalid
+	}
+	return nil
+}
+
+// PasswordRecoveryAccess addresses only the retained browser-bound recovery.
+type PasswordRecoveryAccess struct {
+	ID          string `json:"id" format:"uuid" required:"true"`
+	BrowserHash string `json:"browserHash" required:"true" pattern:"^[a-f0-9]{64}$"`
+}
+
+func (in PasswordRecoveryAccess) Validate() error {
+	if !recoveryCommandID(in.ID) || !discoveryHash(in.BrowserHash) {
+		return ErrInvalid
+	}
+	return nil
+}
+
+// PasswordRecoveryProof verifies the dedicated mailbox challenge, never a login.
+type PasswordRecoveryProof struct {
+	ID          string `json:"id" format:"uuid" required:"true"`
+	BrowserHash string `json:"browserHash" required:"true" pattern:"^[a-f0-9]{64}$"`
+	Code        string `json:"code" required:"true" pattern:"^[0-9]{8}$"`
+}
+
+func (in PasswordRecoveryProof) Validate() error {
+	if (PasswordRecoveryAccess{in.ID, in.BrowserHash}).Validate() != nil ||
+		DiscoveryProof(in).Validate() != nil {
+		return ErrInvalid
+	}
+	return nil
+}
+
+// PasswordRecoveryIntent prepares or cancels a command without accepting credentials.
+type PasswordRecoveryIntent struct {
+	CommandID   string `json:"commandId" format:"uuid" required:"true"`
+	ID          string `json:"id" format:"uuid" required:"true"`
+	BrowserHash string `json:"browserHash" required:"true" pattern:"^[a-f0-9]{64}$"`
+}
+
+func (in PasswordRecoveryIntent) Validate() error {
+	if !recoveryCommandID(in.CommandID) || (PasswordRecoveryAccess{in.ID, in.BrowserHash}).Validate() != nil {
+		return ErrInvalid
+	}
+	return nil
+}
+func (PasswordRecoveryIntent) String() string   { return "[redacted password recovery intent]" }
+func (PasswordRecoveryIntent) GoString() string { return "[redacted password recovery intent]" }
+
+// PasswordRecoveryRead optionally restores one exact retained command.
+type PasswordRecoveryRead struct {
+	ID          string `json:"id" format:"uuid" required:"true"`
+	BrowserHash string `json:"browserHash" required:"true" pattern:"^[a-f0-9]{64}$"`
+	CommandID   string `json:"commandId,omitempty" format:"uuid"`
+}
+
+func (in PasswordRecoveryRead) Validate() error {
+	if (PasswordRecoveryAccess{in.ID, in.BrowserHash}).Validate() != nil || (in.CommandID != "" && !recoveryCommandID(in.CommandID)) {
+		return ErrInvalid
+	}
+	return nil
+}
+func (PasswordRecoveryRead) String() string   { return "[redacted password recovery read]" }
+func (PasswordRecoveryRead) GoString() string { return "[redacted password recovery read]" }
+
+// PasswordRecoveryPassword is a private native handoff, never persisted or logged.
+type PasswordRecoveryPassword struct {
+	CommandID   string `json:"commandId" format:"uuid" required:"true"`
+	ID          string `json:"id" format:"uuid" required:"true"`
+	BrowserHash string `json:"browserHash" required:"true" pattern:"^[a-f0-9]{64}$"`
+	Password    string `json:"password" required:"true" max:"200"`
+}
+
+func (in PasswordRecoveryPassword) Validate() error {
+	if (PasswordRecoverySubmit{CommandID: in.CommandID, Password: in.Password}).Validate() != nil || (PasswordRecoveryAccess{in.ID, in.BrowserHash}).Validate() != nil {
+		return ErrInvalid
+	}
+	return nil
+}
+
+func (PasswordRecoveryStart) String() string      { return "[redacted password recovery request]" }
+func (PasswordRecoveryStart) GoString() string    { return "[redacted password recovery request]" }
+func (PasswordRecoveryAccess) String() string     { return "[redacted password recovery capability]" }
+func (PasswordRecoveryAccess) GoString() string   { return "[redacted password recovery capability]" }
+func (PasswordRecoveryProof) String() string      { return "[redacted password recovery proof]" }
+func (PasswordRecoveryProof) GoString() string    { return "[redacted password recovery proof]" }
+func (PasswordRecoveryPassword) String() string   { return "[redacted password recovery password]" }
+func (PasswordRecoveryPassword) GoString() string { return "[redacted password recovery password]" }
+
+// PasswordRecoveryAccepted does not reveal native account existence or delivery certainty.
+type PasswordRecoveryAccepted struct {
+	State       string `json:"state" enum:"check_email" required:"true"`
+	ChallengeID string `json:"challengeId,omitempty" format:"uuid"`
+}
+
+func (in PasswordRecoveryAccepted) Validate() error {
+	if in.State != "check_email" {
+		return ErrInvalid
+	}
+	if in.ChallengeID != "" {
+		id, err := uuid.Parse(in.ChallengeID)
+		if err != nil || id.Version() != 7 || id.Variant() != uuid.RFC4122 || id.String() != in.ChallengeID {
+			return ErrInvalid
+		}
+	}
+	return nil
+}
+
+// PasswordRecoveryVerified acknowledges mailbox proof without authenticating an account.
+type PasswordRecoveryVerified struct {
+	State string `json:"state" enum:"verified" required:"true"`
+}
+
+// PasswordRecoveryStatus is available only to the browser with verified mailbox proof.
+type PasswordRecoveryStatus struct {
+	State     string `json:"state" enum:"ready,locked,prepared,processing,applied,completed,refused,unconfirmed,cancelled" required:"true"`
+	CommandID string `json:"commandId,omitempty" format:"uuid"`
+}
+
+// PasswordRecoveryResult reports retained native outcome without authenticating the recipient.
+type PasswordRecoveryResult struct {
+	State     string `json:"state" enum:"prepared,processing,applied,completed,refused,unconfirmed,cancelled" required:"true"`
+	CommandID string `json:"commandId,omitempty" format:"uuid"`
+}
+
+func (in PasswordRecoveryStatus) Validate() error {
+	if in.CommandID != "" && (!recoveryCommandID(in.CommandID) || in.State == "ready" || in.State == "locked") {
+		return ErrInvalid
+	}
+	return recoveryState(reflect.TypeFor[PasswordRecoveryStatus](), in.State)
+}
+func (in PasswordRecoveryResult) Validate() error {
+	if in.CommandID != "" && !recoveryCommandID(in.CommandID) {
+		return ErrInvalid
+	}
+	return recoveryState(reflect.TypeFor[PasswordRecoveryResult](), in.State)
+}
+
+func recoveryState(kind reflect.Type, value string) error {
+	field, ok := kind.FieldByName("State")
+	if !ok || value == "" || !slices.Contains(strings.Split(field.Tag.Get("enum"), ","), value) {
+		return ErrInvalid
+	}
+	return nil
+}

@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -63,10 +64,23 @@ func validateTaggedFields(input any, state string) error {
 	for i := range value.NumField() {
 		field := value.Type().Field(i)
 		entry := value.Field(i)
-		if (field.Tag.Get("required") == "true" || (field.Tag.Get("requireWhen") != "" && field.Tag.Get("requireWhen") == state)) && entry.IsZero() {
+		if (field.Tag.Get("required") == "true" || (field.Tag.Get("requireWhen") != "" && slices.Contains(strings.Split(field.Tag.Get("requireWhen"), ","), state))) && entry.IsZero() {
+			return ErrInvalid
+		}
+		if field.Tag.Get("forbidWhen") != "" && field.Tag.Get("forbidWhen") == state && !entry.IsZero() {
 			return ErrInvalid
 		}
 		if entry.Kind() != reflect.String {
+			if entry.Kind() == reflect.Int64 {
+				for _, bound := range []string{"minValue", "maxValue"} {
+					if raw := field.Tag.Get(bound); raw != "" {
+						limit, err := strconv.ParseInt(raw, 10, 64)
+						if err != nil || bound == "minValue" && entry.Int() < limit || bound == "maxValue" && entry.Int() > limit {
+							return ErrInvalid
+						}
+					}
+				}
+			}
 			continue
 		}
 		text := entry.String()

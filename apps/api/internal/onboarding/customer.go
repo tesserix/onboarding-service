@@ -46,7 +46,7 @@ func (s *Service) StartCustomer(ctx context.Context, id uuid.UUID, receiptHash [
 	return customerReceipt(row), nil
 }
 
-const customerWorkload = "system:serviceaccount:helivanta:helivanta-api"
+const customerWorkload = audit.HelivantaWorkload
 
 func customerTenantID(key string) uuid.UUID {
 	return hospitalTenantID("helivanta", customerWorkload, key)

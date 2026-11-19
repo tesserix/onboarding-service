@@ -62,3 +62,16 @@ func TestRequiredEnumsRemainValidZodSchemas(t *testing.T) {
 		t.Fatal("required enum lost its value constraint", schema)
 	}
 }
+
+func TestConditionalGenerationPresenceIsGeneratedFromCanonicalTags(t *testing.T) {
+	schema, err := contractSchema(reflect.TypeFor[struct {
+		State      string `json:"state" required:"true" enum:"none,blocked,completed"`
+		Generation string `json:"generationId,omitempty" requireWhen:"blocked,completed" forbidWhen:"none"`
+	}](), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(schema, `["blocked","completed"].includes(value.state)`) || !strings.Contains(schema, `value.state==="none"&&value["generationId"]!==undefined`) {
+		t.Fatal("conditional generation presence is missing", schema)
+	}
+}

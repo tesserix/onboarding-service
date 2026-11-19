@@ -1,6 +1,6 @@
 //go:build identityfixture
 
-// The fixture binary is excluded from production builds and serves only reads.
+// The fixture binary is excluded from production builds; credential recovery is explicit and isolated.
 package main
 
 import (
@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -24,6 +25,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tesserix/onboarding-service/api/internal/api"
+	"github.com/tesserix/onboarding-service/api/internal/auth"
 	"github.com/tesserix/onboarding-service/api/internal/authz"
 	"github.com/tesserix/onboarding-service/api/internal/onboarding"
 	"github.com/tesserix/onboarding-service/api/internal/store"
@@ -47,8 +49,10 @@ func validateConfig(enabled, issuer, dsn string) error {
 }
 
 type fixtureManifest struct {
-	ProjectID  string `json:"projectId"`
-	AdminOrgID string `json:"adminOrgId"`
+	ProjectID       string `json:"projectId"`
+	MachineUserID   string `json:"machineUserId,omitempty"`
+	MachineClientID string `json:"machineClientId,omitempty"`
+	AdminOrgID      string `json:"adminOrgId"`
 }
 type fixtureVerifier struct{}
 
@@ -69,6 +73,8 @@ func run() error {
 	manifestPath := flag.String("manifest", "dev/zitadel/secrets/identity-fixture.json", "local public identity manifest")
 	patPath := flag.String("pat-file", "dev/zitadel/secrets/helivanta-seed.pat", "local native seed credential file")
 	dsn := flag.String("dsn", "postgres://helivanta:helivanta@127.0.0.1:5432/onboarding_fixture?sslmode=disable", "isolated local fixture database")
+	mfaEnabled := flag.Bool("staff-mfa-recovery", false, "enable isolated real native Staff MFA recovery")
+	recoveryDir := flag.String("password-recovery-outbox", "", "explicit isolated recovery mailbox; empty keeps read-only mode")
 	flag.Parse()
 	if err := validateConfig(os.Getenv("HELIVANTA_IDENTITY_FIXTURE"), os.Getenv("ZITADEL_ISSUER_URL"), *dsn); err != nil {
 		return err
@@ -92,23 +98,37 @@ func run() error {
 	if err != nil || len(raw) == 0 || len(raw) > 8192 {
 		return errors.New("local fixture native credential unavailable")
 	}
-	native := zitadel.New(localIssuer, zitadel.StaticToken(strings.TrimSpace(string(raw))), manifest.AdminOrgID, nil)
+	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	native := zitadel.New(localIssuer, zitadel.StaticToken(strings.TrimSpace(string(raw))), manifest.AdminOrgID, log)
 	pool, err := pgxpool.New(setup, *dsn)
 	if err != nil {
 		return errors.New("local fixture database unavailable")
 	}
 	defer pool.Close()
 	st := store.New(pool)
+	machineID := "local-fixture"
+	var machineVerifier api.TokenVerifier
+	if *mfaEnabled {
+		machineID = manifest.MachineUserID
+		client := &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+		if err = verifyFixtureMachine(setup, client, strings.TrimSpace(string(raw)), machineID, manifest.AdminOrgID); err != nil {
+			return err
+		}
+		machineVerifier, err = auth.NewJWKSVerifier(ctx, localIssuer, localIssuer+"/oauth/v2/keys", manifest.ProjectID, client)
+		if err != nil {
+			return errors.New("local native product verifier unavailable")
+		}
+	}
 	product, err := st.Product(setup, "helivanta")
 	if errors.Is(err, store.ErrNotFound) {
-		err = st.CreateProduct(setup, store.Product{Key: "helivanta", DisplayName: "Helivanta local identity fixture", ZitadelProjectID: manifest.ProjectID, MachineUserID: "local-fixture", Identity: store.IdentityZitadel, TenantSecrets: store.TenantSecretsNone, Tenancy: store.TenancyOrg, DataResidency: "in"})
-	} else if err == nil && (product.ZitadelProjectID != manifest.ProjectID || product.MachineUserID != "local-fixture") {
+		err = st.CreateProduct(setup, store.Product{Key: "helivanta", DisplayName: "Helivanta local identity fixture", ZitadelProjectID: manifest.ProjectID, MachineUserID: machineID, Identity: store.IdentityZitadel, TenantSecrets: store.TenantSecretsNone, Tenancy: store.TenancyOrg, DataResidency: "in"})
+	} else if err == nil && (product.ZitadelProjectID != manifest.ProjectID || product.MachineUserID != machineID) {
 		return errors.New("local fixture product mismatch")
 	}
 	if err != nil {
 		return errors.New("local fixture product unavailable")
 	}
-	for _, id := range []string{"11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"} {
+	for _, id := range fixtureTenantIDs(*mfaEnabled) {
 		org := "helivanta-" + id
 		proof, e := native.VerifyOrganization(setup, org, id, manifest.ProjectID)
 		if e != nil || proof.State != "active" {
@@ -128,16 +148,30 @@ func run() error {
 			return errors.New("local fixture enrollment unavailable")
 		}
 	}
-	service := onboarding.New(st, onboarding.ZitadelIdentity{Client: native}, authz.New(st), nil, onboarding.WithCustomerIdentity(native))
-	router := api.NewRouter(api.Deps{Service: service, Store: st, CustomerWorkloads: fixtureVerifier{}, DisableLegacyConsole: true})
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if (r.Method == http.MethodPost && (r.URL.Path == "/internal/v1/customer-signups/identity-projection" || r.URL.Path == "/internal/v1/customer-signups/login-target")) || (r.Method == http.MethodGet && r.URL.Path == "/readyz") {
-			router.ServeHTTP(w, r)
-			return
+	options := []onboarding.Option{onboarding.WithCustomerIdentity(native)}
+	writeTimeout := 15 * time.Second
+	recoveryEnabled := *recoveryDir != ""
+	if *mfaEnabled {
+		options = append(options, onboarding.WithStaffMFARecovery("helivanta", native))
+		writeTimeout = 35 * time.Second
+	}
+	if recoveryEnabled {
+		manifestAbsolute, e := filepath.Abs(*manifestPath)
+		if e != nil || *recoveryDir != filepath.Join(filepath.Dir(manifestAbsolute), "password-recovery-mailbox") {
+			return errors.New("recovery requires its isolated fixture mailbox")
 		}
-		http.NotFound(w, r)
-	})
-	server := &http.Server{Addr: "127.0.0.1:18787", Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 30 * time.Second}
+		mail, cleanup, e := newRecoveryMailbox(*recoveryDir)
+		if e != nil {
+			return e
+		}
+		defer cleanup()
+		options = append(options, onboarding.WithCustomerMail(mail))
+		writeTimeout = 35 * time.Second
+	}
+	service := onboarding.New(st, onboarding.ZitadelIdentity{Client: native}, authz.New(st), log, options...)
+	router := api.NewRouter(api.Deps{Tokens: machineVerifier, Service: service, Store: st, CustomerWorkloads: fixtureVerifier{}, DisableLegacyConsole: true, Log: log})
+	handler := fixtureHandler(router, recoveryEnabled, *mfaEnabled)
+	server := &http.Server{Addr: "127.0.0.1:18787", Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: writeTimeout, IdleTimeout: 30 * time.Second}
 	done := make(chan error, 1)
 	go func() { done <- server.ListenAndServe() }()
 	select {

@@ -66,6 +66,10 @@ const (
 	ActionStaffIdentityHistory    Action = "staff.identity.history"
 	ActionStaffIdentityCreate     Action = "staff.identity.create"
 	ActionStaffIdentityObserve    Action = "staff.identity.observe"
+	ActionStaffMFAPrepare         Action = "staff.mfa.recovery.prepare"
+	ActionStaffMFADispatch        Action = "staff.mfa.recovery.dispatch"
+	ActionStaffMFACancel          Action = "staff.mfa.recovery.cancel"
+	ActionStaffMFARead            Action = "staff.mfa.recovery.read"
 	ActionStaffRecoveryRead       Action = "staff.identity.recovery.read"
 	ActionStaffRecoveryPropose    Action = "staff.identity.recovery.propose"
 	ActionStaffRecoveryDecide     Action = "staff.identity.recovery.decide"
@@ -108,6 +112,10 @@ var policy = map[Action]rule{
 	ActionStaffIdentityHistory:    {orgScope: true, product: true},
 	ActionStaffIdentityCreate:     {write: true, orgScope: true, product: true},
 	ActionStaffIdentityObserve:    {write: true, orgScope: true, product: true},
+	ActionStaffMFAPrepare:         {write: true, orgScope: true, product: true},
+	ActionStaffMFADispatch:        {write: true, orgScope: true, product: true},
+	ActionStaffMFACancel:          {write: true, orgScope: true, product: true},
+	ActionStaffMFARead:            {orgScope: true, product: true},
 	ActionStaffRecoveryRead:       {orgScope: true, console: true},
 	ActionStaffRecoveryPropose:    {write: true, orgScope: true, console: true},
 	ActionStaffRecoveryDecide:     {write: true, orgScope: true, console: true},

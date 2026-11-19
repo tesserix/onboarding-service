@@ -248,8 +248,9 @@ func (d Deps) idempotency() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Staff commands use durable claims and current authorization, never replay-cache authority.
 		const recovery = "/v1/orgs/:id/staff-identities/:commandId/recovery"
+		const staffMFA = "/v1/orgs/:id/staff-mfa-recoveries/:commandId"
 		path := c.FullPath()
-		if path == recovery || strings.HasPrefix(path, recovery+"/") {
+		if path == recovery || strings.HasPrefix(path, recovery+"/") || path == staffMFA || strings.HasPrefix(path, staffMFA+"/") {
 			c.Next()
 			return
 		}

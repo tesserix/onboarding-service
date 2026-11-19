@@ -16,9 +16,13 @@ type IdentityProjectionInput struct {
 	RequestID              string `json:"requestId" format:"uuid" required:"true"`
 	IncludeTenantName      bool   `json:"includeTenantName,omitempty"`
 	IncludeCredentialState bool   `json:"includeCredentialState,omitempty"`
+	IncludeMFARecovery     bool   `json:"includeMFARecovery,omitempty"`
 }
 
 func (v IdentityProjectionInput) Validate() error {
+	if v.IncludeMFARecovery && !v.IncludeCredentialState {
+		return ErrInvalid
+	}
 	if v.IncludeCredentialState && v.Purpose != "status" {
 		return ErrInvalid
 	}
@@ -86,9 +90,13 @@ type IdentityProjection struct {
 	TenantName     string                       `json:"tenantName,omitempty" max:"200" clean:"true"`
 	Candidate      *AssignmentCandidateIdentity `json:"candidate,omitempty"`
 	Credentials    *IdentityCredentialState     `json:"credentials,omitempty"`
+	MFARecovery    *StaffMFARecoveryRequirement `json:"mfaRecovery,omitempty"`
 }
 
 func (v IdentityProjection) Validate() error {
+	if v.MFARecovery != nil && (v.Purpose != "status" || v.State != "active" || v.Credentials == nil || v.MFARecovery.Validate() != nil) {
+		return ErrInvalid
+	}
 	if v.Credentials != nil && (v.Purpose != "status" || v.State != "active" || v.Credentials.Validate() != nil) {
 		return ErrInvalid
 	}

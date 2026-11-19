@@ -15,6 +15,9 @@ import (
 // Genesis is the prev_hash of the first event in the chain.
 const Genesis = "genesis"
 
+// HelivantaWorkload identifies the verified private customer-workload actor.
+const HelivantaWorkload = "system:serviceaccount:helivanta:helivanta-api"
+
 type ActorType string
 
 const (

@@ -101,3 +101,231 @@ Only the unit suites run locally; database and browser runtime checks use hosted
 CI. Complete recovery acceptance still requires actual reset/new-password login,
 old-credential denial, MFA reset/re-enrollment, authorized live QA evidence and
 the deployed Global API/browser flow before issue closure.
+
+## Dedicated mailbox challenge implementation
+
+Candidate private routes, under the existing exact Helivanta signup-workload
+verification and `Cache-Control: no-store`:
+
+- `POST /internal/v1/customer-signups/password-recovery/start` accepts canonical
+  `PasswordRecoveryStart`; its tenant must come from the consumer's validated
+  native authentication request, never an arbitrary browser tenant selection.
+- `POST /internal/v1/customer-signups/password-recovery/verify` accepts canonical
+  `PasswordRecoveryProof`. Success acknowledges mailbox proof only. It neither
+  signs in nor authorizes a password update or MFA removal.
+
+Strict canonical decoders reject duplicate, recased, missing, unknown, null and
+invalid UTF-8 input fields. Start always reserves and sends the same type of
+mailbox message before account lookup; absent and foreign native accounts cannot
+change this behavior. The code digest is purpose-, command- and browser-bound.
+Only digests are stored; raw codes, passwords and native reset proofs are absent.
+
+The separate `password_recovery_challenges` table is prepared in infrastructure
+PR [#1712](https://github.com/tesserix/tesserix-k8s/pull/1712), schema commit
+`363dce21216c5e4830a33465d988f043b5ee960d`. CI fetches that exact canonical schema
+with SHA-256 `413ac8a6fa38bf83f0fa50fd864d3f9bac30ecc2fd753f4071121b48b52ebeb9`.
+This is a test dependency; no live migration is implied or approved by this pin.
+
+Delivery reservations serialize across replicas. Limits are 3/hour and 10/24h
+per recipient across tenants, 10/hour and 30/24h per source, and 1,000/hour for
+recovery globally. Each code expires ten minutes after reservation and permits
+five atomic attempts. A foreign browser cannot spend the recipient's attempts.
+Success consumes verification and permits only bounded subsequent access to the
+retained verified tenant/email. A repeated command never dispatches again. A new
+start for the same tenant, browser and email also sends nothing while its earlier
+verified proof is unexpired. A new recovery after expiry is separate from
+resending an already verified challenge.
+
+The initial reservation and request audit commit before provider I/O. Resend
+uses the retained delivery UUID as its purpose-specific idempotency key.
+Acceptance/uncertainty and their audit commit together afterward; a cancelled
+request gets a bounded two-second outcome-recording context. A lost response or
+crash leaves the reservation retained and does not permit a fresh send under
+the same command. A generic `check_email` receipt promises neither provider
+acceptance nor inbox delivery. A fresh challenge can be requested within quotas;
+there is no retry loop sending newly generated payloads under an old command.
+Proof success/failure is audited in the same transaction as its attempt; audit
+failure admits no verified capability. Native or mail dependencies are never
+called inside a database transaction.
+
+The application role can update only proof attempts, verification, delivery
+outcome and update time. A database trigger preserves immutable tenant, browser,
+source, recipient, code digest and expiry, prevents attempt resets, prevents
+rearming verification and makes delivery outcomes final. Sensitive reads and
+later password completion must still reauthorize current native/customer scope.
+
+Remaining before release: hosted PostgreSQL results for these transitions and
+quotas and native password-completion command/reconciliation;
+Global API/browser integration and native reset/new-password sign-in acceptance; the
+separate Staff MFA workflow. The candidate routes have no public UI consumer yet
+and must not be presented as completed recovery. Keep the schema PR unmerged until
+its live migration has specific approval after review and database verification.
+
+An hourly existing maintenance loop now purges mailbox challenge rows older than
+24 hours in batches of at most 5,000 under a five-second database deadline.
+Contact, browser/source digests and mailbox code digests disappear; the audit
+ledger and `password_recovery_delivery_ids` retain only the already used random
+delivery ID and its creation time. The application cannot update or delete those
+IDs. A replay after cleanup authorizes no new mail. At the supported load ceiling,
+the batch budget exceeds one hour of new reservations; scheduling adds up to one
+hour to normal personal-data deletion latency. Backups retain their existing
+independent retention policy; purging the live table does not erase backups.
+
+The private `POST /internal/v1/customer-signups/password-recovery/status` route
+accepts only the browser-bound `PasswordRecoveryAccess`. Before native lookup,
+the service requires an unexpired verified mailbox challenge and current managed
+customer organization/product enrollment. Native search is bounded to two results
+inside that exact organization with the verified email; ambiguous, foreign,
+inactive or unverified accounts disclose no recovery status. The common lookup
+keeps ordinary login restricted to active accounts. Only the recovery observer
+can recognize a locked account, and it returns `locked` without unlocking it.
+An eligible active account returns `ready`, which grants no password-change or
+login authority. The service rechecks customer scope and mailbox proof after
+native I/O and commits its sensitive-read audit before either status is returned.
+Native, scope, persistence or audit uncertainty fails closed. No subject or
+private contact is returned in this receipt.
+
+## Native completion command design
+
+One verified mailbox capability may attempt at most five distinct completion
+commands. Each command has a separate immutable UUID; preparation retries and read-only status restore its retained
+receipt without native mutation. Repeated password bodies return conflict and
+direct the recipient to read the exact receipt. A known native password-policy refusal
+consumes that attempt, allowing a new command within the same unexpired mailbox
+proof. No password, password commitment, native code or native session token is
+retained. Mailbox verification must postdate the current native password-change
+cutoff; an earlier proof cannot reset a subsequently changed credential.
+
+The owner checks the exact native account and managed tenant, prepares the
+command and attributable audit without a password. A later submission rechecks
+account, mailbox and credential baseline and atomically changes only that
+prepared intent to processing, then obtains the native reset code and submits
+that proof with the new password in request memory. Native complexity policy is
+authoritative. Only an explicit allowlist of native policy error IDs known to
+return before mutation may produce `refused`. Any uncertain dispatch, malformed
+response, dependency error or lost result remains `unconfirmed`; it cannot admit
+a new password mutation for that native account. Do not infer completion from
+password presence or a changed timestamp without an acknowledged native write.
+
+An acknowledged native response must bind resource owner and positive event
+sequence/change time. Retain that minimized evidence as `applied`, and complete
+only after a current owned native read confirms the credential cutoff. If this
+read is unavailable, the same command can be read/reconciled without repeating
+the password write. All final disclosures recheck the managed tenant and mailbox
+capability and commit audit. A completed capability grants no login; ordinary
+password and MFA sign-in remain mandatory.
+
+A database constraint and per-account admission lock serialize concurrent
+commands. Prepared/processing/applied/unconfirmed commands block another mutation for the
+same tenant/account. A completed native cutoff fences a second command prepared
+from older native evidence. Crash-before-dispatch is conservatively unconfirmed;
+there is no automatic replay of the non-idempotent native endpoint. Support must
+investigate retained unconfirmed evidence; users may try normal sign-in with the
+new password. Do not release this fence through a timer or optimistic retry.
+
+This command uses the existing identity owner's retained admission boundary,
+rather than adding Temporal. The native API offers no idempotency key, and
+Temporal activity retries would not make its password writes safe; persisting
+passwords in workflow history is also forbidden. There is no asynchronous
+password payload or compensating password write. The workflow has a bounded
+30-second request and explicit retained uncertain outcomes, with no new worker,
+queue or standing infrastructure. Existing 10-request/second planning and 99.9%
+service target apply; interactive native completion may use the full deadline.
+This section is a design; implementations and hosted/native acceptance must
+prove each transition before release.
+
+The candidate private `/password-recovery/password` handler now accepts
+`PasswordRecoveryPassword`, including its distinct required `commandId`. Its
+`PasswordRecoveryResult` reports the retained command state. Status restores the
+latest browser-bound receipt and reconciles `applied` without another write.
+A `refused` result permits a distinct new command, capped at five per mailbox
+proof; a repeated command with any password payload returns conflict and requires a read-only receipt.
+The native adapter's safe policy allowlist is pinned to `DOMAIN-HuJf6`,
+`DOMAIN-co3Xw`, `DOMAIN-VoaRj`, `DOMAIN-ZBv4H`, `DOMAIN-ZDLwA` in the native
+`internal/domain/policy_password_complexity.go`. Generic 400/412 responses,
+unrecognized error details and ambiguous successes are unconfirmed, not refusal.
+Acknowledgements use native `object.v2.Details` owner, sequence and change date.
+The existing native reset-code primitive (`returnCode`) sends no further email;
+its proof stays only in request memory and uses the dedicated recovery ledger.
+
+Current implementation is still awaiting hosted PostgreSQL validation of command
+serialization, attempt limits, stale-proof refusal, known-policy refusal,
+acknowledged-but-unavailable projection, command replay and uncertain native
+outcomes. The actual native reset/new-password sign-in browser journey and
+administrator MFA workflow remain required. Do not infer release readiness from
+unit adapters or compilation of database tests.
+
+Delivery receipts now carry an optional private `challengeId`. The identity owner
+always supplies the actual retained challenge after a successful start, including
+an earlier verified challenge when a resend is suppressed. The HMS broker must
+validate this binding, preserve the same browser secret and strip the private ID
+from its public response. A retry keeps the same delivery ID; explicit resend
+chooses a new ID with the same browser secret. Neither extends the original
+verified proof's expiry. If verification wins between reservation and receipt
+selection, the newly reserved delivery is not sent and a suppression audit is
+appended; its quota reservation is retained conservatively until normal cleanup.
+This avoids creating a capability pointing to a challenge that was never admitted.
+
+Browser request models are also canonical here: `PasswordRecoveryRequest` carries
+only a native `auth_request_id`, stable delivery `request_id` and email;
+`PasswordRecoveryCode` carries the code; `PasswordRecoverySubmit` carries the
+stable native `command_id` and transient password. Private tenant, browser digest
+and capability selectors are rejected from browser bodies. Strict decoders reject
+ambiguous fields, and private/public password validation shares the same rule.
+The broker supplies the private scope and capability itself. New delivery intents
+choose a new request UUID; network retries retain it, including retries of an
+explicit resend. A boolean resend flag alone cannot distinguish these safely.
+
+## Prepared intent and lost browser responses
+
+The private `/password-recovery/prepare` and `/cancel` commands accept only
+`PasswordRecoveryIntent`, which has no credential field. Prepare durably retains
+`prepared`, binds the exact current account and credential baseline and performs
+no reset-code or password write. The browser must receive preparation and its
+host-only active-command cookie before sending a password. A missing, cancelled,
+already processing or differently bound intent cannot dispatch. Cancellation
+atomically changes only prepared to cancelled. To cancel a possibly late missing
+preparation, the service reserves the exact intent before cancelling it; a later
+prepare retry sees retained cancelled and cannot revive it. Cancellation loses
+if submission has already changed the intent to processing.
+
+Private status accepts `PasswordRecoveryRead` with optional `commandId`. An exact
+unknown selector returns not found, never ready or an older result. Without a
+selector it restores the latest retained command, including prepared and known
+terminal outcomes. Private receipts carry optional commandId for the broker to
+validate, retain only in its HttpOnly capability and strip from public JSON.
+Public `PasswordRecoveryCommand` accepts only command_id for prepare/cancel.
+The canonical Go definitions generate the browser Zod models.
+
+Only expired prepared intents may be cancelled automatically during admission of
+a new verified proof. Their cancelled record prevents any late password from
+running. Processing, applied and unconfirmed fences are never released by expiry
+or cleanup. Processing age is measured from dispatch, not original preparation.
+The schema candidate has not been applied live. Real hosted PostgreSQL race tests,
+consumer cookie integration, browser UI and native acceptance remain required.
+
+## Isolated native-browser CI fixture
+
+The `identityfixture` build remains excluded from production artifacts. Its
+normal mode still exposes only the two current identity/login reads and readiness.
+An explicit `-password-recovery-outbox` flag, restricted to the mailbox directory
+beside its private fixture manifest, enables only the six private recovery paths.
+Startup still requires the exact development native issuer, loopback fixture
+PostgreSQL database and explicit fixture environment; production destinations and
+arbitrary database credentials are refused.
+
+This opt-in uses the real owner service, retained PostgreSQL commands and native
+Zitadel reset/code/projection calls. Only the mail provider transport is captured
+without network I/O. It accepts the two dedicated `password-recovery-native` spec
+addresses, the recovery mail purpose and its immutable delivery ID. Captured
+mailbox proofs are restricted to private 0700 directories and 0600 files; native
+reset proofs and passwords are never captured. The browser test consumes and
+removes its exact mailbox file. Other mail recipients, purposes, endpoints and
+conflicting proof payloads are refused. No production mail credentials are used.
+
+Fixture unit tests cover default read-only gating, the exact optional command
+allowlist, synthetic recipient/purpose restrictions, idempotent capture and
+private path/permission enforcement. These tests do not prove the native browser
+journey. The HMS hosted test must still perform recovery through Global API,
+reject the old password and admit normal new-password sign-in; production QA
+acceptance remains separate and requires its named identity/schema approvals.

@@ -28,12 +28,19 @@ func (d Deps) registerCustomers(r *gin.Engine) {
 	group.POST("/account-discovery/start", d.startAccountDiscovery)
 	group.POST("/account-discovery/verify", d.verifyAccountDiscovery)
 	group.POST("/account-discovery/choices", d.accountChoices)
+	group.POST("/password-recovery/start", d.startPasswordRecovery)
+	group.POST("/password-recovery/verify", d.verifyPasswordRecovery)
+	group.POST("/password-recovery/status", d.readPasswordRecovery)
+	group.POST("/password-recovery/password", d.completePasswordRecovery)
+	group.POST("/password-recovery/prepare", d.preparePasswordRecovery)
+	group.POST("/password-recovery/cancel", d.cancelPasswordRecovery)
 	group.POST("/login-target", d.customerLoginTarget)
 	group.POST("/login-targets", d.customerLoginTargets)
 	for _, action := range []string{"status", "email", "password", "resend"} {
 		group.POST("/staff-invitations/"+action, d.staffRecipient(action))
 	}
 	group.POST("/identity-projection", d.customerIdentityProjection)
+	group.POST("/staff-mfa-recovery/admit", d.staffMFAAdmission)
 }
 
 func (d Deps) customerLoginTarget(c *gin.Context) {

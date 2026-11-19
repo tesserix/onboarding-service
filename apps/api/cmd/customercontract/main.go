@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 )
 
@@ -48,6 +49,18 @@ func generateContracts() (string, error) {
 		{"CustomerSignupProof", reflect.TypeFor[customercontract.Proof]()},
 		{"CustomerSignupDelivery", reflect.TypeFor[customercontract.Delivery]()},
 		{"CustomerWorkspaceInput", reflect.TypeFor[customercontract.Workspace]()},
+		{"PasswordRecoveryRequest", reflect.TypeFor[customercontract.PasswordRecoveryRequest]()},
+		{"PasswordRecoveryIntent", reflect.TypeFor[customercontract.PasswordRecoveryIntent]()},
+		{"PasswordRecoveryRead", reflect.TypeFor[customercontract.PasswordRecoveryRead]()},
+		{"PasswordRecoveryCommand", reflect.TypeFor[customercontract.PasswordRecoveryCommand]()},
+		{"PasswordRecoveryCancellation", reflect.TypeFor[customercontract.PasswordRecoveryCancellation]()},
+		{"PasswordRecoveryCode", reflect.TypeFor[customercontract.PasswordRecoveryCode]()},
+		{"PasswordRecoverySubmit", reflect.TypeFor[customercontract.PasswordRecoverySubmit]()},
+		{"PasswordRecoveryPassword", reflect.TypeFor[customercontract.PasswordRecoveryPassword]()},
+		{"PasswordRecoveryResult", reflect.TypeFor[customercontract.PasswordRecoveryResult]()},
+		{"PasswordRecoveryStatus", reflect.TypeFor[customercontract.PasswordRecoveryStatus]()},
+		{"PasswordRecoveryAccepted", reflect.TypeFor[customercontract.PasswordRecoveryAccepted]()},
+		{"PasswordRecoveryVerified", reflect.TypeFor[customercontract.PasswordRecoveryVerified]()},
 		{"AccountDiscoveryRequest", reflect.TypeFor[customercontract.DiscoveryRequest]()},
 		{"AccountDiscoveryCode", reflect.TypeFor[customercontract.DiscoveryCode]()},
 		{"AccountDiscoveryChoice", reflect.TypeFor[customercontract.DiscoveryChoice]()},
@@ -65,6 +78,9 @@ func generateContracts() (string, error) {
 		{"CustomerSecurityView", reflect.TypeFor[customercontract.SecurityView]()},
 		{"CustomerSecurityInput", reflect.TypeFor[customercontract.SecurityInput]()},
 		{"CustomerSecurityRequest", reflect.TypeFor[customercontract.SecurityRequest]()},
+		{"StaffMFAResetInput", reflect.TypeFor[customercontract.StaffMFAResetInput]()},
+		{"StaffMFARecoveryReceipt", reflect.TypeFor[customercontract.StaffMFARecoveryReceipt]()},
+		{"StaffMFARecoveryRequirement", reflect.TypeFor[customercontract.StaffMFARecoveryRequirement]()},
 	} {
 		schema, err := contractSchema(contract.kind, "")
 		if err != nil {
@@ -88,6 +104,9 @@ func contractSchema(kind reflect.Type, choices string) (string, error) {
 	}
 	if kind.Kind() == reflect.Bool {
 		return "z.boolean()", nil
+	}
+	if kind.Kind() == reflect.Int64 {
+		return "z.number().int().safe()", nil
 	}
 	if kind.Kind() == reflect.String {
 		if values, ok := reflect.Zero(kind).Interface().(interface{ Values() []string }); ok {
@@ -120,7 +139,17 @@ func contractSchema(kind reflect.Type, choices string) (string, error) {
 			name := strings.Split(field.Tag.Get("json"), ",")[0]
 			key, _ := json.Marshal(name)
 			state, _ := json.Marshal(when)
-			schema += ".superRefine((value,ctx)=>{if(value.state===" + string(state) + "&&!value[" + string(key) + "]){ctx.addIssue({code:'custom',path:[" + string(key) + "],message:'Complete initial workspace binding required'});}})"
+			condition := "value.state===" + string(state)
+			if strings.Contains(when, ",") {
+				states, _ := json.Marshal(strings.Split(when, ","))
+				condition = string(states) + ".includes(value.state)"
+			}
+			schema += ".superRefine((value,ctx)=>{if(" + condition + "&&!value[" + string(key) + "]){ctx.addIssue({code:'custom',path:[" + string(key) + "],message:'Complete initial workspace binding required'});}})"
+		}
+		if when := field.Tag.Get("forbidWhen"); when != "" {
+			key, _ := json.Marshal(strings.Split(field.Tag.Get("json"), ",")[0])
+			state, _ := json.Marshal(when)
+			schema += ".superRefine((value,ctx)=>{if(value.state===" + string(state) + "&&value[" + string(key) + "]!==undefined){ctx.addIssue({code:'custom',path:[" + string(key) + "],message:'Field is unavailable in this state'});}})"
 		}
 	}
 	return schema, nil
@@ -154,6 +183,15 @@ func contractFields(kind reflect.Type) ([]string, error) {
 		}
 		if maximum := field.Tag.Get("maxItems"); maximum != "" {
 			schema += ".max(" + maximum + ")"
+		}
+		for _, bound := range []struct{ tag, method string }{{"minValue", "min"}, {"maxValue", "max"}} {
+			if raw := field.Tag.Get(bound.tag); raw != "" {
+				limit, err := strconv.ParseInt(raw, 10, 64)
+				if err != nil || field.Type.Kind() != reflect.Int64 {
+					return nil, fmt.Errorf("invalid numeric bound on %s", field.Name)
+				}
+				schema += "." + bound.method + "(" + strconv.FormatInt(limit, 10) + ")"
+			}
 		}
 		if field.Tag.Get("format") == "email" {
 			schema += ".email()"
