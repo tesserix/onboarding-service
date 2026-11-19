@@ -58,6 +58,10 @@ func (s *Store) CompleteStaffMFARecovery(ctx context.Context, c StaffMFARecovery
 	if err := staffMFAShape(c, event, "complete"); err != nil {
 		return err
 	}
+	return s.completeStaffMFARecovery(ctx, c, sequence, verifiedAt, event, false)
+}
+
+func (s *Store) completeStaffMFARecovery(ctx context.Context, c StaffMFARecoveryCommand, sequence, verifiedAt string, event audit.Event, admission bool) error {
 	if !staffMFAEvidence(sequence, verifiedAt) {
 		return ErrConflict
 	}
@@ -77,6 +81,25 @@ func (s *Store) CompleteStaffMFARecovery(ctx context.Context, c StaffMFARecovery
 			return ErrConflict
 		}
 		if original.State == "completed" && original.EnrollmentSequence == sequence && original.EnrollmentVerifiedAt == verifiedAt {
+			return appendAudit(ctx, tx, event)
+		}
+		if admission && original.State == "completed" {
+			prior, err := strconv.ParseUint(original.EnrollmentSequence, 10, 64)
+			if err != nil {
+				return ErrConflict
+			}
+			current, err := strconv.ParseUint(sequence, 10, 64)
+			if err != nil || current <= prior {
+				return ErrConflict
+			}
+			before, err := time.Parse(time.RFC3339Nano, original.EnrollmentVerifiedAt)
+			if err != nil {
+				return ErrConflict
+			}
+			after, err := time.Parse(time.RFC3339Nano, verifiedAt)
+			if err != nil || after.Before(before) {
+				return ErrConflict
+			}
 			return appendAudit(ctx, tx, event)
 		}
 		if original.State != "awaiting_enrollment" {
