@@ -135,11 +135,29 @@ factor `auth_time` proves enrollment or fresh primary authentication. Native rea
 are bounded and scoped; redirects and cookies are disabled. The ledger stores no
 credential, factor secret/code or native session token.
 
-Still required: fresh administrator/ordinary-target authorization; exact current
-reviewed Workforce source; pre-native IAM revocation; forced new enrollment under
-permissive policy; current-generation checks around native I/O; enrollment UI;
-and every protected admission path. Call ledger completion only after exact fresh
-native session proof. Adapters and database rows do not establish that behavior.
+The private customer-workload admission route is
+`POST /internal/v1/customer-signups/staff-mfa-recovery/admit`. Its strict input is
+`{scope: {tenantId, subject, generationId, requestId}, nativeSessionId}`. The HMS
+server must verify current login membership and obtain the sid from its verified
+native ID token before calling; the browser cannot assert them. The owner checks
+both current login and original credential-owner tenant/product/native scope,
+latest acknowledged generation, current owned active verified human eligibility,
+post-removal enrollment, exact independent native password/TOTP proof, and current
+password-change cutoff. It rechecks eligibility, enrollment and generation after
+native I/O. Completion and admission audit commit under the global account lock;
+a later valid enrollment does not rewrite first-completion history. Only the
+admitted generation is returned, without Staff or native-session data.
+
+Admission does not depend on historical Staff versions or prohibit a subsequent
+administrator promotion. Those rules protect reset authorization and admin receipt
+disclosure. Current HMS authorization still controls every employment, department
+and operating capability; authentication creates none of them.
+
+Still required: fresh administrator/ordinary-target authorization and exact current
+reviewed Workforce source at reset; pre-native IAM revocation; forced new
+enrollment under permissive policy; enrollment UI; HMS native-admission consumption
+and membership/generation rechecks before signing; and every protected admission
+path. A private implementation is not a released recovered-login journey.
 
 ## Validation and release
 

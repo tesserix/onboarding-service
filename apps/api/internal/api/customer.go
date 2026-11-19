@@ -39,8 +39,7 @@ func (d Deps) registerCustomers(r *gin.Engine) {
 		group.POST("/staff-invitations/"+action, d.staffRecipient(action))
 	}
 	group.POST("/identity-projection", d.customerIdentityProjection)
-	group.POST("/staff-mfa-recovery/source", func(c *gin.Context) { d.staffMFAAdmission(c, true) })
-	group.POST("/staff-mfa-recovery/admit", func(c *gin.Context) { d.staffMFAAdmission(c, false) })
+	group.POST("/staff-mfa-recovery/admit", d.staffMFAAdmission)
 }
 
 func (d Deps) customerLoginTarget(c *gin.Context) {

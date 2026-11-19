@@ -13,7 +13,7 @@ import (
 
 var ErrMFAAuthenticationRequired = errors.New("fresh authenticator recovery authentication required")
 
-func (s *Service) staffMFAAdmissionRecord(ctx context.Context, in customercontract.StaffMFAAdmissionRead) (store.StaffMFARecoveryCommand, error) {
+func (s *Service) staffMFAAdmissionRecord(ctx context.Context, in customercontract.StaffMFAAdmissionScope) (store.StaffMFARecoveryCommand, error) {
 	var empty store.StaffMFARecoveryCommand
 	if in.Validate() != nil {
 		return empty, ErrInvalid
@@ -42,17 +42,17 @@ func (s *Service) staffMFAAdmissionRecord(ctx context.Context, in customercontra
 }
 
 func (s *Service) checkMFAAdmissionAccount(ctx context.Context, c store.StaffMFARecoveryCommand) error {
-	err := s.signupIdentity.CheckStaffMFARecoveryTarget(ctx, c.ProviderOrgID, c.Request.Target.Subject)
-	if errors.Is(err, zitadel.ErrRecoveryTargetIneligible) {
-		return ErrNotFound
-	}
-	if err != nil {
+	account, err := s.signupIdentity.IdentityProjection(ctx, c.ProviderOrgID, c.Request.Target.Subject, "membership")
+	if err != nil || account.Validate() != nil || account.OrganizationID != c.ProviderOrgID || account.Subject != c.Request.Target.Subject {
 		return ErrUnavailable
+	}
+	if account.State != "active" || account.Admission != "eligible" {
+		return ErrNotFound
 	}
 	return nil
 }
 
-func mfaAdmissionAudit(in customercontract.StaffMFAAdmissionRead, c store.StaffMFARecoveryCommand, action string) audit.Event {
+func mfaAdmissionAudit(in customercontract.StaffMFAAdmissionScope, c store.StaffMFARecoveryCommand, action string) audit.Event {
 	return audit.Event{ActorType: audit.ActorSystem, ActorID: audit.HelivantaWorkload, ProductKey: "helivanta", OrgID: c.Request.Target.TenantID,
 		Action: "staff.mfa.recovery." + action, Target: in.GenerationID, Outcome: audit.OutcomeSuccess, RequestID: in.RequestID,
 		Detail: encodeDetail(struct {
@@ -61,38 +61,8 @@ func mfaAdmissionAudit(in customercontract.StaffMFAAdmissionRead, c store.StaffM
 		}{in.Subject, in.TenantID})}
 }
 
-// StaffMFAAdmissionSource returns the frozen target for HMS current-source checks.
-// It does not authenticate a native session or grant a recovered generation.
-func (s *Service) StaffMFAAdmissionSource(ctx context.Context, in customercontract.StaffMFAAdmissionRead) (customercontract.StaffMFAAdmissionSource, error) {
-	var empty customercontract.StaffMFAAdmissionSource
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	command, err := s.staffMFAAdmissionRecord(ctx, in)
-	if err != nil {
-		return empty, err
-	}
-	if err = s.checkMFAAdmissionAccount(ctx, command); err != nil {
-		return empty, err
-	}
-	current, err := s.staffMFAAdmissionRecord(ctx, in)
-	if err != nil {
-		return empty, err
-	}
-	if current.Request != command.Request || current.ProviderOrgID != command.ProviderOrgID || current.ProviderProjectID != command.ProviderProjectID || current.MachineSubject != command.MachineSubject {
-		return empty, ErrConflict
-	}
-	if err = s.store.AppendAudit(ctx, mfaAdmissionAudit(in, command, "source")); err != nil {
-		return empty, ErrUnavailable
-	}
-	out := customercontract.StaffMFAAdmissionSource{GenerationID: in.GenerationID, Target: command.Request.Target}
-	if out.Validate() != nil {
-		return empty, ErrUnavailable
-	}
-	return out, nil
-}
-
-// AdmitStaffMFASession accepts only the private HMS assertion of a rechecked
-// reviewed target and a sid from an already verified native ID token.
+// AdmitStaffMFASession accepts only the private HMS assertion of current membership
+// and a sid from an already verified native ID token. It grants no Staff authority.
 func (s *Service) AdmitStaffMFASession(ctx context.Context, in customercontract.StaffMFAAdmissionInput) (customercontract.StaffMFAAdmissionReceipt, error) {
 	var empty customercontract.StaffMFAAdmissionReceipt
 	if in.Validate() != nil {
@@ -103,9 +73,6 @@ func (s *Service) AdmitStaffMFASession(ctx context.Context, in customercontract.
 	command, err := s.staffMFAAdmissionRecord(ctx, in.Scope)
 	if err != nil {
 		return empty, err
-	}
-	if command.Request.Target != in.Target {
-		return empty, ErrConflict
 	}
 	if err = s.checkMFAAdmissionAccount(ctx, command); err != nil {
 		return empty, err
@@ -138,6 +105,9 @@ func (s *Service) AdmitStaffMFASession(ctx context.Context, in customercontract.
 	}
 	if latest.Sequence != enrolled.Sequence || !latest.VerifiedAt.Equal(enrolled.VerifiedAt) {
 		return empty, ErrConflict
+	}
+	if err = s.checkMFAAdmissionAccount(ctx, command); err != nil {
+		return empty, err
 	}
 	credentials, err := s.signupIdentity.IdentityCredentialProjection(ctx, command.ProviderOrgID, in.Scope.Subject)
 	if err != nil || credentials.Validate() != nil || credentials.Subject != in.Scope.Subject || credentials.OrganizationID != command.ProviderOrgID || credentials.State != "active" || credentials.Credentials == nil || !credentials.Credentials.PasswordConfigured {

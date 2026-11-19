@@ -18,9 +18,9 @@ import (
 )
 
 func TestStaffMFAAdmissionVerifiesNativeProofBeforeReleasingCurrentGeneration(t *testing.T) {
-	for _, mode := range []string{"hospital", "pharmacy", "supplier", "legacy_tenant", "old_primary", "same_second_primary", "wrong_user", "wrong_org", "missing_totp", "unenrolled", "enrollment_changed", "password_changed", "withdrawn", "native_unavailable", "wrong_source", "promoted_during_proof"} {
+	for _, mode := range []string{"hospital", "pharmacy", "supplier", "legacy_tenant", "old_primary", "same_second_primary", "wrong_user", "wrong_org", "missing_totp", "unenrolled", "enrollment_changed", "password_changed", "withdrawn", "native_unavailable", "wrong_generation", "promoted_during_proof", "inactive_account", "unverified_email", "moved_owner"} {
 		t.Run(mode, func(t *testing.T) {
-			removed := time.Now().UTC().Add(-time.Minute).Truncate(time.Second).Add(123456700 * time.Nanosecond)
+			removed := time.Now().UTC().Add(-10 * time.Second).Truncate(time.Second).Add(123456700 * time.Nanosecond)
 			enrolled := removed.Add(300 * time.Nanosecond)
 			svc, st, request := mfaServiceFixture(t, mfaServiceSource{configured: true, remove: func(context.Context, string, string) (zitadel.TOTPRemovalEvidence, error) {
 				return zitadel.TOTPRemovalEvidence{Sequence: "1703", ChangedAt: removed}, nil
@@ -31,8 +31,9 @@ func TestStaffMFAAdmissionVerifiesNativeProofBeforeReleasingCurrentGeneration(t 
 			ctx := WithRequestID(t.Context(), uuid.NewString())
 			_, err := svc.PrepareStaffMFARecovery(ctx, product("helivanta"), request)
 			require.NoError(t, err)
-			_, err = svc.DispatchStaffMFARecovery(ctx, product("helivanta"), request, request.Intent.CommandID)
+			dispatched, err := svc.DispatchStaffMFARecovery(ctx, product("helivanta"), request, request.Intent.CommandID)
 			require.NoError(t, err)
+			require.Equal(t, "awaiting_enrollment", dispatched.State, "native removal must be acknowledged before admission testing")
 			loginTenant := request.Target.TenantID
 			if mode == "legacy_tenant" {
 				id := uuid.New()
@@ -41,9 +42,9 @@ func TestStaffMFAAdmissionVerifiesNativeProofBeforeReleasingCurrentGeneration(t 
 				require.NoError(t, err)
 				require.NoError(t, st.Grant(ctx, id, "helivanta", nil))
 			}
-			input := customercontract.StaffMFAAdmissionInput{Scope: customercontract.StaffMFAAdmissionRead{TenantID: loginTenant, Subject: request.Target.Subject, GenerationID: request.Intent.CommandID, RequestID: uuid.NewString()}, Target: request.Target, NativeSessionID: "signed-session"}
-			if mode == "wrong_source" {
-				input.Target.StaffVersion++
+			input := customercontract.StaffMFAAdmissionInput{Scope: customercontract.StaffMFAAdmissionScope{TenantID: loginTenant, Subject: request.Target.Subject, GenerationID: request.Intent.CommandID, RequestID: uuid.NewString()}, NativeSessionID: "signed-session"}
+			if mode == "wrong_generation" {
+				input.Scope.GenerationID = uuid.Must(uuid.NewV7()).String()
 			}
 			var eventReads, nativeWrites atomic.Int32
 			var afterSession atomic.Bool
@@ -63,7 +64,18 @@ func TestStaffMFAAdmissionVerifiesNativeProofBeforeReleasingCurrentGeneration(t 
 					if mode == "password_changed" && afterSession.Load() {
 						changed = removed.Add(250 * time.Nanosecond)
 					}
-					_ = json.NewEncoder(w).Encode(map[string]any{"user": map[string]any{"userId": request.Target.Subject, "state": "USER_STATE_ACTIVE", "details": map[string]string{"resourceOwner": org}, "human": map[string]any{"passwordChanged": changed.Format(time.RFC3339Nano), "email": map[string]any{"email": "synthetic@example.test", "isVerified": true}}}})
+					accountState, accountOrg, verified := "USER_STATE_ACTIVE", org, true
+					if afterSession.Load() {
+						switch mode {
+						case "inactive_account":
+							accountState = "USER_STATE_INACTIVE"
+						case "unverified_email":
+							verified = false
+						case "moved_owner":
+							accountOrg = "other-org"
+						}
+					}
+					_ = json.NewEncoder(w).Encode(map[string]any{"user": map[string]any{"userId": request.Target.Subject, "state": accountState, "details": map[string]string{"resourceOwner": accountOrg}, "human": map[string]any{"passwordChanged": changed.Format(time.RFC3339Nano), "email": map[string]any{"email": "synthetic@example.test", "isVerified": verified}}}})
 				case "/management/v1/orgs/me/members/_search":
 					if mode == "promoted_during_proof" && afterSession.Load() {
 						_ = json.NewEncoder(w).Encode(map[string]any{"details": map[string]string{"totalResult": "1", "processedSequence": "1710"}, "result": []any{map[string]any{"userId": request.Target.Subject, "roles": []string{"ORG_OWNER"}}}})
@@ -122,19 +134,15 @@ func TestStaffMFAAdmissionVerifiesNativeProofBeforeReleasingCurrentGeneration(t 
 			}))
 			t.Cleanup(native.Close)
 			svc.signupIdentity = zitadel.New(native.URL, zitadel.StaticToken("synthetic"), "platform", nil)
-			if mode == "hospital" || mode == "pharmacy" || mode == "supplier" || mode == "legacy_tenant" {
-				source, err := svc.StaffMFAAdmissionSource(ctx, input.Scope)
-				require.NoError(t, err)
-				require.Equal(t, request.Target, source.Target)
-			}
+
 			receipt, err := svc.AdmitStaffMFASession(ctx, input)
 			var want error
 			switch mode {
 			case "old_primary", "same_second_primary", "wrong_user", "wrong_org", "missing_totp", "unenrolled", "password_changed":
 				want = ErrMFAAuthenticationRequired
-			case "enrollment_changed", "wrong_source":
+			case "enrollment_changed", "wrong_generation":
 				want = ErrConflict
-			case "withdrawn", "promoted_during_proof":
+			case "withdrawn", "inactive_account", "unverified_email", "moved_owner":
 				want = ErrNotFound
 			case "native_unavailable":
 				want = ErrUnavailable
@@ -166,6 +174,4 @@ func TestStaffMFAAdmissionInvalidInputCannotReachDependencies(t *testing.T) {
 	out, err := svc.AdmitStaffMFASession(t.Context(), customercontract.StaffMFAAdmissionInput{})
 	require.True(t, errors.Is(err, ErrInvalid))
 	require.Zero(t, out)
-	_, err = svc.StaffMFAAdmissionSource(t.Context(), customercontract.StaffMFAAdmissionRead{})
-	require.ErrorIs(t, err, ErrInvalid)
 }
