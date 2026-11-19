@@ -246,3 +246,19 @@ identityfixture race suite, vet, Go build, golangci-lint and customer-contract
 check. No local application, database or container was started. The latest
 consumer native run at HMS `d6a8430a` still reported one pass and two 503 failures;
 its hospital/pharmacy recovery journeys remain unverified.
+
+### Native admission follow-up
+
+Consumer `960ca294` proves both real employer models now acknowledge native
+factor removal, reject old access/renewal, require a different replacement factor
+and reach callback after its confirmation. Both cases then fail to reach the
+dashboard, with unavailable current-credential evidence; the run still reports
+one pass, two failures and 107 cases not run. Recovery is not accepted.
+
+Admission and its native enrollment/session reads now emit only fixed unavailable
+stages. No provider response, account, native session, generation, timing value
+or factor data is logged. Existing proof/cutoff and rejection behavior is unchanged.
+The admission/native diagnostic privacy regressions were observed failing before
+logging, then passing; complete onboarding/native race suites, vet, Go build,
+golangci-lint and contract checks passed locally without apps, databases or
+containers. Hosted native callback/admission acceptance remains outstanding.

@@ -37,3 +37,22 @@ func TestUnavailableStaffMFAPreparationLogsOnlyTheStage(t *testing.T) {
 		require.NotContains(t, output.String(), private)
 	}
 }
+
+func TestUnavailableStaffMFAAdmissionLogsOnlyTheStage(t *testing.T) {
+	var output bytes.Buffer
+	service := New(nil, nil, nil, slog.New(slog.NewJSONHandler(&output, nil)))
+	input := customercontract.StaffMFAAdmissionInput{
+		Scope:           customercontract.StaffMFAAdmissionScope{TenantID: uuid.NewString(), Subject: "private-target", GenerationID: uuid.Must(uuid.NewV7()).String(), RequestID: uuid.NewString()},
+		NativeSessionID: "private-session",
+	}
+	require.NoError(t, input.Validate())
+	_, err := service.AdmitStaffMFASession(t.Context(), input)
+	require.ErrorIs(t, err, ErrUnavailable)
+	var record map[string]any
+	require.NoError(t, json.Unmarshal(bytes.TrimSpace(output.Bytes()), &record))
+	require.Equal(t, "Staff MFA recovery admission unavailable", record["msg"])
+	require.Equal(t, "record", record["stage"])
+	for _, private := range []string{input.Scope.Subject, input.Scope.TenantID, input.Scope.GenerationID, input.Scope.RequestID, input.NativeSessionID} {
+		require.NotContains(t, output.String(), private)
+	}
+}

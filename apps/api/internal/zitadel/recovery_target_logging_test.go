@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -44,6 +45,44 @@ func TestStaffMFARecoveryTargetLogsOnlyTheUnavailableProofStage(t *testing.T) {
 			require.Equal(t, "Staff MFA target proof unavailable", record["msg"])
 			require.Equal(t, tc.stage, record["stage"])
 			for _, private := range []string{"private-provider-detail", "private-token", "private-admin-org", membershipTestTenant, "synthetic-human"} {
+				require.NotContains(t, output.String(), private)
+			}
+		})
+	}
+}
+
+func TestNativeMFAAdmissionProofsLogOnlyTheUnavailableStage(t *testing.T) {
+	for _, test := range []struct {
+		name, message, stage string
+		enrollment           bool
+		status               int
+	}{
+		{"enrollment read", "Staff MFA enrollment proof unavailable", "read", true, 503},
+		{"enrollment decode", "Staff MFA enrollment proof unavailable", "decode", true, 200},
+		{"session read", "Staff MFA session proof unavailable", "read", false, 503},
+		{"session decode", "Staff MFA session proof unavailable", "decode", false, 200},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var output bytes.Buffer
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(test.status)
+				_, _ = w.Write([]byte(`{"private":"private-provider-detail"}`))
+			}))
+			defer server.Close()
+			client := New(server.URL, StaticToken("private-token"), "private-admin-org", slog.New(slog.NewJSONHandler(&output, nil)))
+			reset := time.Now().Add(-time.Minute)
+			var err error
+			if test.enrollment {
+				_, err = client.RecoveryTOTPEnrollment(t.Context(), "private-org", "private-user", TOTPRemovalEvidence{Sequence: "1703", ChangedAt: reset})
+			} else {
+				_, err = client.VerifyRecoverySession(t.Context(), "private-org", "private-user", "private-session", reset, reset.Add(time.Second))
+			}
+			require.ErrorIs(t, err, ErrIdentityUnavailable)
+			var record map[string]any
+			require.NoError(t, json.Unmarshal(bytes.TrimSpace(output.Bytes()), &record))
+			require.Equal(t, test.message, record["msg"])
+			require.Equal(t, test.stage, record["stage"])
+			for _, private := range []string{"private-provider-detail", "private-token", "private-admin-org", "private-org", "private-user", "private-session"} {
 				require.NotContains(t, output.String(), private)
 			}
 		})

@@ -41,7 +41,13 @@ type recoveryNativeSession struct {
 
 // VerifyRecoverySession accepts only an ID from an already verified ID-token sid.
 // Its cutoffs must come from the durable recovery generation and native enrollment.
-func (c *Client) VerifyRecoverySession(ctx context.Context, orgID, subject, sessionID string, resetAt, enrolledAt time.Time) (RecoverySessionProof, error) {
+func (c *Client) VerifyRecoverySession(ctx context.Context, orgID, subject, sessionID string, resetAt, enrolledAt time.Time) (_ RecoverySessionProof, resultErr error) {
+	stage := "configuration"
+	defer func() {
+		if c != nil && c.log != nil && errors.Is(resultErr, ErrIdentityUnavailable) {
+			c.log.Warn("Staff MFA session proof unavailable", "stage", stage)
+		}
+	}()
 	var empty RecoverySessionProof
 	if !identitySourceID.MatchString(orgID) || !identitySourceID.MatchString(subject) || !identitySourceID.MatchString(sessionID) ||
 		resetAt.IsZero() || enrolledAt.IsZero() || enrolledAt.Before(resetAt) || enrolledAt.After(time.Now()) {
@@ -49,6 +55,7 @@ func (c *Client) VerifyRecoverySession(ctx context.Context, orgID, subject, sess
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+	stage = "token"
 	token, err := c.tokens.Token(ctx)
 	if err != nil || token == "" {
 		return empty, ErrIdentityUnavailable
@@ -57,6 +64,7 @@ func (c *Client) VerifyRecoverySession(ctx context.Context, orgID, subject, sess
 	client.Jar = nil
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	var raw json.RawMessage
+	stage = "read"
 	err = c.readIdentity(ctx, &client, token, http.MethodGet, "/v2/sessions/"+sessionID, orgID, nil, &raw)
 	if errors.Is(err, ErrIdentityMissing) {
 		return empty, ErrRecoverySessionRejected
@@ -64,10 +72,12 @@ func (c *Client) VerifyRecoverySession(ctx context.Context, orgID, subject, sess
 	if err != nil || ctx.Err() != nil {
 		return empty, ErrIdentityUnavailable
 	}
+	stage = "decode"
 	session, err := decodeRecoverySession(raw)
 	if err != nil {
 		return empty, err
 	}
+	stage = "proof"
 	return verifyRecoverySession(session, orgID, subject, sessionID, resetAt, enrolledAt, time.Now())
 }
 

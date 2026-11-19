@@ -3,6 +3,7 @@ package zitadel
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -66,7 +67,13 @@ func (c *Client) RemoveRecoveryTOTP(ctx context.Context, org, subject string) (T
 
 // RecoveryTOTPEnrollment reads the latest lifecycle event, not projected presence
 // or ordinary factor-check activity. No factor secret is returned or retained.
-func (c *Client) RecoveryTOTPEnrollment(ctx context.Context, org, subject string, removal TOTPRemovalEvidence) (TOTPEnrollmentEvidence, error) {
+func (c *Client) RecoveryTOTPEnrollment(ctx context.Context, org, subject string, removal TOTPRemovalEvidence) (_ TOTPEnrollmentEvidence, resultErr error) {
+	stage := "configuration"
+	defer func() {
+		if c != nil && c.log != nil && errors.Is(resultErr, ErrIdentityUnavailable) {
+			c.log.Warn("Staff MFA enrollment proof unavailable", "stage", stage)
+		}
+	}()
 	var empty TOTPEnrollmentEvidence
 	if !identitySourceID.MatchString(org) || !identitySourceID.MatchString(subject) ||
 		!validIdentityRevision(removal.Sequence) || !recoverySessionInstant(removal.ChangedAt, time.Now()) {
@@ -74,6 +81,7 @@ func (c *Client) RecoveryTOTPEnrollment(ctx context.Context, org, subject string
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+	stage = "token"
 	token, err := c.tokens.Token(ctx)
 	if err != nil || token == "" {
 		return empty, ErrIdentityUnavailable
@@ -82,16 +90,19 @@ func (c *Client) RecoveryTOTPEnrollment(ctx context.Context, org, subject string
 	client.Jar = nil
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	var raw json.RawMessage
+	stage = "read"
 	err = c.readIdentity(ctx, &client, token, http.MethodPost, "/admin/v1/events/_search", org,
 		map[string]any{"aggregateId": subject, "aggregateTypes": []string{"user"}, "resourceOwner": org,
 			"eventTypes": recoveryTOTPEventTypes, "asc": false, "limit": 1}, &raw)
 	if err != nil || ctx.Err() != nil {
 		return empty, ErrIdentityUnavailable
 	}
+	stage = "decode"
 	event, err := decodeRecoveryTOTPEvent(raw)
 	if err != nil {
 		return empty, err
 	}
+	stage = "proof"
 	sequence, parseErr := strconv.ParseUint(event.Sequence, 10, 64)
 	baseline, _ := strconv.ParseUint(removal.Sequence, 10, 64)
 	changed, timeErr := time.Parse(time.RFC3339Nano, event.CreationDate)

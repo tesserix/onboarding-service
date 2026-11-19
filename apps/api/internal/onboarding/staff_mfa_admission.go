@@ -63,7 +63,13 @@ func mfaAdmissionAudit(in customercontract.StaffMFAAdmissionScope, c store.Staff
 
 // AdmitStaffMFASession accepts only the private HMS assertion of current membership
 // and a sid from an already verified native ID token. It grants no Staff authority.
-func (s *Service) AdmitStaffMFASession(ctx context.Context, in customercontract.StaffMFAAdmissionInput) (customercontract.StaffMFAAdmissionReceipt, error) {
+func (s *Service) AdmitStaffMFASession(ctx context.Context, in customercontract.StaffMFAAdmissionInput) (_ customercontract.StaffMFAAdmissionReceipt, resultErr error) {
+	stage := "record"
+	defer func() {
+		if s != nil && s.log != nil && errors.Is(resultErr, ErrUnavailable) {
+			s.log.Warn("Staff MFA recovery admission unavailable", "stage", stage)
+		}
+	}()
 	var empty customercontract.StaffMFAAdmissionReceipt
 	if in.Validate() != nil {
 		return empty, ErrInvalid
@@ -74,14 +80,17 @@ func (s *Service) AdmitStaffMFASession(ctx context.Context, in customercontract.
 	if err != nil {
 		return empty, err
 	}
+	stage = "account"
 	if err = s.checkMFAAdmissionAccount(ctx, command); err != nil {
 		return empty, err
 	}
+	stage = "removal"
 	removed, err := time.Parse(time.RFC3339Nano, command.NativeChangedAt)
 	if err != nil {
 		return empty, ErrUnavailable
 	}
 	removal := zitadel.TOTPRemovalEvidence{Sequence: command.NativeSequence, ChangedAt: removed}
+	stage = "enrollment"
 	enrolled, err := s.signupIdentity.RecoveryTOTPEnrollment(ctx, command.ProviderOrgID, in.Scope.Subject, removal)
 	if err != nil {
 		return empty, ErrUnavailable
@@ -89,6 +98,7 @@ func (s *Service) AdmitStaffMFASession(ctx context.Context, in customercontract.
 	if !enrolled.Verified {
 		return empty, ErrMFAAuthenticationRequired
 	}
+	stage = "session"
 	proof, err := s.signupIdentity.VerifyRecoverySession(ctx, command.ProviderOrgID, in.Scope.Subject, in.NativeSessionID, removed, enrolled.VerifiedAt)
 	if errors.Is(err, zitadel.ErrRecoverySessionRejected) {
 		return empty, ErrMFAAuthenticationRequired
@@ -96,6 +106,7 @@ func (s *Service) AdmitStaffMFASession(ctx context.Context, in customercontract.
 	if err != nil {
 		return empty, ErrUnavailable
 	}
+	stage = "enrollment_recheck"
 	latest, err := s.signupIdentity.RecoveryTOTPEnrollment(ctx, command.ProviderOrgID, in.Scope.Subject, removal)
 	if err != nil {
 		return empty, ErrUnavailable
@@ -106,9 +117,11 @@ func (s *Service) AdmitStaffMFASession(ctx context.Context, in customercontract.
 	if latest.Sequence != enrolled.Sequence || !latest.VerifiedAt.Equal(enrolled.VerifiedAt) {
 		return empty, ErrConflict
 	}
+	stage = "account_recheck"
 	if err = s.checkMFAAdmissionAccount(ctx, command); err != nil {
 		return empty, err
 	}
+	stage = "credentials"
 	credentials, err := s.signupIdentity.IdentityCredentialProjection(ctx, command.ProviderOrgID, in.Scope.Subject)
 	if err != nil || credentials.Validate() != nil || credentials.Subject != in.Scope.Subject || credentials.OrganizationID != command.ProviderOrgID || credentials.State != "active" || credentials.Credentials == nil || !credentials.Credentials.PasswordConfigured {
 		return empty, ErrUnavailable
@@ -120,6 +133,7 @@ func (s *Service) AdmitStaffMFASession(ctx context.Context, in customercontract.
 	if !proof.PasswordVerifiedAt.After(changed) {
 		return empty, ErrMFAAuthenticationRequired
 	}
+	stage = "record_recheck"
 	current, err := s.staffMFAAdmissionRecord(ctx, in.Scope)
 	if err != nil {
 		return empty, err
@@ -127,9 +141,11 @@ func (s *Service) AdmitStaffMFASession(ctx context.Context, in customercontract.
 	if current.Request != command.Request || current.ProviderOrgID != command.ProviderOrgID || current.ProviderProjectID != command.ProviderProjectID || current.MachineSubject != command.MachineSubject {
 		return empty, ErrConflict
 	}
+	stage = "store"
 	if err = s.store.AdmitStaffMFARecovery(ctx, command, enrolled.Sequence, enrolled.VerifiedAt.UTC().Format(time.RFC3339Nano), mfaAdmissionAudit(in.Scope, command, "admit")); err != nil {
 		return empty, staffMFAStoreError(err)
 	}
+	stage = "commit_recheck"
 	if _, err = s.staffMFAAdmissionRecord(ctx, in.Scope); err != nil {
 		return empty, err
 	}
