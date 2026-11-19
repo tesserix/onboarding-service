@@ -67,15 +67,28 @@ func ordinaryRecoveryOrgMember(raw []byte, subject string) error {
 	if err != nil {
 		return ErrIdentityUnavailable
 	}
-	var count, sequence string
-	if json.Unmarshal(details["processedSequence"], &sequence) != nil || !validIdentityRevision(sequence) {
-		return ErrIdentityUnavailable
+	var count string
+	sequence := "0"
+	if value, present := details["processedSequence"]; present {
+		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, &sequence) != nil || sequence != "0" && !validIdentityRevision(sequence) {
+			return ErrIdentityUnavailable
+		}
 	}
+	requiresTimestamp := sequence == "0"
 	if value, present := details["totalResult"]; present {
 		if json.Unmarshal(value, &count) != nil {
 			return ErrIdentityUnavailable
 		}
 	} else {
+		requiresTimestamp = true
+		count = "0"
+	}
+	n, err := strconv.ParseUint(count, 10, 64)
+	if err != nil || strconv.FormatUint(n, 10) != count || n > 1 || sequence == "0" && n != 0 {
+		return ErrIdentityUnavailable
+	}
+	// ProtoJSON omits zero counters in a timestamped empty native projection.
+	if requiresTimestamp {
 		var timestamp string
 		if json.Unmarshal(details["viewTimestamp"], &timestamp) != nil {
 			return ErrIdentityUnavailable
@@ -84,11 +97,6 @@ func ordinaryRecoveryOrgMember(raw []byte, subject string) error {
 		if err != nil || !recoverySessionInstant(at, time.Now()) {
 			return ErrIdentityUnavailable
 		}
-		count = "0"
-	}
-	n, err := strconv.ParseUint(count, 10, 64)
-	if err != nil || strconv.FormatUint(n, 10) != count || n > 1 {
-		return ErrIdentityUnavailable
 	}
 	var result []json.RawMessage
 	if value, present := root["result"]; present {

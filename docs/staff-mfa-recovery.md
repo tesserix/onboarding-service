@@ -63,6 +63,27 @@ verify fresh administrator/ordinary-target and reviewed Workforce source authori
 Owner native checks additionally reject foreign/unverified/non-human/passwordless
 accounts and any native organization member. That exact member query is bounded
 to the target user, rather than treating a truncated member list as absence.
+The pinned Zitadel v4.15.3 member search can serialize an empty result as
+`{"details":{"viewTimestamp":"<RFC3339 timestamp>"}}`: ProtoJSON omits zero
+`uint64` count and sequence fields. Hosted HMS run `44517575218` observed this
+shape for both isolated hospital and independent-pharmacy targets. Requiring a
+positive sequence incorrectly returned unavailable before preparation.
+
+An omitted or explicit canonical zero sequence is accepted only for a zero count,
+an empty or omitted result list, and a valid non-future positive view timestamp.
+Missing/invalid/null timestamps, malformed/recased/duplicate metadata, contradictory
+counts/results and nonzero member results without a positive sequence fail closed.
+A known native organization member remains ineligible. The current owned/active/
+verified/password account checks, exact target query, workload authority, five-second
+native timeout and reauthorization around preparation/dispatch still apply.
+
+Primary sources: [ListDetails fields](https://github.com/zitadel/zitadel/blob/v4.15.3/proto/zitadel/object.proto#L66),
+[member query and scoped projection](https://github.com/zitadel/zitadel/blob/v4.15.3/internal/query/org_member.go#L71),
+[member response conversion](https://github.com/zitadel/zitadel/blob/v4.15.3/internal/api/grpc/management/org.go#L265),
+and [list metadata conversion](https://github.com/zitadel/zitadel/blob/v4.15.3/internal/api/grpc/object/converter.go#L84).
+These source and regression checks do not prove completed native recovery or live
+release; HMS native acceptance remains required.
+
 TOTP presence is only a pre-dispatch check, never proof of new enrollment. A known
 unenrolled target cancels a prepared command without a native write.
 
