@@ -13,11 +13,18 @@ type LoginTargetInput struct {
 }
 
 func (in LoginTargetInput) Validate() error {
-	if validateTaggedFields(in, "") != nil || len(in.Email) > 200 || strings.TrimSpace(in.Email) != in.Email {
+	if validateTaggedFields(in, "") != nil {
 		return ErrInvalid
 	}
-	address, err := mail.ParseAddress(in.Email)
-	if err != nil || address.Address != in.Email {
+	return validLoginEmail(in.Email)
+}
+
+func validLoginEmail(email string) error {
+	if len(email) > 200 || strings.TrimSpace(email) != email {
+		return ErrInvalid
+	}
+	address, err := mail.ParseAddress(email)
+	if err != nil || address.Address != email {
 		return ErrInvalid
 	}
 	return nil

@@ -20,7 +20,9 @@ continuation accepts only the exact immutable freshly created owner, verified in
 its target organisation. Foreign accounts fail before native adoption.
 
 Ready workspace sign-in is pinned to the target native organisation by the
-consumer. Email lookup for login must be scoped by that native auth request.
+consumer. Email lookup for login is scoped by that native auth request, except
+the bounded unscoped lookup below, whose answer the consumer discloses only after
+a password succeeds.
 A same-email hospital and pharmacy owner have independent passwords and MFA.
 Owner policy operations retain current native ORG_OWNER/tenant/product proof,
 revision checks, fresh authentication, append-only audit and operator ownership.
@@ -56,6 +58,23 @@ Unknown/ineligible target is404; invalid bounded input400; missing/wrong workloa
 or authentication. It has a10-second total budget, a5-second native lookup and
 at most2 candidates. No retry/cache/new service is added. Helivanta checks the
 actual password session's subject/org before proceeding to MFA/callback.
+
+## Private multi-account login lookup
+
+Helivanta's single email-plus-password card (helivanta#1751, issue #46) starts
+from an unscoped native auth request, so it cannot name a tenant before the
+password. POST `/internal/v1/customer-signups/login-targets` takes bounded email
+and request UUID under the same workload, audience and mesh boundary, and returns
+`{targets, truncated}`: each target is tenant/org/subject plus organisation name
+and account, under the same eligibility as discovery choices (active
+Helivanta-owned organisation, live enrolment, current native proof, active
+email-verified human). No eligible account is an empty list, not 404, so the
+consumer's refusal is identical either way. More than five eligible accounts
+returns no targets and `truncated: true`: the consumer refuses rather than
+checking an arbitrary subset. Audit commits before the answer; native, store or
+audit failure is 503, never an empty list. The consumer checks the password per
+target, verifies each session's subject/org, and shows names only for accounts
+whose password succeeded. Budget, retry and credential rules match login-target.
 
 ## Recipient-wide delivery budgets
 
