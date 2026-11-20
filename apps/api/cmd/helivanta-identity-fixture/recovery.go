@@ -19,7 +19,10 @@ import (
 )
 
 var errFixtureMail = errors.New("isolated recovery mailbox unavailable")
-var fixtureCode = regexp.MustCompile(`^Your Helivanta password recovery code is ([0-9]{8})\.\n\n`)
+
+// The shared layout (onboarding#49) puts the code on a line of its own in the
+// text part; the fixture reads exactly that line rather than the surrounding copy.
+var fixtureCode = regexp.MustCompile(`(?m)^([0-9]{8})$`)
 
 func fixtureHandler(next http.Handler, recovery bool, mfa ...bool) http.Handler {
 	mfaHandler := fixtureMFAHandler(next, len(mfa) == 1 && mfa[0])
@@ -114,7 +117,7 @@ func (capture recoveryMailCapture) RoundTrip(r *http.Request) (*http.Response, e
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&message) != nil || decoder.Decode(new(any)) != io.EOF || message.From != "Helivanta <onboarding@helivanta.com>" || message.Subject != "Recover your Helivanta password" || len(message.To) != 1 || !slices.Contains([]string{"e2e-password-recovery-native-admin@helivanta.dev", "e2e-password-recovery-native-pharmacist@helivanta.dev"}, message.To[0]) {
+	if decoder.Decode(&message) != nil || decoder.Decode(new(any)) != io.EOF || message.From != "Helivanta <onboarding@helivanta.com>" || message.Subject != "Reset your Helivanta password" || len(message.To) != 1 || !slices.Contains([]string{"e2e-password-recovery-native-admin@helivanta.dev", "e2e-password-recovery-native-pharmacist@helivanta.dev"}, message.To[0]) {
 		return nil, errFixtureMail
 	}
 	match := fixtureCode.FindStringSubmatch(message.Text)
