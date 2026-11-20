@@ -28,6 +28,9 @@ var (
 	ErrNotFound = errors.New("not found")
 	ErrInvalid  = errors.New("invalid request")
 	ErrConflict = errors.New("conflict")
+	// ErrPasswordPolicy: the native password policy refused the password; the
+	// proof is intact and the same link may be retried.
+	ErrPasswordPolicy = errors.New("password refused by policy")
 	// ErrUnavailable is a dependency failure, never a policy decision.
 	ErrUnavailable = errors.New("temporarily unavailable")
 )

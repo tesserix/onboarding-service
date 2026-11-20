@@ -76,6 +76,19 @@ audit failure is 503, never an empty list. The consumer checks the password per
 target, verifies each session's subject/org, and shows names only for accounts
 whose password succeeded. Budget, retry and credential rules match login-target.
 
+## One-shot signup password (#50)
+
+`POST /internal/v1/customer-signups/verify-email` accepts an optional
+`password` with the email proof (helivanta#1763). In that one request the
+service requests the native reset code with `returnCode` (memory only, never
+stored), **sets the password first**, records it as configured, then verifies
+the email with the submitted code. A password the native policy refuses answers
+422 and consumes nothing, so the same link is retried; an expired email code
+answers 400 with the password kept and the receipt still awaiting email proof.
+The emailed password link (`/password` with its own code) remains the recovery
+path. The receipt capability alone never gains password-setting authority: the
+emailed code stays a required input. Proof-attempt budgets are unchanged.
+
 ## Recipient-wide delivery budgets
 
 A fresh signup receipt cannot reset delivery abuse controls. Retain each immutable

@@ -2,6 +2,8 @@ package zitadel
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -127,5 +129,29 @@ func TestSignupEmailResendUsesTheSameNativeVerificationScreen(t *testing.T) {
 	send, _ := got.body["sendCode"].(map[string]any)
 	if send["urlTemplate"] != "https://helivanta.app/signup/verify#phase=email&userId={{.UserID}}&code={{.Code}}" {
 		t.Fatal("email resend did not return to Helivanta")
+	}
+}
+
+// One-shot signup (helivanta#1763): a password the native policy refuses is
+// told apart from a bad proof, so the caller can keep the link and retry.
+func TestSignupPasswordPolicyRefusalIsDistinctFromABadProof(t *testing.T) {
+	body := `{"code":3,"message":"Errors.User.PasswordComplexityPolicy.MinLength (DOMAIN-HuJf6)","details":[{"@type":"type.googleapis.com/zitadel.v1.ErrorDetail","id":"DOMAIN-HuJf6","message":"Errors.User.PasswordComplexityPolicy.MinLength"}]}`
+	policy := true
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(400)
+		if policy {
+			_, _ = w.Write([]byte(body))
+			return
+		}
+		_, _ = w.Write([]byte(`{"code":3,"message":"Errors.User.Code.Invalid (CODE-woT0xc)","details":[{"@type":"type.googleapis.com/zitadel.v1.ErrorDetail","id":"CODE-woT0xc"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	client := New(srv.URL, StaticToken("synthetic"), "platform", nil)
+	if err := client.SetSignupPassword(t.Context(), "owner-test", "reset-1", "short"); !errors.Is(err, ErrSignupPasswordPolicy) {
+		t.Fatalf("policy refusal not distinguished: %v", err)
+	}
+	policy = false
+	if err := client.SetSignupPassword(t.Context(), "owner-test", "reset-1", "Long-enough-pass-1!"); !errors.Is(err, ErrSignupProof) || errors.Is(err, ErrSignupPasswordPolicy) {
+		t.Fatalf("bad code reported as policy: %v", err)
 	}
 }

@@ -16,6 +16,10 @@ import (
 
 var ErrSignupProof = errors.New("signup proof rejected")
 
+// ErrSignupPasswordPolicy is a password the native policy refused: the proof
+// was fine and nothing was consumed, so the caller may retry with another.
+var ErrSignupPasswordPolicy = errors.New("signup password refused by policy")
+
 // VerifySignupEmail submits the caller's native code for the expected signup subject.
 func (c *Client) VerifySignupEmail(ctx context.Context, userID, code string) error {
 	if !validSignupCode(userID, code) {
@@ -29,19 +33,26 @@ func validSignupCode(userID, code string) bool {
 }
 
 func (c *Client) signupCommand(ctx context.Context, path string, input any) error {
+	_, err := c.signupCommandBody(ctx, path, input)
+	return err
+}
+
+// signupCommandBody is signupCommand keeping the bounded refusal body, for the
+// one command whose 400 must be told apart (SetSignupPassword).
+func (c *Client) signupCommandBody(ctx context.Context, path string, input any) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	token, err := c.tokens.Token(ctx)
 	if err != nil || token == "" {
-		return ErrIdentityUnavailable
+		return nil, ErrIdentityUnavailable
 	}
 	raw, err := json.Marshal(input)
 	if err != nil {
-		return ErrIdentityUnavailable
+		return nil, ErrIdentityUnavailable
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+path, bytes.NewReader(raw))
 	if err != nil {
-		return ErrIdentityUnavailable
+		return nil, ErrIdentityUnavailable
 	}
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Content-Type", "application/json")
@@ -49,17 +60,17 @@ func (c *Client) signupCommand(ctx context.Context, path string, input any) erro
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	response, err := client.Do(request)
 	if err != nil {
-		return ErrIdentityUnavailable
+		return nil, ErrIdentityUnavailable
 	}
 	defer func() { _ = response.Body.Close() }()
-	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 8192))
+	body, _ := io.ReadAll(io.LimitReader(response.Body, 8192))
 	if response.StatusCode == 400 || response.StatusCode == 412 {
-		return ErrSignupProof
+		return body, ErrSignupProof
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return ErrIdentityUnavailable
+		return nil, ErrIdentityUnavailable
 	}
-	return nil
+	return nil, nil
 }
 
 // SetSignupPassword always requires the native reset proof, including first setup.
@@ -67,7 +78,11 @@ func (c *Client) SetSignupPassword(ctx context.Context, userID, code, password s
 	if !validSignupCode(userID, code) || password == "" || !utf8.ValidString(password) || utf8.RuneCountInString(password) > 200 {
 		return ErrSignupProof
 	}
-	return c.signupCommand(ctx, "/v2/users/"+userID+"/password", map[string]any{"verificationCode": code, "newPassword": map[string]any{"password": password, "changeRequired": false}})
+	body, err := c.signupCommandBody(ctx, "/v2/users/"+userID+"/password", map[string]any{"verificationCode": code, "newPassword": map[string]any{"password": password, "changeRequired": false}})
+	if errors.Is(err, ErrSignupProof) && recoveryPolicyRefusal(body) {
+		return ErrSignupPasswordPolicy
+	}
+	return err
 }
 
 // SendSignupPasswordLink asks native identity to deliver a setup code, never return it.

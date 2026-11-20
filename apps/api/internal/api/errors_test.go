@@ -82,3 +82,13 @@ func TestTheCauseNeverReachesTheClient(t *testing.T) {
 		t.Fatalf("upstream detail leaked to the client: %q", p.Detail)
 	}
 }
+
+func TestPasswordPolicyRefusalIsA422SoTheLinkCanBeRetried(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	respondErr(c, slog.Default(), onboarding.ErrPasswordPolicy)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status %d, want 422", rec.Code)
+	}
+}

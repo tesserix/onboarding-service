@@ -122,7 +122,9 @@ func (s *Service) ProveCustomer(ctx context.Context, in customercontract.Proof, 
 	if s.signupIdentity == nil {
 		return uuid.Nil, empty, ErrUnavailable
 	}
-	if len(nextHash) != 32 || !hospitalSourceID.MatchString(in.UserID) || in.Code == "" || len(in.Code) > 20 || (!password && in.Password != "") || (password && in.Password == "") {
+	// On the email phase a password is optional: the one-shot form
+	// (helivanta#1763) sets it in the same request, password first.
+	if len(nextHash) != 32 || !hospitalSourceID.MatchString(in.UserID) || in.Code == "" || len(in.Code) > 20 || (password && in.Password == "") {
 		return uuid.Nil, empty, ErrInvalid
 	}
 	row, err := s.store.CustomerSignupBySubject(ctx, in.UserID)
@@ -139,9 +141,34 @@ func (s *Service) ProveCustomer(ctx context.Context, in customercontract.Proof, 
 	if _, err = s.signupIdentity.SignupIdentity(ctx, org, row.OwnerSubject, row.Input.Owner.Email); err != nil {
 		return uuid.Nil, empty, ErrUnavailable
 	}
-	if password {
+	configured := password
+	switch {
+	case password:
 		err = s.signupIdentity.SetSignupPassword(ctx, row.OwnerSubject, in.Code, in.Password)
-	} else {
+	case in.Password != "":
+		// Password first, with a reset code that never leaves this request,
+		// then the email proof. A policy refusal therefore consumes nothing
+		// the person needs; an expired email code leaves a set password on a
+		// still-unverified account, recorded so no password link is asked for.
+		var reset string
+		if reset, err = s.signupIdentity.SignupCode(ctx, row.OwnerSubject, true); err != nil {
+			return uuid.Nil, empty, ErrUnavailable
+		}
+		if err = s.signupIdentity.SetSignupPassword(ctx, row.OwnerSubject, reset, in.Password); err != nil {
+			if errors.Is(err, zitadel.ErrSignupPasswordPolicy) {
+				return uuid.Nil, empty, ErrPasswordPolicy
+			}
+			if errors.Is(err, zitadel.ErrSignupProof) {
+				return uuid.Nil, empty, ErrUnavailable
+			}
+			return uuid.Nil, empty, ErrUnavailable
+		}
+		configured = true
+		if err = s.store.MarkSignupPasswordConfigured(ctx, row.ID); err != nil {
+			return uuid.Nil, empty, customerError(err)
+		}
+		err = s.signupIdentity.VerifySignupEmail(ctx, row.OwnerSubject, in.Code)
+	default:
 		err = s.signupIdentity.VerifySignupEmail(ctx, row.OwnerSubject, in.Code)
 	}
 	if errors.Is(err, zitadel.ErrSignupProof) {
@@ -154,11 +181,11 @@ func (s *Service) ProveCustomer(ctx context.Context, in customercontract.Proof, 
 	if err != nil || !verified {
 		return uuid.Nil, empty, ErrUnavailable
 	}
-	if err = s.store.RotateSignupReceipt(ctx, row.ID, nextHash, password); err != nil {
+	if err = s.store.RotateSignupReceipt(ctx, row.ID, nextHash, configured); err != nil {
 		return uuid.Nil, empty, customerError(err)
 	}
 	row.ReceiptVerified = true
-	row.PasswordConfigured = row.PasswordConfigured || password
+	row.PasswordConfigured = row.PasswordConfigured || configured
 	return row.ID, customerReceipt(row), nil
 }
 
