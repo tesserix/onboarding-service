@@ -242,6 +242,21 @@ func (s *Store) customerSignupByID(ctx context.Context, id uuid.UUID) (CustomerS
 	return scanCustomerSignup(s.pool.QueryRow(ctx, `SELECT `+customerSignupColumns+` FROM customer_signups WHERE id=$1`, id))
 }
 
+// MarkSignupPasswordConfigured records a native password set before the email
+// proof completed (one-shot signup, helivanta#1763), so the receipt never asks
+// for a password link the account does not need.
+func (s *Store) MarkSignupPasswordConfigured(ctx context.Context, id uuid.UUID) error {
+	result, err := s.pool.Exec(ctx, `UPDATE customer_signups SET primary_credential_configured=true, updated_at=now()
+   WHERE id=$1 AND state NOT IN ('existing_account','needs_support')`, id)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() != 1 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // RotateSignupReceipt binds a fresh capability only after native proof succeeds.
 func (s *Store) RotateSignupReceipt(ctx context.Context, id uuid.UUID, hash []byte, passwordConfigured bool) error {
 	if len(hash) != 32 {

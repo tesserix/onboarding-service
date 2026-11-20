@@ -43,6 +43,10 @@ func respondErr(c *gin.Context, log *slog.Logger, err error) {
 		abort(c, http.StatusBadRequest, trimSentinel(err, onboarding.ErrInvalid))
 	case errors.Is(err, onboarding.ErrConflict):
 		abort(c, http.StatusConflict, trimSentinel(err, onboarding.ErrConflict))
+	case errors.Is(err, onboarding.ErrPasswordPolicy):
+		// 422, not 400: the proof is intact and the caller may retry the
+		// same link with another password (one-shot signup).
+		abort(c, http.StatusUnprocessableEntity, "password refused by policy")
 	case errors.Is(err, onboarding.ErrUnavailable):
 		// The client is told nothing useful by design, so the cause has to land
 		// here or it exists nowhere.
