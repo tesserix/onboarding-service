@@ -30,7 +30,15 @@ func TestFixtureRecoveryIsExplicitAndDoesNotExposeOtherCommands(t *testing.T) {
 				t.Fatal("recovery fixture was not explicitly gated", action, rec.Code)
 			}
 		}
-		for _, path := range []string{"/internal/v1/customer-signups", "/internal/v1/customer-signups/password", "/internal/v1/customer-signups/password-recovery/delete", "/internal/v1/customer-signups/password-recovery/password/extra"} {
+		// The private reads Helivanta's sign-in makes stay reachable either way.
+		for _, path := range []string{"/internal/v1/customer-signups/identity-projection", "/internal/v1/customer-signups/login-target", "/internal/v1/customer-signups/login-targets"} {
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, httptest.NewRequest("POST", path, nil))
+			if rec.Code != 204 {
+				t.Fatal("fixture refused a sign-in read", path, rec.Code)
+			}
+		}
+		for _, path := range []string{"/internal/v1/customer-signups", "/internal/v1/customer-signups/password", "/internal/v1/customer-signups/login-targets/extra", "/internal/v1/customer-signups/password-recovery/delete", "/internal/v1/customer-signups/password-recovery/password/extra"} {
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, httptest.NewRequest("POST", path, nil))
 			if rec.Code != 404 {
