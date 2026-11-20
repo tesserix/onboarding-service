@@ -29,11 +29,14 @@ func TestPasswordRecoveryMailIsPurposeBoundAndDeliveryIdempotent(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
-		if r.Header.Get("Idempotency-Key") != "helivanta-password-recovery-"+id || body.Subject != "Recover your Helivanta password" || len(body.To) != 1 || body.To[0] != "owner@example.test" {
+		if r.Header.Get("Idempotency-Key") != "helivanta-password-recovery-"+id || body.Subject != "Reset your Helivanta password" || len(body.To) != 1 || body.To[0] != "owner@example.test" {
 			t.Fatal("wrong recovery delivery binding")
 		}
 		for _, content := range []string{body.Text, body.HTML} {
-			for _, want := range []string{"12345678", "10 minutes", "five attempts", "3 codes per hour", "10 per 24 hours", "two-step verification"} {
+			if !hasClosing(content) {
+				t.Fatal("missing closing line")
+			}
+			for _, want := range []string{"12345678", "10 minutes", "two-step verification"} {
 				if !strings.Contains(content, want) {
 					t.Fatalf("missing recovery notice %q", want)
 				}

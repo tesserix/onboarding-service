@@ -37,8 +37,10 @@ func TestResendUsesMountedKeyNativeCodeFragmentAndEscapedContent(t *testing.T) {
 		}
 		html := body["html"].(string)
 		for _, content := range []string{html, body["text"].(string)} {
-			if !strings.Contains(content, "expires after 1 hour") || !strings.Contains(content, "3 emails per hour and 10 per 24 hours") || !strings.Contains(content, "verified") || !strings.Contains(content, "Across workspaces") || !strings.Contains(content, "30 per 24 hours") {
-				t.Fatal("mail omitted expiry or resend limits")
+			// onboarding#49: expiry and the closing line only; limits are told
+			// on refusal, in the product.
+			if !strings.Contains(content, "expires in 1 hour") || !strings.Contains(content, "Hospital") || !hasClosing(content) || strings.Contains(content, "per hour") {
+				t.Fatal("mail omitted expiry, carried limits, or lost the frame")
 			}
 		}
 		if strings.Contains(html, "<script>") || !strings.Contains(html, "&lt;script&gt;") || !strings.Contains(html, "https://helivanta.app/signup/verify#") || !strings.Contains(html, "phase=email") || !strings.Contains(html, "code=native-code") {

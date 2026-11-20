@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -112,6 +114,9 @@ func (s *Service) retainPasswordRecoveryOutcome(ctx context.Context, op store.Pa
 	if !evidence.ChangedAt.IsZero() {
 		op.NativeChangedAt = &evidence.ChangedAt
 	}
+	if state == "applied" {
+		s.notifyPasswordChanged(recordCtx, op, recipient, evidence.ChangedAt)
+	}
 	return s.passwordRecoveryReceipt(ctx, op, recipient, org, browser)
 }
 
@@ -159,4 +164,27 @@ func (s *Service) passwordRecoveryReceipt(ctx context.Context, op store.Password
 		return empty, ErrUnavailable
 	}
 	return customercontract.PasswordRecoveryResult{State: op.State, CommandID: op.ID.String()}, nil
+}
+
+// notifyPasswordChanged sends Helivanta's own "your password was changed"
+// notice after a real change (onboarding#51); Zitadel's instance notice is
+// turned off per organisation. Best effort: the credential is already
+// changed and recorded, so a mail failure is logged, never surfaced as a
+// failed recovery. The operation id keys the send, so a retried completion
+// cannot mail twice.
+func (s *Service) notifyPasswordChanged(ctx context.Context, op store.PasswordRecoveryOperation, recipient store.PasswordRecoveryRecipient, at time.Time) {
+	if s.signupMail == nil {
+		return
+	}
+	workspace := "your Helivanta workspace"
+	if organisation, err := s.store.Organization(ctx, recipient.TenantID); err == nil && strings.TrimSpace(organisation.Name) != "" {
+		workspace = organisation.Name
+	}
+	if _, err := s.signupMail.SendPasswordChanged(ctx, op.ID, recipient.Email, workspace, at); err != nil {
+		logger := s.log
+		if logger == nil {
+			logger = slog.Default()
+		}
+		logger.WarnContext(ctx, "password changed notice not sent", "operation", op.ID, "err", err)
+	}
 }

@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"html/template"
 	"io"
 	"net/http"
 	"net/mail"
@@ -43,24 +42,35 @@ func New(keyFile, from string, transport http.RoundTripper) (*Client, error) {
 	return &Client{keyFile: keyFile, from: from, http: &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 
-var emailTemplate = template.Must(template.New("verification").Parse(`<!doctype html><html><body><h1>{{.Title}}</h1><p>Hello {{.Name}},</p><p>Continue setting up {{.Organization}} on Helivanta.</p><p><a href="{{.Link}}">{{.Title}}</a></p><p>This link expires after 1 hour. If it has expired, request a fresh link from workspace setup. Up to 3 emails per hour and 10 per 24 hours, per workspace, including initial delivery and password setup. Across workspaces, the same recipient is limited to 10 emails per hour and 30 per 24 hours. Once your email is verified, verification emails stop.</p><p>If you did not request this, you can ignore this email.</p></body></html>`))
-
 // Send returns provider acceptance evidence, not an assertion of inbox delivery.
 func (c *Client) Send(ctx context.Context, message Message) (string, error) {
 	address, err := mail.ParseAddress(message.Email)
 	if err != nil || address.Name != "" || address.Address != message.Email || len(message.Email) > 200 || !sourceID.MatchString(message.UserID) || message.Code == "" || len(message.Code) > 20 || strings.ContainsFunc(message.Code, unicode.IsControl) || (message.Phase != "email" && message.Phase != "password") {
 		return "", ErrUnavailable
 	}
-	title := "Verify your email address"
-	if message.Phase == "password" {
-		title = "Set your password"
-	}
 	link := url.URL{Scheme: "https", Host: "helivanta.app", Path: "/signup/verify", Fragment: url.Values{"phase": {message.Phase}, "userId": {message.UserID}, "code": {message.Code}}.Encode()}
-	var html bytes.Buffer
-	if emailTemplate.Execute(&html, struct{ Title, Name, Organization, Link string }{title, message.Name, message.Organization, link.String()}) != nil {
-		return "", ErrUnavailable
+	// The email link opens the password form (helivanta#1763), so both phases
+	// say what the person will do next, not which native step this is.
+	body := content{
+		Subject:  "Verify your email for " + message.Organization,
+		Heading:  "Verify your email",
+		Greeting: greeting(message.Name),
+		Line:     "Confirm this is your email and set your password to finish setting up " + message.Organization + " on Helivanta.",
+		Button:   "Continue setup",
+		URL:      link.String(),
+		Expiry:   "This link expires in 1 hour.",
 	}
-	payload, err := json.Marshal(map[string]any{"from": "Helivanta <" + c.from + ">", "to": []string{message.Email}, "subject": title + " — Helivanta", "html": html.String(), "text": "Hello " + message.Name + ",\n\nContinue setting up " + message.Organization + " on Helivanta.\n\n" + link.String() + "\n\nThis link expires after 1 hour. If it has expired, request a fresh link from https://helivanta.app/signup. Up to 3 emails per hour and 10 per 24 hours, per workspace, including initial delivery and password setup. Across workspaces, the same recipient is limited to 10 emails per hour and 30 per 24 hours. Once your email is verified, verification emails stop.\n\nIf you did not request this, you can ignore this email."})
+	if message.Phase == "password" {
+		body.Subject = "Set your Helivanta password"
+		body.Heading = "Set your password"
+		body.Line = "Set a password for " + message.Organization + " on Helivanta."
+		body.Button = "Set password"
+	}
+	envelope, err := c.envelope(message.Email, body)
+	if err != nil {
+		return "", err
+	}
+	payload, err := json.Marshal(envelope)
 	if err != nil {
 		return "", ErrUnavailable
 	}

@@ -5,8 +5,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/tesserix/onboarding-service/api/internal/signupmail"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -84,7 +88,24 @@ func TestPasswordRecoveryCompletesNativeWriteOnceAndPreservesUncertainOutcomes(t
 			}))
 			defer native.Close()
 			svc.signupIdentity = zitadel.New(native.URL, zitadel.StaticToken("synthetic"), "platform", nil)
+			// onboarding#51: a real change sends Helivanta's own notice, once per
+			// operation; refusals and unconfirmed writes send nothing.
+			changedMails, changedKey := 0, ""
+			mailKey := t.TempDir() + "/key"
+			if err := os.WriteFile(mailKey, []byte("re_synthetic"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			mailer, mailErr := signupmail.New(mailKey, "onboarding@helivanta.app", mailTransport(func(r *http.Request) (*http.Response, error) {
+				changedMails++
+				changedKey = r.Header.Get("Idempotency-Key")
+				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"id":"synthetic-message"}`))}, nil
+			}))
+			if mailErr != nil {
+				t.Fatal(mailErr)
+			}
+			svc.signupMail = mailer
 			in := customercontract.PasswordRecoveryPassword{CommandID: uuid.Must(uuid.NewV7()).String(), ID: challenge.String(), BrowserHash: hex.EncodeToString(browser), Password: "synthetic-password"}
+			firstCommand := in.CommandID
 			if _, err := svc.CompletePasswordRecovery(t.Context(), in); !errors.Is(err, ErrConflict) || nativeWrites.Load() != 0 {
 				t.Fatal("password without prepared intent was dispatched", err)
 			}
@@ -145,6 +166,13 @@ func TestPasswordRecoveryCompletesNativeWriteOnceAndPreservesUncertainOutcomes(t
 				if _, err := svc.CompletePasswordRecovery(t.Context(), in); err == nil || nativeWrites.Load() != 1 {
 					t.Fatal("old proof or unresolved account admitted another password write", err)
 				}
+			}
+			wantMails := 0
+			if mode == "completed" || mode == "applied" {
+				wantMails = 1
+			}
+			if changedMails != wantMails || (wantMails == 1 && changedKey != "helivanta-password-changed:"+firstCommand) {
+				t.Fatalf("password-changed notices: %d (want %d), key %q", changedMails, wantMails, changedKey)
 			}
 			in.BrowserHash = hex.EncodeToString(recoveryCompletionHash("foreign"))
 			if _, err := svc.CompletePasswordRecovery(t.Context(), in); !errors.Is(err, ErrNotFound) {
