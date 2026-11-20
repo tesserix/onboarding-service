@@ -20,12 +20,18 @@ func (c *Client) SendPasswordRecovery(ctx context.Context, id, email, code strin
 			return "", ErrUnavailable
 		}
 	}
-	notice := "Enter this code in the browser where you requested password recovery. It expires after 10 minutes and allows five attempts. Up to 3 codes per hour and 10 per 24 hours per email. After verification, no further mail is sent for this challenge. Recovery does not disable two-step verification. If you did not request this, ignore this email and do not share the code."
-	payload, err := json.Marshal(map[string]any{
-		"from": "Helivanta <" + c.from + ">", "to": []string{email}, "subject": "Recover your Helivanta password",
-		"text": "Your Helivanta password recovery code is " + code + ".\n\n" + notice,
-		"html": "<!doctype html><html><body><h1>Recover your Helivanta password</h1><p>Your recovery code:</p><p><strong>" + code + "</strong></p><p>" + notice + "</p></body></html>",
+	envelope, err := c.envelope(email, content{
+		Subject: "Reset your Helivanta password",
+		Heading: "Reset your password",
+		Line:    "Enter this code in the browser where you asked to reset your password.",
+		Code:    code,
+		Expiry:  "It expires in 10 minutes.",
+		Note:    "Resetting your password does not turn off two-step verification. Don't share this code with anyone.",
 	})
+	if err != nil {
+		return "", err
+	}
+	payload, err := json.Marshal(envelope)
 	if err != nil {
 		return "", ErrUnavailable
 	}

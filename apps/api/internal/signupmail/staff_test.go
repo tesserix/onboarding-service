@@ -130,7 +130,7 @@ func TestStaffInvitationMailEscapesNamesAndRedactsDiagnostics(t *testing.T) {
 	if _, err := client.SendStaff(context.Background(), message); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(payload.HTML, "<script>") || strings.Contains(payload.HTML, message.WorkspaceName) || !strings.Contains(payload.Subject, "password") {
+	if strings.Contains(payload.HTML, "<script>") || strings.Contains(payload.HTML, message.WorkspaceName) || !strings.Contains(payload.Subject, "Set your password") {
 		t.Fatal("unsafe or wrong template")
 	}
 	for _, format := range []string{"%v", "%+v", "%#v"} {
