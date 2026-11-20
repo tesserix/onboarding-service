@@ -31,6 +31,8 @@ func fixtureHandler(next http.Handler, recovery bool, mfa ...bool) http.Handler 
 		read := r.Method == http.MethodPost && slices.Contains([]string{
 			"/internal/v1/customer-signups/identity-projection",
 			"/internal/v1/customer-signups/login-target",
+			// Helivanta's single sign-in card resolves accounts by email (#46).
+			"/internal/v1/customer-signups/login-targets",
 		}, r.URL.Path)
 		credential := recovery && r.Method == http.MethodPost && slices.Contains([]string{
 			"/internal/v1/customer-signups/password-recovery/start",
