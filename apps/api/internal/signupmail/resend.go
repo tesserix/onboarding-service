@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
@@ -44,7 +45,7 @@ func New(keyFile, from string, transport http.RoundTripper) (*Client, error) {
 // Send returns provider acceptance evidence, not an assertion of inbox delivery.
 func (c *Client) Send(ctx context.Context, message Message) (string, error) {
 	address, err := mail.ParseAddress(message.Email)
-	if err != nil || address.Name != "" || address.Address != message.Email || len(message.Email) > 200 || !sourceID.MatchString(message.UserID) || message.Code == "" || len(message.Code) > 20 || strings.ContainsFunc(message.Code, unicode.IsControl) || (message.Phase != "email" && message.Phase != "password") {
+	if err != nil || address.Name != "" || address.Address != message.Email || len(message.Email) > 200 || !sourceID.MatchString(message.UserID) || message.Code == "" || len(message.Code) > 20 || strings.ContainsFunc(message.Code, unicode.IsControl) || (message.Phase != "email" && message.Phase != "password") || message.Organization == "" || !mailText(message.Organization, 150) || !mailText(message.Name, 200) {
 		return "", ErrUnavailable
 	}
 	link := url.URL{Scheme: "https", Host: "helivanta.app", Path: "/signup/verify", Fragment: url.Values{"phase": {message.Phase}, "userId": {message.UserID}, "code": {message.Code}}.Encode()}
@@ -59,6 +60,7 @@ func (c *Client) Send(ctx context.Context, message Message) (string, error) {
 		Button:    "Continue setup",
 		URL:       link.String(),
 		Expiry:    "This link expires in 1 hour.",
+		Closing:   "Didn't sign up for Helivanta? You can ignore this email.",
 	}
 	if message.Phase == "password" {
 		body.Subject = "Set your password — Helivanta"
@@ -72,6 +74,15 @@ func (c *Client) Send(ctx context.Context, message Message) (string, error) {
 		return "", err
 	}
 	return c.sendPayload(ctx, framed)
+}
+
+// mailText bounds signup text before it reaches a subject or body
+// (helivanta#1858). customercontract already admits only such values; signup
+// is unauthenticated, so the sender checks again. The rune limits match the
+// contract (organisation 150, owner name 200), so a valid name in any script
+// is never refused here. An empty name only drops the greeting.
+func mailText(value string, maxRunes int) bool {
+	return utf8.ValidString(value) && strings.TrimSpace(value) == value && utf8.RuneCountInString(value) <= maxRunes && !strings.ContainsFunc(value, unicode.IsControl)
 }
 
 func (c *Client) sendPayload(ctx context.Context, mail framedMail) (string, error) {

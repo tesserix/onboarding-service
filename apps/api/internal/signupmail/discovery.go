@@ -26,6 +26,7 @@ func (c *Client) SendDiscovery(ctx context.Context, email, code string) (string,
 		Code:      code,
 		Expiry:    "It expires in 10 minutes.",
 		Note:      "Don't share this code with anyone.",
+		Closing:   "Didn't ask for this code? You can ignore this email.",
 	})
 	if err != nil {
 		return "", err

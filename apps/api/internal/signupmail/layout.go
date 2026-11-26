@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"html/template"
 	"strings"
+	"time"
 )
 
 // content is everything a Helivanta email may say (onboarding#49). Every
@@ -36,12 +37,15 @@ type content struct {
 	Code      string // shown instead of a button
 	Expiry    string // "This link expires in 1 hour."
 	Note      string // one optional extra sentence
+	// Closing tells the reader what to do if they didn't expect the mail, in
+	// that mail's terms (helivanta#1858). Security notices leave it empty: their
+	// body already says what to do, and "ignore this email" would contradict
+	// it. TestEveryEmailRendersThroughTheSharedLayout pins each template's line.
+	Closing string
 }
 
 // subjectSuffix ends every subject so inboxes group Helivanta mail.
 const subjectSuffix = " — Helivanta"
-
-const closing = "Didn't ask for this? You can ignore this email."
 
 // footerLine says why the mail arrived and who to ask; both parts carry it.
 const footerLine = "You're getting this email because of an action on your Helivanta account. Questions? Contact your organisation's administrator."
@@ -62,7 +66,7 @@ var layoutHTML = template.Must(template.New("layout").Parse(`<!doctype html><htm
 {{if .Button}}<tr><td style="padding:20px 32px 0 32px"><a href="{{.URL}}" style="display:inline-block;background:#0b1324;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;padding:12px 20px;border-radius:8px">{{.Button}}</a></td></tr>{{end}}
 <tr><td style="padding:16px 32px 0 32px;font-size:13px;line-height:1.5;color:#4a5568">{{.Expiry}}</td></tr>
 {{if .Note}}<tr><td style="padding:8px 32px 0 32px;font-size:13px;line-height:1.5;color:#4a5568">{{.Note}}</td></tr>{{end}}
-<tr><td style="padding:24px 32px 28px 32px;font-size:13px;line-height:1.5;color:#4a5568">{{.Closing}}</td></tr>
+{{if .Closing}}<tr><td style="padding:24px 32px 28px 32px;font-size:13px;line-height:1.5;color:#4a5568">{{.Closing}}</td></tr>{{else}}<tr><td style="height:28px;font-size:0;line-height:0">&nbsp;</td></tr>{{end}}
 </table>
 <p style="margin:16px 0 0 0;max-width:480px;font-size:13px;line-height:1.5;color:#4a5568">{{.Footer}}</p>
 <p style="margin:4px 0 0 0;font-size:13px;line-height:1.5;color:#4a5568">Helivanta &middot; <a href="https://helivanta.app" style="color:#2b4ee6;text-decoration:underline">helivanta.app</a></p>
@@ -78,8 +82,8 @@ func render(c content) (string, string, error) {
 	var html bytes.Buffer
 	view := struct {
 		content
-		Closing, Footer string
-	}{c, closing, footerLine}
+		Footer string
+	}{c, footerLine}
 	if err := layoutHTML.Execute(&html, view); err != nil {
 		return "", "", ErrUnavailable
 	}
@@ -100,7 +104,10 @@ func render(c content) (string, string, error) {
 	if c.Note != "" {
 		parts = append(parts, c.Note)
 	}
-	parts = append(parts, closing, footerLine, "Helivanta · https://helivanta.app")
+	if c.Closing != "" {
+		parts = append(parts, c.Closing)
+	}
+	parts = append(parts, footerLine, "Helivanta · https://helivanta.app")
 	return html.String(), strings.Join(parts, "\n\n"), nil
 }
 
@@ -120,6 +127,21 @@ func (c *Client) frame(to string, body content) (framedMail, error) {
 		return framedMail{}, ErrUnavailable
 	}
 	return framedMail{payload: payload}, nil
+}
+
+// ist is India Standard Time. India keeps no daylight saving, so the fixed
+// offset is exact; tenants carry no timezone yet (helivanta#1858).
+var ist = time.FixedZone("IST", 5*60*60+30*60)
+
+// localTime reads "26 Nov 2026 at 14:05 IST (08:35 UTC)". The bracket names the
+// UTC date too when it falls on another day, so it never implies the wrong one.
+func localTime(at time.Time) string {
+	local, utc := at.In(ist), at.UTC()
+	bracket := utc.Format("15:04")
+	if utc.Day() != local.Day() {
+		bracket = utc.Format("02 Jan 15:04")
+	}
+	return local.Format("02 Jan 2006 at 15:04 MST") + " (" + bracket + " UTC)"
 }
 
 func greeting(name string) string {

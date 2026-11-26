@@ -33,7 +33,7 @@ func TestPasswordRecoveryMailIsPurposeBoundAndDeliveryIdempotent(t *testing.T) {
 			t.Fatal("wrong recovery delivery binding")
 		}
 		for _, content := range []string{body.Text, body.HTML} {
-			if !hasClosing(content) {
+			if !hasClosing(content, recoveryClosing) {
 				t.Fatal("missing closing line")
 			}
 			for _, want := range []string{"12345678", "10 minutes", "two-step verification"} {

@@ -27,6 +27,7 @@ func (c *Client) SendPasswordRecovery(ctx context.Context, id, email, code strin
 		Code:      code,
 		Expiry:    "It expires in 10 minutes.",
 		Note:      "Resetting your password does not turn off two-step verification. Don't share this code with anyone.",
+		Closing:   "Didn't ask to reset your password? You can ignore this email. Your password stays the same.",
 	})
 	if err != nil {
 		return "", err

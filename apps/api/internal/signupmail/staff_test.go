@@ -81,7 +81,7 @@ func TestStaffInvitationMailUsesPrivateFragmentAndStableDispatch(t *testing.T) {
 	if parsed.Host != "helivanta.app" || parsed.Path != "/staff/accept" || parsed.RawQuery != "" || fragment.Get("ticket") != message.Ticket || fragment.Get("code") != message.Code || fragment.Get("phase") != "email" || fragment.Get("invitation") != message.InvitationID.String() {
 		t.Fatal("invalid recipient link")
 	}
-	if !strings.Contains(payload.Text, "13 Nov 2026 01:00 UTC") || !strings.Contains(payload.Text, message.WorkspaceName) {
+	if !strings.Contains(payload.Text, "This link expires 13 Nov 2026 at 06:30 IST (01:00 UTC).") || !strings.Contains(payload.Text, message.WorkspaceName) {
 		t.Fatal("missing workspace or exact expiry")
 	}
 }

@@ -52,6 +52,7 @@ func TestEveryEmailRendersThroughTheSharedLayout(t *testing.T) {
 		send               func() error
 		subject, preheader string
 		code               string // shown instead of a button, or empty
+		closing            string // helivanta#1858: this mail's own line, or none
 	}
 	// Keyed by the *Client method that sends it: every exported Send method
 	// must appear here, so a new email cannot skip these frame checks.
@@ -60,28 +61,28 @@ func TestEveryEmailRendersThroughTheSharedLayout(t *testing.T) {
 			{"verify", func() error {
 				_, e := c.Send(ctx, Message{Email: "o@example.test", Name: "Priya", Organization: "City Hospital", UserID: "owner-1", Code: "code-1", Phase: "email"})
 				return e
-			}, "Verify your email for City Hospital — Helivanta", "Confirm your email to finish setting up City Hospital.", ""},
+			}, "Verify your email for City Hospital — Helivanta", "Confirm your email to finish setting up City Hospital.", "", signupClosing},
 			{"password", func() error {
 				_, e := c.Send(ctx, Message{Email: "o@example.test", Name: "Priya", Organization: "City Hospital", UserID: "owner-1", Code: "code-2", Phase: "password"})
 				return e
-			}, "Set your password — Helivanta", "Set a password to finish setting up City Hospital.", ""},
+			}, "Set your password — Helivanta", "Set a password to finish setting up City Hospital.", "", signupClosing},
 		},
 		"SendDiscovery": {{"sign-in code", func() error { _, e := c.SendDiscovery(ctx, "o@example.test", "12345678"); return e },
-			"Your sign-in code — Helivanta", "Enter this code to sign in. It expires in 10 minutes.", "12345678"}},
+			"Your sign-in code — Helivanta", "Enter this code to sign in. It expires in 10 minutes.", "12345678", "Didn't ask for this code? You can ignore this email."}},
 		"SendPasswordRecovery": {{"recovery", func() error {
 			_, e := c.SendPasswordRecovery(ctx, uuid.Must(uuid.NewV7()).String(), "o@example.test", "87654321")
 			return e
-		}, "Reset your password — Helivanta", "Enter this code to reset your password. It expires in 10 minutes.", "87654321"}},
+		}, "Reset your password — Helivanta", "Enter this code to reset your password. It expires in 10 minutes.", "87654321", recoveryClosing}},
 		"SendStaff": {
 			{"staff", func() error { _, e := c.SendStaff(ctx, staff); return e },
-				"You're invited to Example Hospital — Helivanta", "Accept your invite to join Example Hospital on Helivanta.", ""},
+				"You're invited to Example Hospital — Helivanta", "Accept your invite to join Example Hospital on Helivanta.", "", staffClosing},
 			{"staff password", func() error { _, e := c.SendStaff(ctx, staffPassword); return e },
-				"Set your password for Example Hospital — Helivanta", "Set your password to finish joining Example Hospital.", ""},
+				"Set your password for Example Hospital — Helivanta", "Set your password to finish joining Example Hospital.", "", staffClosing},
 		},
 		"SendPasswordChanged": {{"changed", func() error {
 			_, e := c.SendPasswordChanged(ctx, uuid.New(), "o@example.test", "City Hospital", time.Now())
 			return e
-		}, "Your password was changed — Helivanta", "If this wasn't you, reset your password now.", ""}},
+		}, "Your password was changed — Helivanta", "If this wasn't you, reset your password now.", "", ""}},
 	}
 	client := reflect.TypeOf(c)
 	for i := range client.NumMethod() {
@@ -113,7 +114,6 @@ func TestEveryEmailRendersThroughTheSharedLayout(t *testing.T) {
 			`<img src="https://helivanta.app/email/helivanta-lockup.png" width="160" height="41" alt="Helivanta" style="display:block;border:0;outline:none;text-decoration:none;height:auto;width:160px">`,
 			`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border:1px solid #dbe2ec;`,
 			"background:#f6f8fb", "color:#0b1324",
-			template.HTMLEscapeString(closing),
 			`color:#4a5568">` + template.HTMLEscapeString(footerLine) + "</p>",
 			`Helivanta &middot; <a href="https://helivanta.app" style="color:#2b4ee6`,
 		} {
@@ -139,8 +139,20 @@ func TestEveryEmailRendersThroughTheSharedLayout(t *testing.T) {
 		if strings.Contains(m.Text, want.preheader) {
 			t.Fatalf("%s: preheader leaked into the text part", name)
 		}
-		if !strings.HasSuffix(m.Text, closing+"\n\n"+footerLine+"\n\nHelivanta · https://helivanta.app") || strings.Contains(m.Text, "<") || strings.Contains(m.Text, "&zwnj;") || strings.Contains(m.Text, "&middot;") {
+		tail := footerLine + "\n\nHelivanta · https://helivanta.app"
+		if want.closing != "" {
+			tail = want.closing + "\n\n" + tail
+		}
+		if !strings.HasSuffix(m.Text, tail) || strings.Contains(m.Text, "<") || strings.Contains(m.Text, "&zwnj;") || strings.Contains(m.Text, "&middot;") {
 			t.Fatalf("%s: text part lacks the closing and footer lines or carries markup", name)
+		}
+		// Each mail closes in its own words; a security notice has no "ignore"
+		// line, because its body says what to do instead.
+		if want.closing != "" && !strings.Contains(m.HTML, `color:#4a5568">`+template.HTMLEscapeString(want.closing)+"</td></tr>") {
+			t.Fatalf("%s: html lacks the closing line %q", name, want.closing)
+		}
+		if want.closing == "" && (strings.Contains(m.Text, "ignore this email") || strings.Contains(m.HTML, "ignore this email")) {
+			t.Fatalf("%s: security notice tells the reader to ignore it", name)
 		}
 		if strings.Count(m.HTML, "<h1") != 0 || strings.Contains(m.Text, "per hour") || strings.Contains(m.HTML, "per hour") {
 			t.Fatalf("%s: template-local markup or rate limits leaked", name)
@@ -210,7 +222,46 @@ func TestLayoutRefusesIncompleteContent(t *testing.T) {
 	}
 }
 
-// hasClosing accepts the shared closing line in either part's encoding.
-func hasClosing(part string) bool {
-	return strings.Contains(part, closing) || strings.Contains(part, template.HTMLEscapeString(closing))
+const (
+	signupClosing   = "Didn't sign up for Helivanta? You can ignore this email."
+	recoveryClosing = "Didn't ask to reset your password? You can ignore this email. Your password stays the same."
+	staffClosing    = "Not expecting this invite? You can ignore this email."
+)
+
+// hasClosing accepts a closing line in either part's encoding.
+func hasClosing(part, line string) bool {
+	return strings.Contains(part, line) || strings.Contains(part, template.HTMLEscapeString(line))
+}
+
+// helivanta#1858: times read in IST with UTC in brackets, and the bracket
+// names the UTC day when it differs.
+func TestLocalTimeShowsISTWithUTC(t *testing.T) {
+	for at, want := range map[time.Time]string{
+		time.Date(2026, 11, 26, 8, 35, 0, 0, time.UTC):                    "26 Nov 2026 at 14:05 IST (08:35 UTC)",
+		time.Date(2026, 11, 26, 20, 0, 0, 0, time.UTC):                    "27 Nov 2026 at 01:30 IST (26 Nov 20:00 UTC)",
+		time.Date(2026, 12, 31, 19, 0, 0, 0, time.UTC):                    "01 Jan 2027 at 00:30 IST (31 Dec 19:00 UTC)",
+		time.Date(2026, 11, 26, 3, 0, 0, 0, time.FixedZone("x", -5*3600)): "26 Nov 2026 at 13:30 IST (08:00 UTC)",
+	} {
+		if got := localTime(at); got != want {
+			t.Fatalf("localTime(%v) = %q, want %q", at, got, want)
+		}
+	}
+}
+
+// helivanta#1858: the password-changed notice says when, in IST with UTC.
+func TestPasswordChangedNoticeShowsLocalTime(t *testing.T) {
+	var sent struct{ HTML, Text string }
+	c := staffTestClient(t, transport(func(r *http.Request) (*http.Response, error) {
+		if err := json.NewDecoder(r.Body).Decode(&sent); err != nil {
+			t.Fatal(err)
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"id":"m"}`))}, nil
+	}))
+	if _, err := c.SendPasswordChanged(t.Context(), uuid.New(), "o@example.test", "City Hospital", time.Date(2026, 11, 26, 8, 35, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	want := "The password for City Hospital was changed on 26 Nov 2026 at 14:05 IST (08:35 UTC)."
+	if !strings.Contains(sent.Text, want) || !strings.Contains(sent.HTML, template.HTMLEscapeString(want)) {
+		t.Fatalf("notice lacks %q", want)
+	}
 }

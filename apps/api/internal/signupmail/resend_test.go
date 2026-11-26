@@ -39,7 +39,7 @@ func TestResendUsesMountedKeyNativeCodeFragmentAndEscapedContent(t *testing.T) {
 		for _, content := range []string{html, body["text"].(string)} {
 			// onboarding#49: expiry and the closing line only; limits are told
 			// on refusal, in the product.
-			if !strings.Contains(content, "expires in 1 hour") || !strings.Contains(content, "Hospital") || !hasClosing(content) || strings.Contains(content, "per hour") {
+			if !strings.Contains(content, "expires in 1 hour") || !strings.Contains(content, "Hospital") || !hasClosing(content, signupClosing) || strings.Contains(content, "per hour") {
 				t.Fatal("mail omitted expiry, carried limits, or lost the frame")
 			}
 		}
@@ -68,7 +68,7 @@ func TestResendFailuresNeverExposeProviderBodiesOrSecrets(t *testing.T) {
 			client.http.Transport = transport(func(*http.Request) (*http.Response, error) {
 				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(response))}, nil
 			})
-			if _, err := client.Send(t.Context(), Message{Email: "owner@example.test", UserID: "owner-test", Code: "native-code", Phase: "password"}); !errors.Is(err, ErrUnavailable) {
+			if _, err := client.Send(t.Context(), Message{Email: "owner@example.test", Organization: "City Hospital", UserID: "owner-test", Code: "native-code", Phase: "password"}); !errors.Is(err, ErrUnavailable) {
 				t.Fatalf("malformed provider acceptance: %v", err)
 			}
 		})
@@ -121,7 +121,7 @@ func TestResendReadsRotatedKeyAndSanitizesProviderRefusal(t *testing.T) {
 		ids = append(ids, r.Header.Get("Idempotency-Key"))
 		return &http.Response{StatusCode: 429, Body: io.NopCloser(strings.NewReader(`{"error":"sensitive-provider-body"}`))}, nil
 	})
-	message := Message{Email: "owner@example.test", UserID: "owner-test", Code: "native-code", Phase: "email"}
+	message := Message{Email: "owner@example.test", Organization: "City Hospital", UserID: "owner-test", Code: "native-code", Phase: "email"}
 	for _, key := range []string{"re_first", "re_second"} {
 		if err := os.WriteFile(file, []byte(key), 0600); err != nil {
 			t.Fatal(err)
@@ -138,5 +138,55 @@ func TestResendReadsRotatedKeyAndSanitizesProviderRefusal(t *testing.T) {
 	}
 	if _, err := client.Send(t.Context(), message); err != ErrUnavailable || len(keys) != 2 {
 		t.Fatal("invalid mounted key reached provider")
+	}
+}
+
+// helivanta#1858: signup's organisation and owner name reach the subject and
+// body, so the sender refuses over-long, padded or control-character values
+// before the provider, at the contract's rune limits; a long name in another
+// script still sends.
+func TestResendBoundsSignupText(t *testing.T) {
+	keyFile := t.TempDir() + "/api-key"
+	if err := os.WriteFile(keyFile, []byte("re_synthetic_key"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	client, err := New(keyFile, "onboarding@helivanta.app", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls int
+	client.http.Transport = transport(func(*http.Request) (*http.Response, error) {
+		calls++
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"id":"m"}`))}, nil
+	})
+	base := Message{Email: "owner@example.test", Name: "Priya", Organization: "City Hospital", UserID: "owner-test", Code: "native-code", Phase: "email"}
+	for name, edit := range map[string]func(*Message){
+		"no organisation":       func(m *Message) { m.Organization = "" },
+		"organisation 151":      func(m *Message) { m.Organization = strings.Repeat("a", 151) },
+		"organisation newline":  func(m *Message) { m.Organization = "City\r\nBcc: x@y.test" },
+		"organisation control":  func(m *Message) { m.Organization = "City\x00Hospital" },
+		"organisation padded":   func(m *Message) { m.Organization = " City Hospital" },
+		"organisation not utf8": func(m *Message) { m.Organization = "City \xff" },
+		"name 201":              func(m *Message) { m.Name = strings.Repeat("a", 201) },
+		"name tab":              func(m *Message) { m.Name = "Priya\tAdmin" },
+	} {
+		m := base
+		edit(&m)
+		if _, err := client.Send(t.Context(), m); !errors.Is(err, ErrUnavailable) || calls != 0 {
+			t.Fatalf("%s: sent or wrong error (%v, %d calls)", name, err, calls)
+		}
+	}
+	for name, edit := range map[string]func(*Message){
+		"limits in Devanagari": func(m *Message) { m.Organization, m.Name = strings.Repeat("अ", 150), strings.Repeat("प", 200) },
+		"no name":              func(m *Message) { m.Name = "" },
+	} {
+		m := base
+		edit(&m)
+		if _, err := client.Send(t.Context(), m); err != nil {
+			t.Fatalf("%s: refused: %v", name, err)
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("want 2 sends, got %d", calls)
 	}
 }
