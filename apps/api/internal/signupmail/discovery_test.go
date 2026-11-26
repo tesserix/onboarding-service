@@ -19,7 +19,7 @@ func TestDiscoveryMailContainsOnlyCodeAndBoundedExpiry(t *testing.T) {
 		if json.NewDecoder(r.Body).Decode(&body) != nil {
 			t.Fatal("bad payload")
 		}
-		if r.Header.Get("Authorization") != "Bearer re_synthetic" || body["subject"] != "Your Helivanta sign-in code" {
+		if r.Header.Get("Authorization") != "Bearer re_synthetic" || body["subject"] != "Your sign-in code — Helivanta" {
 			t.Fatal("wrong message")
 		}
 		for _, field := range []string{"text", "html"} {

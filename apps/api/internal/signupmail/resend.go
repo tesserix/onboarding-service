@@ -1,4 +1,3 @@
-// Package signupmail sends native identity links through Helivanta's email provider.
 package signupmail
 
 import (
@@ -52,36 +51,35 @@ func (c *Client) Send(ctx context.Context, message Message) (string, error) {
 	// The email link opens the password form (helivanta#1763), so both phases
 	// say what the person will do next, not which native step this is.
 	body := content{
-		Subject:  "Verify your email for " + message.Organization,
-		Heading:  "Verify your email",
-		Greeting: greeting(message.Name),
-		Line:     "Confirm this is your email and set your password to finish setting up " + message.Organization + " on Helivanta.",
-		Button:   "Continue setup",
-		URL:      link.String(),
-		Expiry:   "This link expires in 1 hour.",
+		Subject:   "Verify your email for " + message.Organization + " — Helivanta",
+		Preheader: "Confirm your email to finish setting up " + message.Organization + ".",
+		Heading:   "Verify your email",
+		Greeting:  greeting(message.Name),
+		Line:      "Confirm this is your email and set your password to finish setting up " + message.Organization + " on Helivanta.",
+		Button:    "Continue setup",
+		URL:       link.String(),
+		Expiry:    "This link expires in 1 hour.",
 	}
 	if message.Phase == "password" {
-		body.Subject = "Set your Helivanta password"
+		body.Subject = "Set your password — Helivanta"
+		body.Preheader = "Set a password to finish setting up " + message.Organization + "."
 		body.Heading = "Set your password"
 		body.Line = "Set a password for " + message.Organization + " on Helivanta."
 		body.Button = "Set password"
 	}
-	envelope, err := c.envelope(message.Email, body)
+	framed, err := c.frame(message.Email, body)
 	if err != nil {
 		return "", err
 	}
-	payload, err := json.Marshal(envelope)
-	if err != nil {
-		return "", ErrUnavailable
-	}
-	return c.sendPayload(ctx, payload)
+	return c.sendPayload(ctx, framed)
 }
 
-func (c *Client) sendPayload(ctx context.Context, payload []byte) (string, error) {
-	return c.sendPayloadWithKey(ctx, payload, uuid.NewString())
+func (c *Client) sendPayload(ctx context.Context, mail framedMail) (string, error) {
+	return c.sendPayloadWithKey(ctx, mail, uuid.NewString())
 }
 
-func (c *Client) sendPayloadWithKey(ctx context.Context, payload []byte, idempotencyKey string) (string, error) {
+// sendPayloadWithKey takes a framedMail, not bytes: only layout.go can make one.
+func (c *Client) sendPayloadWithKey(ctx context.Context, mail framedMail, idempotencyKey string) (string, error) {
 	file, err := os.Open(c.keyFile)
 	if err != nil {
 		return "", ErrUnavailable
@@ -92,7 +90,7 @@ func (c *Client) sendPayloadWithKey(ctx context.Context, payload []byte, idempot
 	if readErr != nil || closeErr != nil || len(raw) > 4096 || !strings.HasPrefix(key, "re_") || strings.ContainsFunc(key, unicode.IsSpace) || strings.ContainsFunc(key, unicode.IsControl) {
 		return "", ErrUnavailable
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.resend.com/emails", bytes.NewReader(payload))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.resend.com/emails", bytes.NewReader(mail.payload))
 	if err != nil {
 		return "", ErrUnavailable
 	}
