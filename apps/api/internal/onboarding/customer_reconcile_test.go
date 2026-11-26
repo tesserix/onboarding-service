@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	identity "github.com/tesserix/devai-sandbox-operator/operators/zitadel/api/v1alpha1"
@@ -50,7 +51,7 @@ func pendingCustomerReconcile(t *testing.T, kind customercontract.Kind) (*Servic
 			Owner: &identity.OrganizationInitialAdmin{GivenName: "Test", FamilyName: "Owner", Email: "owner@example.test"},
 		},
 	}
-	spec, err := json.Marshal(hospitalclaims.Spec{Product: "helivanta", TenantID: tenant.String(), DisplayName: row.Input.Name, InitialAdminUserID: row.OwnerSubject, InitialAdmin: row.Input.Owner})
+	spec, err := json.Marshal(hospitalclaims.Spec{Product: "helivanta", TenantID: tenant.String(), DisplayName: row.Input.Name, InitialAdminUserID: row.OwnerSubject, InitialAdmin: row.Input.Owner, ExternalInitialAdminEmail: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,6 +72,9 @@ func pendingCustomerReconcile(t *testing.T, kind customercontract.Kind) (*Servic
 func TestUnverifiedCustomerDoesNotWakeIdentity(t *testing.T) {
 	svc, kube, row, _ := pendingCustomerReconcile(t, customercontract.Hospital)
 	row.ReceiptVerified = false
+	// The setup mail was already accepted; only the wake-up is under test.
+	accepted := time.Now().UTC()
+	row.EmailAcceptedAt = &accepted
 	state, code := svc.deliverCustomer(t.Context(), row)
 	if state != "identity_requested" || code != "" {
 		t.Fatalf("state=%s code=%s", state, code)
@@ -167,6 +171,40 @@ func TestVerifiedCustomerCannotWakeForeignOwnerClaim(t *testing.T) {
 	for _, action := range kube.Actions() {
 		if action.GetVerb() == "patch" {
 			t.Fatal("foreign owner claim was modified")
+		}
+	}
+}
+
+// helivanta#1859: a new owner is reached only by Helivanta's mail. A claim
+// that would leave Zitadel to mail the owner goes to support, and no owner is
+// created while Helivanta's mail is not configured.
+func TestNewOwnerIsNeverLeftToZitadelMail(t *testing.T) {
+	svc, kube, row, name := pendingCustomerReconcile(t, customercontract.Hospital)
+	resource := schema.GroupVersionResource{Group: "identity.tesserix.app", Version: "v1alpha1", Resource: "zitadelorganizations"}
+	claim, err := kube.Resource(resource).Namespace("identity-operator").Get(t.Context(), name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = unstructured.SetNestedField(claim.Object, false, "spec", "externalInitialAdminEmail"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = kube.Resource(resource).Namespace("identity-operator").Update(t.Context(), claim, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if state, code := svc.deliverCustomer(t.Context(), row); state != "needs_support" || code != "" {
+		t.Fatalf("Zitadel-mailed owner proceeded: state=%s code=%s", state, code)
+	}
+
+	fresh := row
+	fresh.State = "recorded"
+	empty := fake.NewSimpleDynamicClient(runtime.NewScheme())
+	svc = &Service{hospitals: &HospitalConfig{Product: "helivanta", Claims: hospitalclaims.New(empty, "identity-operator")}}
+	if state, code := svc.deliverCustomer(t.Context(), fresh); state != "recorded" || code != "email_unavailable" {
+		t.Fatalf("owner created without Helivanta mail: state=%s code=%s", state, code)
+	}
+	for _, action := range empty.Actions() {
+		if action.GetVerb() == "create" {
+			t.Fatal("claim created without Helivanta mail")
 		}
 	}
 }

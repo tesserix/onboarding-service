@@ -71,6 +71,7 @@ func TestCustomerDeliveryCreatesOnePrivateClaimAndWaitsForNativeProof(t *testing
 	}))
 	t.Cleanup(native.Close)
 	svc.signupIdentity = zitadel.New(native.URL, zitadel.StaticToken("test-native-machine"), "test-platform", nil)
+	svc.signupMail = unusedSignupMail(t)
 	svc.hospitals = &HospitalConfig{Product: "helivanta", Claims: hospitalclaims.New(fake.NewSimpleDynamicClient(runtime.NewScheme()), "identity-operator")}
 	id := uuid.New()
 	hash := sha256.Sum256([]byte("test-receipt"))

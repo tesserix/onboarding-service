@@ -85,14 +85,6 @@ func (c *Client) SetSignupPassword(ctx context.Context, userID, code, password s
 	return err
 }
 
-// SendSignupPasswordLink asks native identity to deliver a setup code, never return it.
-func (c *Client) SendSignupPasswordLink(ctx context.Context, userID string) error {
-	if !identitySourceID.MatchString(userID) {
-		return ErrSignupProof
-	}
-	return c.signupCommand(ctx, "/v2/users/"+userID+"/password_reset", map[string]any{"sendLink": map[string]string{"urlTemplate": "https://helivanta.app/signup/verify#phase=password&userId={{.UserID}}&code={{.Code}}", "notificationType": "NOTIFICATION_TYPE_Email"}})
-}
-
 // SignupIdentity reads the current native binding rather than trusting an email or supplied subject.
 func (c *Client) SignupIdentity(ctx context.Context, orgID, userID, email string) (bool, error) {
 	if !identitySourceID.MatchString(orgID) || !identitySourceID.MatchString(userID) || email == "" {
@@ -188,12 +180,4 @@ func (c *Client) OtherSignupIdentity(ctx context.Context, email, expectedUserID 
 		}
 	}
 	return other, nil
-}
-
-// SendSignupEmailLink resends native verification for the expected signup subject.
-func (c *Client) SendSignupEmailLink(ctx context.Context, userID string) error {
-	if !identitySourceID.MatchString(userID) {
-		return ErrSignupProof
-	}
-	return c.signupCommand(ctx, "/v2/users/"+userID+"/email/send", map[string]any{"sendCode": map[string]string{"urlTemplate": "https://helivanta.app/signup/verify#phase=email&userId={{.UserID}}&code={{.Code}}"}})
 }

@@ -9,6 +9,7 @@ import (
 	identity "github.com/tesserix/devai-sandbox-operator/operators/zitadel/api/v1alpha1"
 	"github.com/tesserix/onboarding-service/api/customercontract"
 	"github.com/tesserix/onboarding-service/api/internal/hospitalclaims"
+	"github.com/tesserix/onboarding-service/api/internal/signupmail"
 	"github.com/tesserix/onboarding-service/api/internal/store"
 	"github.com/tesserix/onboarding-service/api/internal/zitadel"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -21,7 +22,14 @@ func TestPublicSignupAlwaysCreatesTenantOwnedIdentityWithoutGlobalEmailLookup(t 
 			calls := 0
 			native := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++; w.WriteHeader(503) }))
 			defer native.Close()
-			svc := &Service{signupIdentity: zitadel.New(native.URL, zitadel.StaticToken("synthetic"), "platform", nil), hospitals: &HospitalConfig{Product: "helivanta", Claims: hospitalclaims.New(fake.NewSimpleDynamicClient(runtime.NewScheme()), "identity-operator")}}
+			mail, err := signupmail.New("/unused-key", "onboarding@helivanta.app", mailTransport(func(*http.Request) (*http.Response, error) {
+				t.Fatal("creating the owner sent mail")
+				return nil, nil
+			}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			svc := &Service{signupMail: mail, signupIdentity: zitadel.New(native.URL, zitadel.StaticToken("synthetic"), "platform", nil), hospitals: &HospitalConfig{Product: "helivanta", Claims: hospitalclaims.New(fake.NewSimpleDynamicClient(runtime.NewScheme()), "identity-operator")}}
 			id := uuid.New()
 			tenant := customerTenantID(id.String())
 			row := store.CustomerSignup{ID: id, TenantID: tenant, ResourceID: uuid.Must(uuid.NewV7()), OwnerSubject: "owner-" + tenant.String(), State: state, Input: customercontract.Signup{Setup: customercontract.Setup{Name: "TEST Hospital", Kind: customercontract.Hospital, CountryCode: customercontract.India, StateCode: customercontract.Maharashtra}, Owner: &identity.OrganizationInitialAdmin{GivenName: "Test", FamilyName: "Owner", Email: "shared@example.test"}}}
