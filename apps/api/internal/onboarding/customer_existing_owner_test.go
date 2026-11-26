@@ -54,6 +54,7 @@ func TestNewCustomerCanContinueWithTheirOwnVerifiedNativeSignIn(t *testing.T) {
 	}))
 	t.Cleanup(native.Close)
 	svc.signupIdentity = zitadel.New(native.URL, zitadel.StaticToken("synthetic-native-token"), "platform", nil)
+	svc.signupMail = unusedSignupMail(t)
 	if err := svc.DeliverCustomers(t.Context(), time.Now().Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}

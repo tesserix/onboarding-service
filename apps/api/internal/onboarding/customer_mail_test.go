@@ -3,6 +3,7 @@ package onboarding
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"github.com/google/uuid"
 	identity "github.com/tesserix/devai-sandbox-operator/operators/zitadel/api/v1alpha1"
 	"github.com/tesserix/onboarding-service/api/customercontract"
@@ -159,4 +160,18 @@ func TestPublicVerificationResendIsANoOpAfterNativeVerification(t *testing.T) {
 			t.Fatalf("verified resend spent mail budget: %v", err)
 		}
 	}
+}
+
+// unusedSignupMail configures Helivanta's mail, which a new owner needs before
+// its claim is created (helivanta#1859), for tests whose step sends none.
+func unusedSignupMail(t *testing.T) *signupmail.Client {
+	t.Helper()
+	mail, err := signupmail.New("/unused-key", "onboarding@helivanta.app", mailTransport(func(*http.Request) (*http.Response, error) {
+		t.Error("this step sent mail")
+		return nil, errors.New("unexpected mail")
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return mail
 }
