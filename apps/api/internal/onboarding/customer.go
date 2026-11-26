@@ -234,14 +234,14 @@ func (s *Service) DeliverCustomer(ctx context.Context, id uuid.UUID, hash []byte
 	if claimErr != nil || claim.Spec.InitialAdminUserID != row.OwnerSubject || claim.Spec.TenantID != row.TenantID.String() {
 		return customercontract.Receipt{}, ErrUnavailable
 	}
-	if claim.Spec.ExternalInitialAdminEmail {
-		_, err = s.sendCustomerEmail(ctx, row, password && verified)
-	} else if password && verified {
-		err = s.signupIdentity.SendSignupPasswordLink(ctx, row.OwnerSubject)
-	} else {
-		err = s.signupIdentity.SendSignupEmailLink(ctx, row.OwnerSubject)
+	// Only Helivanta mails a Helivanta customer (helivanta#1859). A claim
+	// without external owner email would have had Zitadel send its own,
+	// Tesserix-branded mail; none exists in production (checked 2026-11-27),
+	// and refusing it here fails closed rather than falling back to Zitadel.
+	if !claim.Spec.ExternalInitialAdminEmail {
+		return customercontract.Receipt{}, ErrUnavailable
 	}
-	if err != nil {
+	if _, err = s.sendCustomerEmail(ctx, row, password && verified); err != nil {
 		return customercontract.Receipt{}, ErrUnavailable
 	}
 	return generic, nil
@@ -337,7 +337,13 @@ func (s *Service) deliverCustomer(ctx context.Context, row store.CustomerSignup)
 		return "needs_support", ""
 	}
 	if (row.State == "recorded" || row.State == "existing_account") && row.ExistingOwnerSubject == "" {
-		_, err := s.hospitals.Claims.Create(ctx, hospitalclaims.Spec{Product: "helivanta", TenantID: row.TenantID.String(), DisplayName: row.Input.Name, InitialAdminUserID: row.OwnerSubject, InitialAdmin: row.Input.Owner, ExternalInitialAdminEmail: s.signupMail != nil})
+		// Without Helivanta's mail the owner could only be reached by Zitadel's
+		// own mail, so no new owner is created until it is configured
+		// (helivanta#1859); the row stays recorded and is retried.
+		if s.signupMail == nil {
+			return row.State, "email_unavailable"
+		}
+		_, err := s.hospitals.Claims.Create(ctx, hospitalclaims.Spec{Product: "helivanta", TenantID: row.TenantID.String(), DisplayName: row.Input.Name, InitialAdminUserID: row.OwnerSubject, InitialAdmin: row.Input.Owner, ExternalInitialAdminEmail: true})
 		if errors.Is(err, hospitalclaims.ErrConflict) {
 			return "needs_support", ""
 		}
@@ -366,7 +372,11 @@ func (s *Service) deliverCustomer(ctx context.Context, row store.CustomerSignup)
 	if claim.Spec.InitialAdminUserID != customerOwner(row) || claim.Spec.TenantID != row.TenantID.String() || claim.Spec.Product != "helivanta" {
 		return "needs_support", ""
 	}
-	if claim.Spec.ExternalInitialAdminEmail {
+	if claim.Spec.InitialAdmin != nil {
+		// A new owner is reached only by Helivanta's mail (helivanta#1859).
+		if !claim.Spec.ExternalInitialAdminEmail {
+			return "needs_support", ""
+		}
 		if err = s.deliverInitialCustomerEmail(ctx, row); err != nil {
 			return row.State, "email_unavailable"
 		}

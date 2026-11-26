@@ -57,22 +57,6 @@ func TestSignupPasswordSetupNeverUsesCodeFreeAdministrativePasswordSetting(t *te
 	}
 }
 
-func TestSignupPasswordLinkReturnsToHelivantaWithoutReturningACode(t *testing.T) {
-	rec := newRecorder()
-	client := newClient(t, rec)
-	if err := client.SendSignupPasswordLink(t.Context(), "owner-test"); err != nil {
-		t.Fatal(err)
-	}
-	got := rec.find("POST", "/v2/users/owner-test/password_reset")
-	if got == nil || got.body["returnCode"] != nil {
-		t.Fatal("password link did not use native email delivery")
-	}
-	link, _ := got.body["sendLink"].(map[string]any)
-	if link["urlTemplate"] != "https://helivanta.app/signup/verify#phase=password&userId={{.UserID}}&code={{.Code}}" || link["notificationType"] != "NOTIFICATION_TYPE_Email" {
-		t.Fatal("password link escaped the Helivanta flow")
-	}
-}
-
 func TestSignupProofBindsTheExactActiveHumanHomeOrganizationAndEmail(t *testing.T) {
 	rec := newRecorder()
 	client := newClient(t, rec)
@@ -113,22 +97,6 @@ func TestExistingEmailIsNotUsedToAdoptAnotherPersonAsTenantOwner(t *testing.T) {
 	existing, err = client.OtherSignupIdentity(t.Context(), "owner@example.test", "owner-test")
 	if err != nil || existing {
 		t.Fatalf("new email refused: %v", err)
-	}
-}
-
-func TestSignupEmailResendUsesTheSameNativeVerificationScreen(t *testing.T) {
-	rec := newRecorder()
-	client := newClient(t, rec)
-	if err := client.SendSignupEmailLink(t.Context(), "owner-test"); err != nil {
-		t.Fatal(err)
-	}
-	got := rec.find("POST", "/v2/users/owner-test/email/send")
-	if got == nil || got.body["returnCode"] != nil {
-		t.Fatal("email resend bypassed native delivery")
-	}
-	send, _ := got.body["sendCode"].(map[string]any)
-	if send["urlTemplate"] != "https://helivanta.app/signup/verify#phase=email&userId={{.UserID}}&code={{.Code}}" {
-		t.Fatal("email resend did not return to Helivanta")
 	}
 }
 
