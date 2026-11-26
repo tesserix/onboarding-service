@@ -52,16 +52,18 @@ func (c *Client) Send(ctx context.Context, message Message) (string, error) {
 	// The email link opens the password form (helivanta#1763), so both phases
 	// say what the person will do next, not which native step this is.
 	body := content{
-		Subject:  "Verify your email for " + message.Organization,
-		Heading:  "Verify your email",
-		Greeting: greeting(message.Name),
-		Line:     "Confirm this is your email and set your password to finish setting up " + message.Organization + " on Helivanta.",
-		Button:   "Continue setup",
-		URL:      link.String(),
-		Expiry:   "This link expires in 1 hour.",
+		Subject:   "Verify your email for " + message.Organization + " — Helivanta",
+		Preheader: "Confirm your email to finish setting up " + message.Organization + ".",
+		Heading:   "Verify your email",
+		Greeting:  greeting(message.Name),
+		Line:      "Confirm this is your email and set your password to finish setting up " + message.Organization + " on Helivanta.",
+		Button:    "Continue setup",
+		URL:       link.String(),
+		Expiry:    "This link expires in 1 hour.",
 	}
 	if message.Phase == "password" {
-		body.Subject = "Set your Helivanta password"
+		body.Subject = "Set your password — Helivanta"
+		body.Preheader = "Set a password to finish setting up " + message.Organization + "."
 		body.Heading = "Set your password"
 		body.Line = "Set a password for " + message.Organization + " on Helivanta."
 		body.Button = "Set password"

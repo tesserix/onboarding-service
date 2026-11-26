@@ -21,12 +21,13 @@ func (c *Client) SendPasswordRecovery(ctx context.Context, id, email, code strin
 		}
 	}
 	envelope, err := c.envelope(email, content{
-		Subject: "Reset your Helivanta password",
-		Heading: "Reset your password",
-		Line:    "Enter this code in the browser where you asked to reset your password.",
-		Code:    code,
-		Expiry:  "It expires in 10 minutes.",
-		Note:    "Resetting your password does not turn off two-step verification. Don't share this code with anyone.",
+		Subject:   "Reset your password — Helivanta",
+		Preheader: "Enter this code to reset your password. It expires in 10 minutes.",
+		Heading:   "Reset your password",
+		Line:      "Enter this code in the browser where you asked to reset your password.",
+		Code:      code,
+		Expiry:    "It expires in 10 minutes.",
+		Note:      "Resetting your password does not turn off two-step verification. Don't share this code with anyone.",
 	})
 	if err != nil {
 		return "", err

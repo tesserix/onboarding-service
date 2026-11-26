@@ -22,13 +22,14 @@ func (c *Client) SendPasswordChanged(ctx context.Context, operationID uuid.UUID,
 		return "", ErrUnavailable
 	}
 	envelope, err := c.envelope(email, content{
-		Subject: "Your Helivanta password was changed",
-		Heading: "Your password was changed",
-		Line:    "The password for " + workspace + " was changed on " + at.UTC().Format("02 Jan 2006 at 15:04 MST") + ".",
-		Button:  "Reset password",
-		URL:     "https://helivanta.app/recover-password",
-		Expiry:  "If this was you, there's nothing to do.",
-		Note:    "If it wasn't, reset your password now and tell your administrator.",
+		Subject:   "Your password was changed — Helivanta",
+		Preheader: "If this wasn't you, reset your password now.",
+		Heading:   "Your password was changed",
+		Line:      "The password for " + workspace + " was changed on " + at.UTC().Format("02 Jan 2006 at 15:04 MST") + ".",
+		Button:    "Reset password",
+		URL:       "https://helivanta.app/recover-password",
+		Expiry:    "If this was you, there's nothing to do.",
+		Note:      "If it wasn't, reset your password now and tell your administrator.",
 	})
 	if err != nil {
 		return "", err

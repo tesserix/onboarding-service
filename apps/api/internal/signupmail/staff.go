@@ -34,25 +34,26 @@ func (c *Client) SendStaff(ctx context.Context, message StaffMessage) (string, e
 	if err != nil || email.Name != "" || email.Address != message.Email || len(message.Email) > 200 || ticketErr != nil || len(ticket) != 32 || message.InvitationID.Version() != 7 || message.Code == "" || len(message.Code) > 20 || strings.ContainsFunc(message.Code, unicode.IsControl) || !staffText(message.Name, 400) || !staffText(message.WorkspaceName, 200) || message.ExpiresAt.IsZero() {
 		return "", ErrUnavailable
 	}
-	heading, button := "You're invited to "+message.WorkspaceName, "Accept invite"
+	heading, button, preheader := "You're invited to "+message.WorkspaceName, "Accept invite", "Accept your invite to join "+message.WorkspaceName+" on Helivanta."
 	switch message.Phase {
 	case "email":
 	case "password":
-		heading, button = "Set your password for "+message.WorkspaceName, "Set password"
+		heading, button, preheader = "Set your password for "+message.WorkspaceName, "Set password", "Set your password to finish joining "+message.WorkspaceName+"."
 	default:
 		return "", ErrUnavailable
 	}
 	link := "https://helivanta.app/staff/accept#" + url.Values{"invitation": {message.InvitationID.String()}, "ticket": {message.Ticket}, "phase": {message.Phase}, "code": {message.Code}}.Encode()
 	expiry := message.ExpiresAt.UTC().Format("02 Jan 2006 15:04 MST")
 	envelope, err := c.envelope(message.Email, content{
-		Subject:  heading + " on Helivanta",
-		Heading:  heading,
-		Greeting: greeting(message.Name),
-		Line:     message.WorkspaceName + " has invited you to Helivanta.",
-		Button:   button,
-		URL:      link,
-		Expiry:   "This link expires " + expiry + ". Ask your administrator for another if it has expired.",
-		Note:     "Your administrator confirms your access after you join.",
+		Subject:   heading + " — Helivanta",
+		Preheader: preheader,
+		Heading:   heading,
+		Greeting:  greeting(message.Name),
+		Line:      message.WorkspaceName + " has invited you to Helivanta.",
+		Button:    button,
+		URL:       link,
+		Expiry:    "This link expires " + expiry + ". Ask your administrator for another if it has expired.",
+		Note:      "Your administrator confirms your access after you join.",
 	})
 	if err != nil {
 		return "", err

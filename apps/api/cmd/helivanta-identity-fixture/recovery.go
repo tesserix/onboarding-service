@@ -117,7 +117,7 @@ func (capture recoveryMailCapture) RoundTrip(r *http.Request) (*http.Response, e
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&message) != nil || decoder.Decode(new(any)) != io.EOF || message.From != "Helivanta <onboarding@helivanta.com>" || message.Subject != "Reset your Helivanta password" || len(message.To) != 1 || !slices.Contains([]string{"e2e-password-recovery-native-admin@helivanta.dev", "e2e-password-recovery-native-pharmacist@helivanta.dev"}, message.To[0]) {
+	if decoder.Decode(&message) != nil || decoder.Decode(new(any)) != io.EOF || message.From != "Helivanta <onboarding@helivanta.com>" || message.Subject != "Reset your password — Helivanta" || len(message.To) != 1 || !slices.Contains([]string{"e2e-password-recovery-native-admin@helivanta.dev", "e2e-password-recovery-native-pharmacist@helivanta.dev"}, message.To[0]) {
 		return nil, errFixtureMail
 	}
 	match := fixtureCode.FindStringSubmatch(message.Text)
