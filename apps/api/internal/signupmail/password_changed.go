@@ -2,7 +2,6 @@ package signupmail
 
 import (
 	"context"
-	"encoding/json"
 	"net/mail"
 	"strings"
 	"time"
@@ -21,7 +20,7 @@ func (c *Client) SendPasswordChanged(ctx context.Context, operationID uuid.UUID,
 	if err != nil || address.Name != "" || address.Address != email || len(email) > 200 || operationID == uuid.Nil || at.IsZero() || strings.TrimSpace(workspace) == "" || len(workspace) > 200 || strings.ContainsFunc(workspace, unicode.IsControl) {
 		return "", ErrUnavailable
 	}
-	envelope, err := c.envelope(email, content{
+	framed, err := c.frame(email, content{
 		Subject:   "Your password was changed — Helivanta",
 		Preheader: "If this wasn't you, reset your password now.",
 		Heading:   "Your password was changed",
@@ -34,9 +33,5 @@ func (c *Client) SendPasswordChanged(ctx context.Context, operationID uuid.UUID,
 	if err != nil {
 		return "", err
 	}
-	payload, err := json.Marshal(envelope)
-	if err != nil {
-		return "", ErrUnavailable
-	}
-	return c.sendPayloadWithKey(ctx, payload, "helivanta-password-changed:"+operationID.String())
+	return c.sendPayloadWithKey(ctx, framed, "helivanta-password-changed:"+operationID.String())
 }

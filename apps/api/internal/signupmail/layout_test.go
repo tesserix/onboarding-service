@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"html/template"
 	"io"
+	"maps"
 	"math"
 	"net/http"
 	"os"
+	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -45,40 +48,60 @@ func TestEveryEmailRendersThroughTheSharedLayout(t *testing.T) {
 	staffPassword := staffMessageFixture()
 	staffPassword.Phase = "password"
 	type mail struct {
+		name               string
 		send               func() error
 		subject, preheader string
 		code               string // shown instead of a button, or empty
 	}
-	for name, want := range map[string]mail{
-		"verify": {func() error {
-			_, e := c.Send(ctx, Message{Email: "o@example.test", Name: "Priya", Organization: "City Hospital", UserID: "owner-1", Code: "code-1", Phase: "email"})
-			return e
-		}, "Verify your email for City Hospital — Helivanta", "Confirm your email to finish setting up City Hospital.", ""},
-		"password": {func() error {
-			_, e := c.Send(ctx, Message{Email: "o@example.test", Name: "Priya", Organization: "City Hospital", UserID: "owner-1", Code: "code-2", Phase: "password"})
-			return e
-		}, "Set your password — Helivanta", "Set a password to finish setting up City Hospital.", ""},
-		"sign-in code": {func() error { _, e := c.SendDiscovery(ctx, "o@example.test", "12345678"); return e },
-			"Your sign-in code — Helivanta", "Enter this code to sign in. It expires in 10 minutes.", "12345678"},
-		"recovery": {func() error {
+	// Keyed by the *Client method that sends it: every exported Send method
+	// must appear here, so a new email cannot skip these frame checks.
+	cases := map[string][]mail{
+		"Send": {
+			{"verify", func() error {
+				_, e := c.Send(ctx, Message{Email: "o@example.test", Name: "Priya", Organization: "City Hospital", UserID: "owner-1", Code: "code-1", Phase: "email"})
+				return e
+			}, "Verify your email for City Hospital — Helivanta", "Confirm your email to finish setting up City Hospital.", ""},
+			{"password", func() error {
+				_, e := c.Send(ctx, Message{Email: "o@example.test", Name: "Priya", Organization: "City Hospital", UserID: "owner-1", Code: "code-2", Phase: "password"})
+				return e
+			}, "Set your password — Helivanta", "Set a password to finish setting up City Hospital.", ""},
+		},
+		"SendDiscovery": {{"sign-in code", func() error { _, e := c.SendDiscovery(ctx, "o@example.test", "12345678"); return e },
+			"Your sign-in code — Helivanta", "Enter this code to sign in. It expires in 10 minutes.", "12345678"}},
+		"SendPasswordRecovery": {{"recovery", func() error {
 			_, e := c.SendPasswordRecovery(ctx, uuid.Must(uuid.NewV7()).String(), "o@example.test", "87654321")
 			return e
-		}, "Reset your password — Helivanta", "Enter this code to reset your password. It expires in 10 minutes.", "87654321"},
-		"staff": {func() error { _, e := c.SendStaff(ctx, staff); return e },
-			"You're invited to Example Hospital — Helivanta", "Accept your invite to join Example Hospital on Helivanta.", ""},
-		"staff password": {func() error { _, e := c.SendStaff(ctx, staffPassword); return e },
-			"Set your password for Example Hospital — Helivanta", "Set your password to finish joining Example Hospital.", ""},
-		"changed": {func() error {
+		}, "Reset your password — Helivanta", "Enter this code to reset your password. It expires in 10 minutes.", "87654321"}},
+		"SendStaff": {
+			{"staff", func() error { _, e := c.SendStaff(ctx, staff); return e },
+				"You're invited to Example Hospital — Helivanta", "Accept your invite to join Example Hospital on Helivanta.", ""},
+			{"staff password", func() error { _, e := c.SendStaff(ctx, staffPassword); return e },
+				"Set your password for Example Hospital — Helivanta", "Set your password to finish joining Example Hospital.", ""},
+		},
+		"SendPasswordChanged": {{"changed", func() error {
 			_, e := c.SendPasswordChanged(ctx, uuid.New(), "o@example.test", "City Hospital", time.Now())
 			return e
-		}, "Your password was changed — Helivanta", "If this wasn't you, reset your password now.", ""},
-	} {
+		}, "Your password was changed — Helivanta", "If this wasn't you, reset your password now.", ""}},
+	}
+	client := reflect.TypeOf(c)
+	for i := range client.NumMethod() {
+		if method := client.Method(i).Name; strings.HasPrefix(method, "Send") && len(cases[method]) == 0 {
+			t.Fatalf("(*Client).%s sends email but has no entry in TestEveryEmailRendersThroughTheSharedLayout: add its mails to the cases table in layout_test.go", method)
+		}
+	}
+	for method := range cases {
+		if _, ok := client.MethodByName(method); !ok || !strings.HasPrefix(method, "Send") {
+			t.Fatalf("cases table names %q, which is not a Send method of *Client", method)
+		}
+	}
+	for _, want := range slices.Concat(slices.Collect(maps.Values(cases))...) {
+		name := want.name
 		mails = nil
 		if err := want.send(); err != nil || len(mails) != 1 {
 			t.Fatalf("%s: %v (%d mails)", name, err, len(mails))
 		}
 		m := mails[0]
-		if m.Subject != want.subject {
+		if m.Subject != want.subject || !strings.HasSuffix(m.Subject, " — Helivanta") {
 			t.Fatalf("%s: subject %q", name, m.Subject)
 		}
 		// helivanta#1857: head block, lockup, fluid card, accessible footer.
@@ -169,17 +192,17 @@ func TestFrameColoursMeetAAContrast(t *testing.T) {
 }
 
 func TestLayoutRefusesIncompleteContent(t *testing.T) {
-	if _, _, err := render(content{Subject: "s", Preheader: "p", Heading: "h", Line: "l", Code: "1", Expiry: "e"}); err != nil {
+	if _, _, err := render(content{Subject: "s — Helivanta", Preheader: "p", Heading: "h", Line: "l", Code: "1", Expiry: "e"}); err != nil {
 		t.Fatal("complete content refused")
 	}
 	for name, bad := range map[string]content{
-		"no expiry":         {Subject: "s", Preheader: "p", Heading: "h", Line: "l", Code: "1"},
-		"button w/o url":    {Subject: "s", Preheader: "p", Heading: "h", Line: "l", Button: "Go", Expiry: "e"},
-		"neither":           {Subject: "s", Preheader: "p", Heading: "h", Line: "l", Expiry: "e"},
-		"newline subject":   {Subject: "s\r\nBcc: x", Preheader: "p", Heading: "h", Line: "l", Code: "1", Expiry: "e"},
-		"no preheader":      {Subject: "s", Heading: "h", Line: "l", Code: "1", Expiry: "e"},
-		"newline preheader": {Subject: "s", Preheader: "p\nq", Heading: "h", Line: "l", Code: "1", Expiry: "e"},
-		"return preheader":  {Subject: "s", Preheader: "p\rq", Heading: "h", Line: "l", Code: "1", Expiry: "e"},
+		"no expiry":         {Subject: "s — Helivanta", Preheader: "p", Heading: "h", Line: "l", Code: "1"},
+		"button w/o url":    {Subject: "s — Helivanta", Preheader: "p", Heading: "h", Line: "l", Button: "Go", Expiry: "e"},
+		"neither":           {Subject: "s — Helivanta", Preheader: "p", Heading: "h", Line: "l", Expiry: "e"},
+		"newline subject":   {Subject: "s\r\nBcc: x — Helivanta", Preheader: "p", Heading: "h", Line: "l", Code: "1", Expiry: "e"},
+		"no preheader":      {Subject: "s — Helivanta", Heading: "h", Line: "l", Code: "1", Expiry: "e"},
+		"newline preheader": {Subject: "s — Helivanta", Preheader: "p\nq", Heading: "h", Line: "l", Code: "1", Expiry: "e"},
+		"return preheader":  {Subject: "s — Helivanta", Preheader: "p\rq", Heading: "h", Line: "l", Code: "1", Expiry: "e"},
 	} {
 		if _, _, err := render(bad); err == nil {
 			t.Fatalf("%s rendered", name)

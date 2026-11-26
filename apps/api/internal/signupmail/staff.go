@@ -3,7 +3,6 @@ package signupmail
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"net/mail"
 	"net/url"
 	"strings"
@@ -44,7 +43,7 @@ func (c *Client) SendStaff(ctx context.Context, message StaffMessage) (string, e
 	}
 	link := "https://helivanta.app/staff/accept#" + url.Values{"invitation": {message.InvitationID.String()}, "ticket": {message.Ticket}, "phase": {message.Phase}, "code": {message.Code}}.Encode()
 	expiry := message.ExpiresAt.UTC().Format("02 Jan 2006 15:04 MST")
-	envelope, err := c.envelope(message.Email, content{
+	framed, err := c.frame(message.Email, content{
 		Subject:   heading + " — Helivanta",
 		Preheader: preheader,
 		Heading:   heading,
@@ -58,11 +57,7 @@ func (c *Client) SendStaff(ctx context.Context, message StaffMessage) (string, e
 	if err != nil {
 		return "", err
 	}
-	payload, err := json.Marshal(envelope)
-	if err != nil {
-		return "", ErrUnavailable
-	}
-	return c.sendPayloadWithKey(ctx, payload, "helivanta-staff-invitation:"+message.InvitationID.String())
+	return c.sendPayloadWithKey(ctx, framed, "helivanta-staff-invitation:"+message.InvitationID.String())
 }
 
 func staffText(value string, max int) bool {

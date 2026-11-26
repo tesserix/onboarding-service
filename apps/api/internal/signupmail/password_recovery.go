@@ -2,7 +2,6 @@ package signupmail
 
 import (
 	"context"
-	"encoding/json"
 	"net/mail"
 
 	"github.com/google/uuid"
@@ -20,7 +19,7 @@ func (c *Client) SendPasswordRecovery(ctx context.Context, id, email, code strin
 			return "", ErrUnavailable
 		}
 	}
-	envelope, err := c.envelope(email, content{
+	framed, err := c.frame(email, content{
 		Subject:   "Reset your password — Helivanta",
 		Preheader: "Enter this code to reset your password. It expires in 10 minutes.",
 		Heading:   "Reset your password",
@@ -32,9 +31,5 @@ func (c *Client) SendPasswordRecovery(ctx context.Context, id, email, code strin
 	if err != nil {
 		return "", err
 	}
-	payload, err := json.Marshal(envelope)
-	if err != nil {
-		return "", ErrUnavailable
-	}
-	return c.sendPayloadWithKey(ctx, payload, "helivanta-password-recovery-"+id)
+	return c.sendPayloadWithKey(ctx, framed, "helivanta-password-recovery-"+id)
 }

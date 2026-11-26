@@ -1,7 +1,19 @@
+// Package signupmail sends native identity links through Helivanta's email
+// provider.
+//
+// Every Helivanta email goes through the shared layout in this file
+// (helivanta#1857). The provider transport (resend.go) accepts only a
+// framedMail, and only frame below builds one, from a content value rendered
+// by layoutHTML; render refuses a subject without the " — Helivanta" suffix.
+// TestEveryEmailRendersThroughTheSharedLayout fails CI when a Send method of
+// *Client has no entry in its table; guard_test.go fails CI when a file other
+// than this one carries HTML or the "html" payload key or
+// builds a framedMail, or when a file other than resend.go names the provider.
 package signupmail
 
 import (
 	"bytes"
+	"encoding/json"
 	"html/template"
 	"strings"
 )
@@ -25,6 +37,9 @@ type content struct {
 	Expiry    string // "This link expires in 1 hour."
 	Note      string // one optional extra sentence
 }
+
+// subjectSuffix ends every subject so inboxes group Helivanta mail.
+const subjectSuffix = " — Helivanta"
 
 const closing = "Didn't ask for this? You can ignore this email."
 
@@ -57,7 +72,7 @@ var layoutHTML = template.Must(template.New("layout").Parse(`<!doctype html><htm
 // part lists the same fields in the same order; a link appears bare so every
 // client can open it.
 func render(c content) (string, string, error) {
-	if c.Subject == "" || c.Preheader == "" || strings.ContainsAny(c.Preheader, "\r\n") || c.Heading == "" || c.Line == "" || c.Expiry == "" || (c.Button != "") != (c.URL != "") || (c.Button == "" && c.Code == "") || strings.ContainsAny(c.Subject, "\r\n") {
+	if c.Subject == "" || c.Preheader == "" || strings.ContainsAny(c.Preheader, "\r\n") || c.Heading == "" || c.Line == "" || c.Expiry == "" || (c.Button != "") != (c.URL != "") || (c.Button == "" && c.Code == "") || strings.ContainsAny(c.Subject, "\r\n") || !strings.HasSuffix(c.Subject, subjectSuffix) || strings.TrimSpace(strings.TrimSuffix(c.Subject, subjectSuffix)) == "" {
 		return "", "", ErrUnavailable
 	}
 	var html bytes.Buffer
@@ -89,13 +104,22 @@ func render(c content) (string, string, error) {
 	return html.String(), strings.Join(parts, "\n\n"), nil
 }
 
-// envelope is the provider payload every sender builds the same way.
-func (c *Client) envelope(to string, body content) (map[string]any, error) {
+// framedMail is the only value the transport sends. Its payload is set only
+// by frame, so a sender cannot post a body it built itself; guard_test.go
+// fails if another file constructs one or reads its payload.
+type framedMail struct{ payload []byte }
+
+// frame renders body through the shared layout into the provider payload.
+func (c *Client) frame(to string, body content) (framedMail, error) {
 	html, text, err := render(body)
 	if err != nil {
-		return nil, err
+		return framedMail{}, err
 	}
-	return map[string]any{"from": "Helivanta <" + c.from + ">", "to": []string{to}, "subject": body.Subject, "html": html, "text": text}, nil
+	payload, err := json.Marshal(map[string]any{"from": "Helivanta <" + c.from + ">", "to": []string{to}, "subject": body.Subject, "html": html, "text": text})
+	if err != nil {
+		return framedMail{}, ErrUnavailable
+	}
+	return framedMail{payload: payload}, nil
 }
 
 func greeting(name string) string {

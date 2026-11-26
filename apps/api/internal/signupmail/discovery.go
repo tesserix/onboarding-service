@@ -2,7 +2,6 @@ package signupmail
 
 import (
 	"context"
-	"encoding/json"
 	"net/mail"
 )
 
@@ -19,7 +18,7 @@ func (c *Client) SendDiscovery(ctx context.Context, email, code string) (string,
 	}
 	// The code is never in the subject: subjects show in notifications and
 	// previews that a shared screen can read.
-	envelope, err := c.envelope(email, content{
+	framed, err := c.frame(email, content{
 		Subject:   "Your sign-in code — Helivanta",
 		Preheader: "Enter this code to sign in. It expires in 10 minutes.",
 		Heading:   "Your sign-in code",
@@ -31,9 +30,5 @@ func (c *Client) SendDiscovery(ctx context.Context, email, code string) (string,
 	if err != nil {
 		return "", err
 	}
-	payload, err := json.Marshal(envelope)
-	if err != nil {
-		return "", ErrUnavailable
-	}
-	return c.sendPayload(ctx, payload)
+	return c.sendPayload(ctx, framed)
 }
