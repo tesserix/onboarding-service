@@ -42,7 +42,6 @@ func (c *Client) SendStaff(ctx context.Context, message StaffMessage) (string, e
 		return "", ErrUnavailable
 	}
 	link := "https://helivanta.app/staff/accept#" + url.Values{"invitation": {message.InvitationID.String()}, "ticket": {message.Ticket}, "phase": {message.Phase}, "code": {message.Code}}.Encode()
-	expiry := message.ExpiresAt.UTC().Format("02 Jan 2006 15:04 MST")
 	framed, err := c.frame(message.Email, content{
 		Subject:   heading + " — Helivanta",
 		Preheader: preheader,
@@ -51,8 +50,9 @@ func (c *Client) SendStaff(ctx context.Context, message StaffMessage) (string, e
 		Line:      message.WorkspaceName + " has invited you to Helivanta.",
 		Button:    button,
 		URL:       link,
-		Expiry:    "This link expires " + expiry + ". Ask your administrator for another if it has expired.",
+		Expiry:    "This link expires " + localTime(message.ExpiresAt) + ". Ask your administrator for another if it has expired.",
 		Note:      "Your administrator confirms your access after you join.",
+		Closing:   "Not expecting this invite? You can ignore this email.",
 	})
 	if err != nil {
 		return "", err

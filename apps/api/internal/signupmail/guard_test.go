@@ -95,6 +95,7 @@ func TestFramedPayloadMatchesThePreviousEnvelope(t *testing.T) {
 		Code:      "12345678",
 		Expiry:    "It expires in 10 minutes.",
 		Note:      "Don't share this code with anyone.",
+		Closing:   "Didn't ask for this code? You can ignore this email.",
 	}
 	html, text, err := render(body)
 	if err != nil {
