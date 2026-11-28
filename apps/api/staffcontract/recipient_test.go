@@ -28,6 +28,13 @@ func TestStaffRecipientRejectsCredentialAuthorityAndMalformedCapabilities(t *tes
 		if in.Validate(action) != nil {
 			t.Fatalf("valid %s rejected", action)
 		}
+		if action == "email" {
+			oneStep := in
+			oneStep.Password = "private-password"
+			if oneStep.Validate(action) != nil {
+				t.Fatal("one-step email proof with a password rejected (helivanta#1777)")
+			}
+		}
 		for _, mutate := range []func(*StaffRecipientInput){
 			func(v *StaffRecipientInput) { v.InvitationID = uuid.New() },
 			func(v *StaffRecipientInput) { v.Ticket += "=" },
@@ -87,5 +94,20 @@ func TestStaffRecipientDecoderRejectsDuplicateUnknownAndWrongPhaseFields(t *test
 		if _, err = DecodeRecipient([]byte(raw), "status"); err == nil {
 			t.Fatal("ambiguous or wrong-phase proof accepted")
 		}
+	} // helivanta#1777: the email proof may carry the password over the private handoff.
+	oneStep := strings.TrimSuffix(string(body), "}") + `,"code":"opaque+Code/==#","password":"private-password"}`
+	decoded, err := DecodeRecipient([]byte(oneStep), "email")
+	if err != nil || decoded.Password != "private-password" {
+		t.Fatal("one-step email proof dropped or refused the password")
+	}
+	if _, err = DecodeRecipient([]byte(strings.Replace(oneStep, `"password"`, `"Password"`, 1)), "email"); err == nil {
+		t.Fatal("case-aliased password accepted")
+	}
+	codeOnly := strings.TrimSuffix(string(body), "}") + `,"code":"opaque+Code/==#"}`
+	if decoded, err = DecodeRecipient([]byte(codeOnly), "email"); err != nil || decoded.Password != "" {
+		t.Fatal("an email link's code-only proof must still decode")
+	}
+	if _, err = DecodeRecipient([]byte(strings.TrimSuffix(string(body), "}")+`,"password":"private-password"}`), "email"); err == nil {
+		t.Fatal("an email proof without its code accepted")
 	}
 }

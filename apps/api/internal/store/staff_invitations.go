@@ -232,6 +232,9 @@ func (s *Store) StaffInvitationByTicket(ctx context.Context, id uuid.UUID, hash 
 type StaffInvitationProof struct {
 	Invitation StaffInvitation
 	LeaseID    uuid.UUID
+	// PasswordSet records that an email-phase proof also set the password in
+	// the same request (helivanta#1777), so success marks both facts.
+	PasswordSet bool
 }
 
 func (StaffInvitationProof) String() string   { return "[redacted staff invitation proof]" }
@@ -278,7 +281,7 @@ func (s *Store) ClaimStaffInvitationProof(ctx context.Context, id uuid.UUID, has
 	if err != nil {
 		return proof, err
 	}
-	return StaffInvitationProof{v, lease}, nil
+	return StaffInvitationProof{Invitation: v, LeaseID: lease}, nil
 }
 
 func (s *Store) FinishStaffInvitationProof(ctx context.Context, proof StaffInvitationProof, success bool, event audit.Event) error {
@@ -290,7 +293,7 @@ func (s *Store) FinishStaffInvitationProof(ctx context.Context, proof StaffInvit
 		if _, err := lockStaffSetup(ctx, tx, v.CommandID); err != nil {
 			return err
 		}
-		result, err := tx.Exec(ctx, `UPDATE staff_identity_setups SET email_confirmed_at=CASE WHEN $4 THEN coalesce(email_confirmed_at,now()) ELSE email_confirmed_at END,password_configured_at=CASE WHEN $3 THEN coalesce(password_configured_at,now()) ELSE password_configured_at END,lease_id=NULL,lease_until=NULL,updated_at=now() WHERE command_id=$1 AND lease_id=$2 AND lease_until>now()`, v.CommandID, proof.LeaseID, success && v.Phase == "password", success && v.Phase == "email")
+		result, err := tx.Exec(ctx, `UPDATE staff_identity_setups SET email_confirmed_at=CASE WHEN $4 THEN coalesce(email_confirmed_at,now()) ELSE email_confirmed_at END,password_configured_at=CASE WHEN $3 THEN coalesce(password_configured_at,now()) ELSE password_configured_at END,lease_id=NULL,lease_until=NULL,updated_at=now() WHERE command_id=$1 AND lease_id=$2 AND lease_until>now()`, v.CommandID, proof.LeaseID, success && (v.Phase == "password" || proof.PasswordSet), success && v.Phase == "email")
 		if err != nil {
 			return err
 		}

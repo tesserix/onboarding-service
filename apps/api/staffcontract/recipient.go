@@ -64,7 +64,8 @@ func (v StaffRecipientInput) Validate(action string) error {
 			return ErrInvalid
 		}
 	case "email":
-		if v.Code == "" || v.Password != "" || v.DeliveryID != nil {
+		// A password is optional: the one-step form sets it with the proof (helivanta#1777).
+		if v.Code == "" || v.DeliveryID != nil {
 			return ErrInvalid
 		}
 	case "password":

@@ -13,11 +13,13 @@ func DecodeRecipient(raw []byte, action string) (StaffRecipientInput, error) {
 	if len(raw) > 4096 || !utf8.Valid(raw) {
 		return in, ErrInvalid
 	}
-	keys := []string{"invitation_id", "ticket"}
+	keys, optional := []string{"invitation_id", "ticket"}, ""
 	switch action {
 	case "status":
 	case "email":
-		keys = append(keys, "code")
+		// password is optional: the one-step form sets it with the proof
+		// (helivanta#1777); an older email link still submits the code alone.
+		keys, optional = append(keys, "code"), "password"
 	case "password":
 		keys = append(keys, "code", "password")
 	case "resend":
@@ -25,7 +27,7 @@ func DecodeRecipient(raw []byte, action string) (StaffRecipientInput, error) {
 	default:
 		return in, ErrInvalid
 	}
-	if decodeStringFields(raw, keys...) != nil || json.Unmarshal(raw, &in) != nil || in.Validate(action) != nil {
+	if decodeFields(raw, optional, keys...) != nil || json.Unmarshal(raw, &in) != nil || in.Validate(action) != nil {
 		return StaffRecipientInput{}, ErrInvalid
 	}
 	return in, nil
@@ -40,13 +42,19 @@ func DecodeStaffContact(raw []byte) (StaffIdentityCreateInput, error) {
 	return in, nil
 }
 
-func decodeStringFields(raw []byte, keys ...string) error {
+func decodeStringFields(raw []byte, keys ...string) error { return decodeFields(raw, "", keys...) }
+
+// decodeFields requires every key in keys, and allows optional at most once.
+func decodeFields(raw []byte, optional string, keys ...string) error {
 	if len(raw) > 4096 || !utf8.Valid(raw) {
 		return ErrInvalid
 	}
 	allowed := make(map[string]bool, len(keys))
 	for _, key := range keys {
 		allowed[key] = true
+	}
+	if optional != "" {
+		allowed[optional] = true
 	}
 	seen := make(map[string]bool, len(keys))
 	d := json.NewDecoder(bytes.NewReader(raw))
@@ -70,7 +78,11 @@ func decodeStringFields(raw []byte, keys ...string) error {
 		}
 	}
 	end, err := d.Token()
-	if err != nil || end != json.Delim('}') || len(seen) != len(keys) || d.Decode(new(any)) != io.EOF {
+	required := len(seen)
+	if seen[optional] {
+		required--
+	}
+	if err != nil || end != json.Delim('}') || required != len(keys) || d.Decode(new(any)) != io.EOF {
 		return ErrInvalid
 	}
 	return nil
