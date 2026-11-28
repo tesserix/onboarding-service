@@ -103,4 +103,11 @@ func TestStaffRecipientDecoderRejectsDuplicateUnknownAndWrongPhaseFields(t *test
 	if _, err = DecodeRecipient([]byte(strings.Replace(oneStep, `"password"`, `"Password"`, 1)), "email"); err == nil {
 		t.Fatal("case-aliased password accepted")
 	}
+	codeOnly := strings.TrimSuffix(string(body), "}") + `,"code":"opaque+Code/==#"}`
+	if decoded, err = DecodeRecipient([]byte(codeOnly), "email"); err != nil || decoded.Password != "" {
+		t.Fatal("an email link's code-only proof must still decode")
+	}
+	if _, err = DecodeRecipient([]byte(strings.TrimSuffix(string(body), "}")+`,"password":"private-password"}`), "email"); err == nil {
+		t.Fatal("an email proof without its code accepted")
+	}
 }
