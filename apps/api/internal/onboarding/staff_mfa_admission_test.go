@@ -18,12 +18,12 @@ import (
 )
 
 func TestStaffMFAAdmissionVerifiesNativeProofBeforeReleasingCurrentGeneration(t *testing.T) {
-	for _, mode := range []string{"hospital", "pharmacy", "supplier", "legacy_tenant", "old_primary", "same_second_primary", "wrong_user", "wrong_org", "missing_totp", "unenrolled", "enrollment_changed", "password_changed", "withdrawn", "native_unavailable", "wrong_generation", "promoted_during_proof", "inactive_account", "unverified_email", "moved_owner"} {
+	for _, mode := range []string{"hospital", "pharmacy", "supplier", "legacy_tenant", "old_primary", "same_second_primary", "wrong_user", "wrong_org", "missing_totp", "unenrolled", "enrollment_changed", "password_changed", "withdrawn", "native_unavailable", "wrong_generation", "promoted_during_proof", "inactive_account", "unverified_email", "moved_owner", "security_key", "key_with_totp_session"} {
 		t.Run(mode, func(t *testing.T) {
 			removed := time.Now().UTC().Add(-10 * time.Second).Truncate(time.Second).Add(123456700 * time.Nanosecond)
 			enrolled := removed.Add(300 * time.Nanosecond)
-			svc, st, request := mfaServiceFixture(t, mfaServiceSource{configured: true, remove: func(context.Context, string, string) (zitadel.TOTPRemovalEvidence, error) {
-				return zitadel.TOTPRemovalEvidence{Sequence: "1703", ChangedAt: removed}, nil
+			svc, st, request := mfaServiceFixture(t, mfaServiceSource{configured: true, remove: func(context.Context, string, string) (zitadel.FactorRemovalEvidence, error) {
+				return zitadel.FactorRemovalEvidence{Sequence: "1703", ChangedAt: removed}, nil
 			}})
 			if mode == "pharmacy" || mode == "supplier" {
 				request.Target.EmployerKind = mode
@@ -88,6 +88,9 @@ func TestStaffMFAAdmissionVerifiesNativeProofBeforeReleasingCurrentGeneration(t 
 					if mode == "unenrolled" {
 						kind = "user.human.mfa.otp.added"
 					}
+					if mode == "security_key" || mode == "key_with_totp_session" {
+						kind = "user.human.mfa.u2f.token.verified"
+					}
 					at := enrolled
 					if mode == "enrollment_changed" && count > 1 {
 						sequence = "1705"
@@ -126,6 +129,10 @@ func TestStaffMFAAdmissionVerifiesNativeProofBeforeReleasingCurrentGeneration(t 
 					if mode == "missing_totp" {
 						delete(factors, "totp")
 					}
+					if mode == "security_key" {
+						factors["webAuthN"] = factors["totp"]
+						delete(factors, "totp")
+					}
 					_ = json.NewEncoder(w).Encode(map[string]any{"session": map[string]any{"id": "signed-session", "sequence": "1706", "creationDate": removed.Add(100 * time.Nanosecond), "changeDate": removed.Add(time.Second), "expirationDate": time.Now().Add(time.Hour), "factors": factors}})
 				default:
 					t.Errorf("unexpected native admission request: %s", r.URL.Path)
@@ -138,7 +145,7 @@ func TestStaffMFAAdmissionVerifiesNativeProofBeforeReleasingCurrentGeneration(t 
 			receipt, err := svc.AdmitStaffMFASession(ctx, input)
 			var want error
 			switch mode {
-			case "old_primary", "same_second_primary", "wrong_user", "wrong_org", "missing_totp", "unenrolled", "password_changed":
+			case "old_primary", "same_second_primary", "wrong_user", "wrong_org", "missing_totp", "unenrolled", "password_changed", "key_with_totp_session":
 				want = ErrMFAAuthenticationRequired
 			case "enrollment_changed", "wrong_generation":
 				want = ErrConflict

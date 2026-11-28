@@ -88,7 +88,7 @@ func TestRecoverySessionRequiresExactFreshNativeProof(t *testing.T) {
 				require.Equal(t, "no-cache", r.Header.Get("Cache-Control"))
 				require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"session": session}))
 			})
-			proof, err := client.VerifyRecoverySession(t.Context(), "synthetic-org", "synthetic-human", "native-session", reset, enrolled)
+			proof, err := client.VerifyRecoverySession(t.Context(), "synthetic-org", "synthetic-human", "native-session", "totp", reset, enrolled)
 			switch {
 			case tc.rejected:
 				require.ErrorIs(t, err, ErrRecoverySessionRejected)
@@ -100,7 +100,7 @@ func TestRecoverySessionRequiresExactFreshNativeProof(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, "703", proof.Sequence)
 				require.True(t, proof.PasswordVerifiedAt.After(reset))
-				require.True(t, proof.TOTPVerifiedAt.After(enrolled))
+				require.True(t, proof.FactorVerifiedAt.After(enrolled))
 			}
 		})
 	}
@@ -122,7 +122,7 @@ func TestRecoverySessionRefusesInvalidSelectorsAndCutoffsWithoutIO(t *testing.T)
 		{"org", "user", "session", now, now.Add(-time.Second)},
 		{"org", "user", "session", now, now.Add(time.Hour)},
 	} {
-		_, err := client.VerifyRecoverySession(t.Context(), input.org, input.user, input.session, input.reset, input.enrolled)
+		_, err := client.VerifyRecoverySession(t.Context(), input.org, input.user, input.session, "totp", input.reset, input.enrolled)
 		require.ErrorIs(t, err, ErrIdentityUnavailable)
 	}
 	require.Zero(t, requests.Load())
@@ -131,12 +131,12 @@ func TestRecoverySessionRefusesInvalidSelectorsAndCutoffsWithoutIO(t *testing.T)
 func TestRecoverySessionFailsClosedOnNativeDependencyAndMalformedResponse(t *testing.T) {
 	for _, body := range []string{`null`, `{}`, `{"session":null}`, `{"session":{}}`, `{"session":{}} {}`, strings.Repeat(" ", identityReadLimit+1)} {
 		client := newProjectionClient(t, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(body)) })
-		_, err := client.VerifyRecoverySession(t.Context(), "org", "user", "session", time.Now().Add(-time.Minute), time.Now().Add(-time.Second))
+		_, err := client.VerifyRecoverySession(t.Context(), "org", "user", "session", "totp", time.Now().Add(-time.Minute), time.Now().Add(-time.Second))
 		require.ErrorIs(t, err, ErrIdentityUnavailable)
 	}
 	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests, http.StatusServiceUnavailable} {
 		client := newProjectionClient(t, func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(status) })
-		_, err := client.VerifyRecoverySession(t.Context(), "org", "user", "session", time.Now().Add(-time.Minute), time.Now().Add(-time.Second))
+		_, err := client.VerifyRecoverySession(t.Context(), "org", "user", "session", "totp", time.Now().Add(-time.Minute), time.Now().Add(-time.Second))
 		require.ErrorIs(t, err, ErrIdentityUnavailable)
 	}
 }
@@ -148,17 +148,52 @@ func TestRecoverySessionDoesNotFollowRedirectOrIgnoreCancellation(t *testing.T) 
 		http.Redirect(w, r, other.base+"/collect", http.StatusTemporaryRedirect)
 	})
 	reset, enrolled := time.Now().Add(-time.Minute), time.Now().Add(-time.Second)
-	_, err := client.VerifyRecoverySession(t.Context(), "org", "user", "session", reset, enrolled)
+	_, err := client.VerifyRecoverySession(t.Context(), "org", "user", "session", "totp", reset, enrolled)
 	require.ErrorIs(t, err, ErrIdentityUnavailable)
 	require.Zero(t, disclosures.Load())
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	_, err = client.VerifyRecoverySession(ctx, "org", "user", "session", reset, enrolled)
+	_, err = client.VerifyRecoverySession(ctx, "org", "user", "session", "totp", reset, enrolled)
 	require.ErrorIs(t, err, ErrIdentityUnavailable)
 	require.Zero(t, disclosures.Load())
 }
 
 func recoveryTestFactor(m map[string]any, key string) map[string]any {
 	return m["factors"].(map[string]any)[key].(map[string]any)
+}
+
+func TestRecoverySessionRequiresTheEnrolledFactorKind(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	reset, enrolled := now.Add(-2*time.Minute), now.Add(-time.Minute)
+	for _, tc := range []struct {
+		name, factor, kind string
+		accepted           bool
+	}{
+		{"key_session_for_key", "webAuthN", "security_key", true},
+		{"totp_session_for_totp", "totp", "totp", true},
+		{"totp_session_for_key", "totp", "security_key", false},
+		{"key_session_for_totp", "webAuthN", "totp", false},
+		{"unknown_kind", "webAuthN", "passkey", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := newProjectionClient(t, func(w http.ResponseWriter, _ *http.Request) {
+				require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"session": map[string]any{
+					"id": "session", "sequence": "703", "creationDate": reset.Add(time.Second), "changeDate": now.Add(-time.Second),
+					"factors": map[string]any{
+						"user":     map[string]any{"id": "user", "organizationId": "org", "verifiedAt": reset.Add(time.Second)},
+						"password": map[string]any{"verifiedAt": reset.Add(2 * time.Second)},
+						tc.factor:  map[string]any{"verifiedAt": enrolled.Add(time.Second)},
+					},
+				}}))
+			})
+			proof, err := client.VerifyRecoverySession(t.Context(), "org", "user", "session", tc.kind, reset, enrolled)
+			if !tc.accepted {
+				require.ErrorIs(t, err, ErrRecoverySessionRejected)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, enrolled.Add(time.Second), proof.FactorVerifiedAt)
+		})
+	}
 }

@@ -84,8 +84,12 @@ and [list metadata conversion](https://github.com/zitadel/zitadel/blob/v4.15.3/i
 These source and regression checks do not prove completed native recovery or live
 release; HMS native acceptance remains required.
 
-TOTP presence is only a pre-dispatch check, never proof of new enrollment. A known
-unenrolled target cancels a prepared command without a native write.
+TOTP or security-key presence is only a pre-dispatch check, never proof of new
+enrollment. A target with neither cancels a prepared command without a native write.
+Dispatch removes every security key (any state) and then the TOTP, and re-reads
+presence. Any failed, lost, out-of-order or incomplete step leaves the command
+`unconfirmed` rather than `awaiting_enrollment`; the last acknowledgement is the
+removal baseline (helivanta#1905). Other factor kinds are left in place.
 
 Native HTTP runs outside database transactions. Acknowledgement or uncertainty is
 retained in an independent bounded transaction even if the caller disconnects or
@@ -150,9 +154,10 @@ fresh primary/factor evidence or admitted generation.
 Native research pins `tesserix/zitadel@29986e1b8b3e606d20871a2e73874b91f9b5b695`.
 Removal needs exact acknowledged owner, sequence and change instant. A missing or
 malformed response is uncertain and never automatically retried. Latest lifecycle
-events distinguish new TOTP enrollment verification from ordinary code checks.
-Session proof matches the verified signed `sid`, user and organization, with
-independent fresh password/TOTP timestamps. Neither factor presence nor latest
+events distinguish new TOTP or security-key enrollment verification from ordinary
+code checks and key sign counts. Session proof matches the verified signed `sid`,
+user and organization, with independent fresh password timestamps and a fresh
+timestamp for the factor kind just enrolled (`totp` or `webAuthN`). Neither factor presence nor latest
 factor `auth_time` proves enrollment or fresh primary authentication. Native reads
 are bounded and scoped; redirects and cookies are disabled. The ledger stores no
 credential, factor secret/code or native session token.
@@ -164,7 +169,7 @@ server must verify current login membership and obtain the sid from its verified
 native ID token before calling; the browser cannot assert them. The owner checks
 both current login and original credential-owner tenant/product/native scope,
 latest acknowledged generation, current owned active verified human eligibility,
-post-removal enrollment, exact independent native password/TOTP proof, and current
+post-removal enrollment, exact independent native password and enrolled-factor proof, and current
 password-change cutoff. It rechecks eligibility, enrollment and generation after
 native I/O. Completion and admission audit commit under the global account lock;
 a later valid enrollment does not rewrite first-completion history. Only the

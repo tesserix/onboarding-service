@@ -25,7 +25,7 @@ func (m mfaServiceIdentity) VerifyOrganization(_ context.Context, org, tenant, p
 type mfaServiceSource struct {
 	check      func(context.Context, string, string) error
 	configured bool
-	remove     func(context.Context, string, string) (zitadel.TOTPRemovalEvidence, error)
+	remove     func(context.Context, string, string) (zitadel.FactorRemovalEvidence, error)
 }
 
 func (m mfaServiceSource) CheckStaffMFARecoveryTarget(ctx context.Context, org, user string) error {
@@ -34,12 +34,12 @@ func (m mfaServiceSource) CheckStaffMFARecoveryTarget(ctx context.Context, org, 
 	}
 	return nil
 }
-func (m mfaServiceSource) StaffTOTPConfigured(context.Context, string, string) (bool, error) {
+func (m mfaServiceSource) StaffSecondFactorsConfigured(context.Context, string, string) (bool, error) {
 	return m.configured, nil
 }
-func (m mfaServiceSource) RemoveRecoveryTOTP(ctx context.Context, org, user string) (zitadel.TOTPRemovalEvidence, error) {
+func (m mfaServiceSource) RemoveRecoveryFactors(ctx context.Context, org, user string) (zitadel.FactorRemovalEvidence, error) {
 	if m.remove == nil {
-		return zitadel.TOTPRemovalEvidence{}, zitadel.ErrIdentityUnavailable
+		return zitadel.FactorRemovalEvidence{}, zitadel.ErrIdentityUnavailable
 	}
 	return m.remove(ctx, org, user)
 }
@@ -70,7 +70,7 @@ func TestStaffMFAServicePersistsFenceBeforeOneNativeDispatch(t *testing.T) {
 	var calls atomic.Int32
 	source := mfaServiceSource{configured: true}
 	svc, st, input := mfaServiceFixture(t, source)
-	svc.staffMFASource = mfaServiceSource{configured: true, remove: func(ctx context.Context, org, user string) (zitadel.TOTPRemovalEvidence, error) {
+	svc.staffMFASource = mfaServiceSource{configured: true, remove: func(ctx context.Context, org, user string) (zitadel.FactorRemovalEvidence, error) {
 		calls.Add(1)
 		require.Equal(t, "helivanta-"+input.Target.TenantID, org)
 		require.Equal(t, input.Target.Subject, user)
@@ -79,7 +79,7 @@ func TestStaffMFAServicePersistsFenceBeforeOneNativeDispatch(t *testing.T) {
 		require.Equal(t, "processing", row.State)
 		require.NotNil(t, row.ApplicationFenceID)
 		require.Equal(t, input.Intent.CommandID, row.ApplicationFenceID.String())
-		return zitadel.TOTPRemovalEvidence{Sequence: "1703", ChangedAt: time.Now().UTC()}, nil
+		return zitadel.FactorRemovalEvidence{Sequence: "1703", ChangedAt: time.Now().UTC()}, nil
 	}}
 	ctx := WithRequestID(t.Context(), uuid.NewString())
 	prepared, err := svc.PrepareStaffMFARecovery(ctx, product("helivanta"), input)
@@ -107,9 +107,9 @@ func TestStaffMFAServicePersistsFenceBeforeOneNativeDispatch(t *testing.T) {
 
 func TestStaffMFAServiceUnknownNativeOutcomeNeverRedispatches(t *testing.T) {
 	var calls atomic.Int32
-	svc, _, input := mfaServiceFixture(t, mfaServiceSource{configured: true, remove: func(context.Context, string, string) (zitadel.TOTPRemovalEvidence, error) {
+	svc, _, input := mfaServiceFixture(t, mfaServiceSource{configured: true, remove: func(context.Context, string, string) (zitadel.FactorRemovalEvidence, error) {
 		calls.Add(1)
-		return zitadel.TOTPRemovalEvidence{}, context.DeadlineExceeded
+		return zitadel.FactorRemovalEvidence{}, context.DeadlineExceeded
 	}})
 	ctx := WithRequestID(t.Context(), uuid.NewString())
 	_, err := svc.PrepareStaffMFARecovery(ctx, product("helivanta"), input)
@@ -128,9 +128,9 @@ func TestStaffMFAServiceCancellationAndUnenrolledTargetsNeverWrite(t *testing.T)
 	for _, cancel := range []bool{true, false} {
 		t.Run(map[bool]string{true: "explicit_cancel", false: "no_configured_factor"}[cancel], func(t *testing.T) {
 			var calls atomic.Int32
-			svc, _, input := mfaServiceFixture(t, mfaServiceSource{configured: false, remove: func(context.Context, string, string) (zitadel.TOTPRemovalEvidence, error) {
+			svc, _, input := mfaServiceFixture(t, mfaServiceSource{configured: false, remove: func(context.Context, string, string) (zitadel.FactorRemovalEvidence, error) {
 				calls.Add(1)
-				return zitadel.TOTPRemovalEvidence{}, errors.New("unexpected write")
+				return zitadel.FactorRemovalEvidence{}, errors.New("unexpected write")
 			}})
 			ctx := WithRequestID(t.Context(), uuid.NewString())
 			_, err := svc.PrepareStaffMFARecovery(ctx, product("helivanta"), input)
@@ -202,11 +202,11 @@ func TestStaffMFAServiceRetainsOutcomeWhenEntitlementIsWithdrawnDuringNativeIO(t
 	ctx := WithRequestID(t.Context(), uuid.NewString())
 	_, err := svc.PrepareStaffMFARecovery(ctx, product("helivanta"), in)
 	require.NoError(t, err)
-	svc.staffMFASource = mfaServiceSource{configured: true, remove: func(ctx context.Context, _, _ string) (zitadel.TOTPRemovalEvidence, error) {
+	svc.staffMFASource = mfaServiceSource{configured: true, remove: func(ctx context.Context, _, _ string) (zitadel.FactorRemovalEvidence, error) {
 		tenant, err := uuid.Parse(in.Target.TenantID)
 		require.NoError(t, err)
 		require.NoError(t, st.RevokeGrant(ctx, tenant, "helivanta"))
-		return zitadel.TOTPRemovalEvidence{Sequence: "1703", ChangedAt: time.Now().UTC()}, nil
+		return zitadel.FactorRemovalEvidence{Sequence: "1703", ChangedAt: time.Now().UTC()}, nil
 	}}
 	receipt, err := svc.DispatchStaffMFARecovery(ctx, product("helivanta"), in, in.Intent.CommandID)
 	require.ErrorIs(t, err, ErrNotFound)
@@ -230,9 +230,9 @@ func TestStaffMFAServiceChecksWithdrawalBeforeDispatchAndRefusesImplicitPrepare(
 		require.NoError(t, err)
 		require.NoError(t, st.RevokeGrant(ctx, tenant, "helivanta"))
 		return nil
-	}, remove: func(context.Context, string, string) (zitadel.TOTPRemovalEvidence, error) {
+	}, remove: func(context.Context, string, string) (zitadel.FactorRemovalEvidence, error) {
 		calls.Add(1)
-		return zitadel.TOTPRemovalEvidence{}, errors.New("unexpected")
+		return zitadel.FactorRemovalEvidence{}, errors.New("unexpected")
 	}}
 	_, err = svc.DispatchStaffMFARecovery(ctx, product("helivanta"), in, in.Intent.CommandID)
 	require.ErrorIs(t, err, ErrNotFound)
@@ -248,9 +248,9 @@ func TestStaffMFAServiceRetainsNativeAcknowledgementAfterCallerDisconnect(t *tes
 	defer stop()
 	_, err := svc.PrepareStaffMFARecovery(ctx, product("helivanta"), in)
 	require.NoError(t, err)
-	svc.staffMFASource = mfaServiceSource{configured: true, remove: func(context.Context, string, string) (zitadel.TOTPRemovalEvidence, error) {
+	svc.staffMFASource = mfaServiceSource{configured: true, remove: func(context.Context, string, string) (zitadel.FactorRemovalEvidence, error) {
 		stop()
-		return zitadel.TOTPRemovalEvidence{Sequence: "1703", ChangedAt: time.Now().UTC()}, nil
+		return zitadel.FactorRemovalEvidence{Sequence: "1703", ChangedAt: time.Now().UTC()}, nil
 	}}
 	receipt, err := svc.DispatchStaffMFARecovery(ctx, product("helivanta"), in, in.Intent.CommandID)
 	require.ErrorIs(t, err, ErrUnavailable)

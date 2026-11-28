@@ -73,9 +73,9 @@ func TestNativeMFAAdmissionProofsLogOnlyTheUnavailableStage(t *testing.T) {
 			reset := time.Now().Add(-time.Minute)
 			var err error
 			if test.enrollment {
-				_, err = client.RecoveryTOTPEnrollment(t.Context(), "private-org", "private-user", TOTPRemovalEvidence{Sequence: "1703", ChangedAt: reset})
+				_, err = client.RecoveryFactorEnrollment(t.Context(), "private-org", "private-user", FactorRemovalEvidence{Sequence: "1703", ChangedAt: reset})
 			} else {
-				_, err = client.VerifyRecoverySession(t.Context(), "private-org", "private-user", "private-session", reset, reset.Add(time.Second))
+				_, err = client.VerifyRecoverySession(t.Context(), "private-org", "private-user", "private-session", "totp", reset, reset.Add(time.Second))
 			}
 			require.ErrorIs(t, err, ErrIdentityUnavailable)
 			var record map[string]any

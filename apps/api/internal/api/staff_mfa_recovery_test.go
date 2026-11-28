@@ -22,12 +22,12 @@ import (
 type apiMFASource struct{ calls atomic.Int32 }
 
 func (*apiMFASource) CheckStaffMFARecoveryTarget(context.Context, string, string) error { return nil }
-func (*apiMFASource) StaffTOTPConfigured(context.Context, string, string) (bool, error) {
+func (*apiMFASource) StaffSecondFactorsConfigured(context.Context, string, string) (bool, error) {
 	return true, nil
 }
-func (s *apiMFASource) RemoveRecoveryTOTP(context.Context, string, string) (zitadel.TOTPRemovalEvidence, error) {
+func (s *apiMFASource) RemoveRecoveryFactors(context.Context, string, string) (zitadel.FactorRemovalEvidence, error) {
 	s.calls.Add(1)
-	return zitadel.TOTPRemovalEvidence{Sequence: "1703", ChangedAt: time.Now().UTC()}, nil
+	return zitadel.FactorRemovalEvidence{Sequence: "1703", ChangedAt: time.Now().UTC()}, nil
 }
 
 func mfaHTTPFixture(t *testing.T) (*harness, *apiMFASource, customercontract.StaffMFARecoveryRequest, string) {

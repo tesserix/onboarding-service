@@ -16,7 +16,8 @@ The identity owner verifies the current login tenant and the credential owner's
 original tenant/product/native scope. The latter can differ for a legacy
 same-subject membership. It verifies the exact current generation, current owned
 active verified human account, latest post-removal verified enrollment, and the
-exact native session's independent primary/TOTP proof. Password proof must also
+exact native session's independent primary proof and proof of the factor kind
+just enrolled (TOTP or security key, helivanta#1905). Password proof must also
 postdate the current native password change. Re-read enrollment after session
 I/O and recheck account eligibility, native password and current scope before
 committing admission. An unconfirmed write or preparation cannot be admitted.

@@ -17,8 +17,8 @@ import (
 // application fence. Workforce supplies the reviewed link; neither comes from UI.
 type StaffMFARecoverySource interface {
 	CheckStaffMFARecoveryTarget(context.Context, string, string) error
-	StaffTOTPConfigured(context.Context, string, string) (bool, error)
-	RemoveRecoveryTOTP(context.Context, string, string) (zitadel.TOTPRemovalEvidence, error)
+	StaffSecondFactorsConfigured(context.Context, string, string) (bool, error)
+	RemoveRecoveryFactors(context.Context, string, string) (zitadel.FactorRemovalEvidence, error)
 }
 
 func WithStaffMFARecovery(product string, source StaffMFARecoverySource) Option {

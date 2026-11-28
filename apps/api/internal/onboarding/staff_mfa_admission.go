@@ -89,9 +89,9 @@ func (s *Service) AdmitStaffMFASession(ctx context.Context, in customercontract.
 	if err != nil {
 		return empty, ErrUnavailable
 	}
-	removal := zitadel.TOTPRemovalEvidence{Sequence: command.NativeSequence, ChangedAt: removed}
+	removal := zitadel.FactorRemovalEvidence{Sequence: command.NativeSequence, ChangedAt: removed}
 	stage = "enrollment"
-	enrolled, err := s.signupIdentity.RecoveryTOTPEnrollment(ctx, command.ProviderOrgID, in.Scope.Subject, removal)
+	enrolled, err := s.signupIdentity.RecoveryFactorEnrollment(ctx, command.ProviderOrgID, in.Scope.Subject, removal)
 	if err != nil {
 		return empty, ErrUnavailable
 	}
@@ -99,7 +99,7 @@ func (s *Service) AdmitStaffMFASession(ctx context.Context, in customercontract.
 		return empty, ErrMFAAuthenticationRequired
 	}
 	stage = "session"
-	proof, err := s.signupIdentity.VerifyRecoverySession(ctx, command.ProviderOrgID, in.Scope.Subject, in.NativeSessionID, removed, enrolled.VerifiedAt)
+	proof, err := s.signupIdentity.VerifyRecoverySession(ctx, command.ProviderOrgID, in.Scope.Subject, in.NativeSessionID, enrolled.Kind, removed, enrolled.VerifiedAt)
 	if errors.Is(err, zitadel.ErrRecoverySessionRejected) {
 		return empty, ErrMFAAuthenticationRequired
 	}
@@ -107,14 +107,14 @@ func (s *Service) AdmitStaffMFASession(ctx context.Context, in customercontract.
 		return empty, ErrUnavailable
 	}
 	stage = "enrollment_recheck"
-	latest, err := s.signupIdentity.RecoveryTOTPEnrollment(ctx, command.ProviderOrgID, in.Scope.Subject, removal)
+	latest, err := s.signupIdentity.RecoveryFactorEnrollment(ctx, command.ProviderOrgID, in.Scope.Subject, removal)
 	if err != nil {
 		return empty, ErrUnavailable
 	}
 	if !latest.Verified {
 		return empty, ErrMFAAuthenticationRequired
 	}
-	if latest.Sequence != enrolled.Sequence || !latest.VerifiedAt.Equal(enrolled.VerifiedAt) {
+	if latest.Sequence != enrolled.Sequence || latest.Kind != enrolled.Kind || !latest.VerifiedAt.Equal(enrolled.VerifiedAt) {
 		return empty, ErrConflict
 	}
 	stage = "account_recheck"
