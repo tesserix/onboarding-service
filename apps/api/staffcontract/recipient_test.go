@@ -94,5 +94,13 @@ func TestStaffRecipientDecoderRejectsDuplicateUnknownAndWrongPhaseFields(t *test
 		if _, err = DecodeRecipient([]byte(raw), "status"); err == nil {
 			t.Fatal("ambiguous or wrong-phase proof accepted")
 		}
+	}	// helivanta#1777: the email proof may carry the password over the private handoff.
+	oneStep := strings.TrimSuffix(string(body), "}") + `,"code":"opaque+Code/==#","password":"private-password"}`
+	decoded, err := DecodeRecipient([]byte(oneStep), "email")
+	if err != nil || decoded.Password != "private-password" {
+		t.Fatal("one-step email proof dropped or refused the password")
+	}
+	if _, err = DecodeRecipient([]byte(strings.Replace(oneStep, `"password"`, `"Password"`, 1)), "email"); err == nil {
+		t.Fatal("case-aliased password accepted")
 	}
 }

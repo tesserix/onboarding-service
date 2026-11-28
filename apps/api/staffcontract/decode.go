@@ -17,7 +17,8 @@ func DecodeRecipient(raw []byte, action string) (StaffRecipientInput, error) {
 	switch action {
 	case "status":
 	case "email":
-		keys = append(keys, "code")
+		// password is optional: the one-step form sets it with the proof (helivanta#1777).
+		keys = append(keys, "code", "password")
 	case "password":
 		keys = append(keys, "code", "password")
 	case "resend":
