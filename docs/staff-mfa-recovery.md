@@ -87,7 +87,9 @@ release; HMS native acceptance remains required.
 TOTP or security-key presence is only a pre-dispatch check, never proof of new
 enrollment. A target with neither cancels a prepared command without a native write.
 Dispatch removes every security key (any state) and then the TOTP, and re-reads
-presence. Any failed, lost, out-of-order or incomplete step leaves the command
+presence and the eventstore: the latest TOTP/key lifecycle event must be the
+removal's own last acknowledgement, which catches a factor the lagging projections
+missed. Any failed, lost, out-of-order or incomplete step leaves the command
 `unconfirmed` rather than `awaiting_enrollment`; the last acknowledgement is the
 removal baseline (helivanta#1905). Other factor kinds are left in place.
 

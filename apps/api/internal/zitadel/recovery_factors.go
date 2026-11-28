@@ -40,7 +40,13 @@ var recoveryFactorEventKinds = map[string]string{
 // re-reads presence. A failed or lost acknowledgement at any step makes the
 // whole removal uncertain, and it must never be retried: a partial removal
 // is never evidence (#1905).
-func (c *Client) RemoveRecoveryFactors(ctx context.Context, org, subject string) (FactorRemovalEvidence, error) {
+func (c *Client) RemoveRecoveryFactors(ctx context.Context, org, subject string) (_ FactorRemovalEvidence, resultErr error) {
+	stage := "configuration"
+	defer func() {
+		if c != nil && c.log != nil && errors.Is(resultErr, ErrIdentityUnavailable) {
+			c.log.Warn("Staff MFA factor removal unconfirmed", "stage", stage)
+		}
+	}()
 	var empty FactorRemovalEvidence
 	if c == nil || c.tokens == nil || c.http == nil || !identitySourceID.MatchString(org) || !identitySourceID.MatchString(subject) {
 		return empty, ErrIdentityUnavailable
@@ -54,6 +60,7 @@ func (c *Client) RemoveRecoveryFactors(ctx context.Context, org, subject string)
 	client := *c.http
 	client.Jar = nil
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	stage = "list"
 	keys, totp, err := c.recoveryFactors(ctx, &client, token, org, subject)
 	if err != nil {
 		return empty, err
@@ -70,6 +77,7 @@ func (c *Client) RemoveRecoveryFactors(ctx context.Context, org, subject string)
 	}
 	var last FactorRemovalEvidence
 	var previous uint64
+	stage = "remove"
 	for _, path := range paths {
 		ack, err := c.removeRecoveryFactor(ctx, &client, token, org, path)
 		if err != nil {
@@ -81,8 +89,17 @@ func (c *Client) RemoveRecoveryFactors(ctx context.Context, org, subject string)
 		}
 		previous, last = sequence, ack
 	}
+	stage = "presence"
 	methods, err := c.authenticationMethods(ctx, org, subject)
 	if err != nil || methods["AUTHENTICATION_METHOD_TYPE_TOTP"] || methods["AUTHENTICATION_METHOD_TYPE_U2F"] {
+		return empty, ErrIdentityUnavailable
+	}
+	// Both reads above are projections and can lag. The eventstore cannot: the
+	// latest TOTP/key lifecycle event must be this removal's own last
+	// acknowledgement, or a factor was added or verified that this removal missed.
+	stage = "events"
+	latest, err := c.RecoveryFactorEnrollment(ctx, org, subject, last)
+	if err != nil || latest.Verified || latest.Sequence != last.Sequence {
 		return empty, ErrIdentityUnavailable
 	}
 	return last, nil
@@ -113,9 +130,11 @@ func (c *Client) recoveryFactors(ctx context.Context, client *http.Client, token
 		_, isTOTP := factor["otp"]
 		u2f, isKey := factor["u2f"]
 		switch {
-		case isTOTP && !isKey:
+		case isTOTP && isKey:
+			return nil, false, ErrIdentityUnavailable
+		case isTOTP:
 			totp = true
-		case isKey && !isTOTP:
+		case isKey:
 			key, err := identityObject(u2f, "id")
 			if err != nil {
 				return nil, false, ErrIdentityUnavailable

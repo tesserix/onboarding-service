@@ -27,10 +27,13 @@ func recoveryAck(sequence string, at time.Time) string {
 }
 
 // recoveryFactorZitadel lists factors, answers each DELETE from acks (a
-// missing path is a 503) and finally reports methods. It records every write.
-func recoveryFactorZitadel(t *testing.T, factors string, acks map[string]string, methods string) (*Client, *[]string) {
+// missing path is a 503), reports methods, and answers the eventstore with the
+// last removal's own event unless later is set (a later lifecycle event, e.g.
+// one the lagging projections missed). It records every write.
+func recoveryFactorZitadel(t *testing.T, factors string, acks map[string]string, methods string, later ...string) (*Client, *[]string) {
 	t.Helper()
 	var writes []string
+	var lastEvent map[string]any
 	client := newProjectionClient(t, func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "Bearer test-pat", r.Header.Get("Authorization"))
 		require.Equal(t, "org", r.Header.Get("x-zitadel-orgid"))
@@ -40,12 +43,29 @@ func recoveryFactorZitadel(t *testing.T, factors string, acks map[string]string,
 			_, _ = w.Write([]byte(factors))
 		case r.Method == http.MethodGet && r.URL.Path == "/v2/users/user/authentication_methods":
 			_, _ = w.Write([]byte(methods))
+		case r.Method == http.MethodPost && r.URL.Path == "/admin/v1/events/_search":
+			event := lastEvent
+			if len(later) == 1 {
+				event = map[string]any{"sequence": "1799", "creationDate": time.Now().UTC().Add(-time.Millisecond).Format(time.RFC3339Nano), "type": map[string]string{"type": later[0]}}
+			}
+			event["aggregate"] = map[string]any{"id": "user", "resourceOwner": "org", "type": map[string]string{"type": "user"}}
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"events": []any{event}}))
 		case r.Method == http.MethodDelete:
 			writes = append(writes, r.URL.Path)
 			body, ok := acks[r.URL.Path]
 			if !ok {
 				w.WriteHeader(http.StatusServiceUnavailable)
 				return
+			}
+			var ack struct {
+				Details struct{ Sequence, ChangeDate string }
+			}
+			if json.Unmarshal([]byte(body), &ack) == nil {
+				kind := "user.human.mfa.otp.removed"
+				if strings.Contains(r.URL.Path, "/u2f/") {
+					kind = "user.human.mfa.u2f.token.removed"
+				}
+				lastEvent = map[string]any{"sequence": ack.Details.Sequence, "creationDate": ack.Details.ChangeDate, "type": map[string]string{"type": kind}}
 			}
 			_, _ = w.Write([]byte(body))
 		default:
@@ -64,38 +84,44 @@ func TestRecoveryFactorRemovalRemovesEveryKeyAndTheTOTPThenRequiresNoneRemain(t 
 		writes                 []string
 		accepted               bool
 		sequence               string
+		later                  []string
 	}{
 		{"totp_only", `{"result":[` + recoveryTOTPFactor + `]}`, recoveryNoMethods,
-			map[string]string{totp: recoveryAck("1703", at)}, []string{totp}, true, "1703"},
+			map[string]string{totp: recoveryAck("1703", at)}, []string{totp}, true, "1703", nil},
 		{"key_only_any_state", `{"result":[` + recoveryKeyFactor("key-a", "AUTH_FACTOR_STATE_READY") + `,` + recoveryKeyFactor("key-b", "AUTH_FACTOR_STATE_NOT_READY") + `]}`, recoveryNoMethods,
-			map[string]string{keyA: recoveryAck("1703", at), keyB: recoveryAck("1704", at)}, []string{keyA, keyB}, true, "1704"},
+			map[string]string{keyA: recoveryAck("1703", at), keyB: recoveryAck("1704", at)}, []string{keyA, keyB}, true, "1704", nil},
 		{"key_and_totp", `{"result":[` + recoveryTOTPFactor + `,` + recoveryKeyFactor("key-a", "AUTH_FACTOR_STATE_READY") + `]}`, recoveryNoMethods,
-			map[string]string{keyA: recoveryAck("1703", at), totp: recoveryAck("1704", at.Add(time.Millisecond))}, []string{keyA, totp}, true, "1704"},
+			map[string]string{keyA: recoveryAck("1703", at), totp: recoveryAck("1704", at.Add(time.Millisecond))}, []string{keyA, totp}, true, "1704", nil},
 		{"failure_part_way_stops_writes", `{"result":[` + recoveryTOTPFactor + `,` + recoveryKeyFactor("key-a", "AUTH_FACTOR_STATE_READY") + `,` + recoveryKeyFactor("key-b", "AUTH_FACTOR_STATE_READY") + `]}`, recoveryNoMethods,
-			map[string]string{keyA: recoveryAck("1703", at), totp: recoveryAck("1705", at)}, []string{keyA, keyB}, false, ""},
+			map[string]string{keyA: recoveryAck("1703", at), totp: recoveryAck("1705", at)}, []string{keyA, keyB}, false, "", nil},
 		{"sequence_not_increasing", `{"result":[` + recoveryTOTPFactor + `,` + recoveryKeyFactor("key-a", "AUTH_FACTOR_STATE_READY") + `]}`, recoveryNoMethods,
-			map[string]string{keyA: recoveryAck("1703", at), totp: recoveryAck("1703", at)}, []string{keyA, totp}, false, ""},
+			map[string]string{keyA: recoveryAck("1703", at), totp: recoveryAck("1703", at)}, []string{keyA, totp}, false, "", nil},
 		{"time_going_back", `{"result":[` + recoveryTOTPFactor + `,` + recoveryKeyFactor("key-a", "AUTH_FACTOR_STATE_READY") + `]}`, recoveryNoMethods,
-			map[string]string{keyA: recoveryAck("1703", at), totp: recoveryAck("1704", at.Add(-time.Second))}, []string{keyA, totp}, false, ""},
+			map[string]string{keyA: recoveryAck("1703", at), totp: recoveryAck("1704", at.Add(-time.Second))}, []string{keyA, totp}, false, "", nil},
 		{"key_remains_after_removal", `{"result":[` + recoveryKeyFactor("key-a", "AUTH_FACTOR_STATE_READY") + `]}`, recoveryKeyRemained,
-			map[string]string{keyA: recoveryAck("1703", at)}, []string{keyA}, false, ""},
-		{"nothing_to_remove", `{}`, recoveryNoMethods, nil, nil, false, ""},
+			map[string]string{keyA: recoveryAck("1703", at)}, []string{keyA}, false, "", nil},
+		{"nothing_to_remove", `{}`, recoveryNoMethods, nil, nil, false, "", nil},
 		{"other_factor_kinds_are_left", `{"result":[{"state":"AUTH_FACTOR_STATE_READY","otpEmail":{}},` + recoveryTOTPFactor + `]}`, recoveryNoMethods,
-			map[string]string{totp: recoveryAck("1703", at)}, []string{totp}, true, "1703"},
-		{"duplicate_key", `{"result":[` + recoveryKeyFactor("key-a", "AUTH_FACTOR_STATE_READY") + `,` + recoveryKeyFactor("key-a", "AUTH_FACTOR_STATE_READY") + `]}`, recoveryNoMethods, nil, nil, false, ""},
-		{"unsafe_key_id", `{"result":[` + recoveryKeyFactor("../totp", "AUTH_FACTOR_STATE_READY") + `]}`, recoveryNoMethods, nil, nil, false, ""},
-		{"recased_list", `{"Result":[` + recoveryTOTPFactor + `]}`, recoveryNoMethods, nil, nil, false, ""},
+			map[string]string{totp: recoveryAck("1703", at)}, []string{totp}, true, "1703", nil},
+		{"lagging_projection_missed_a_verified_key", `{"result":[` + recoveryTOTPFactor + `]}`, recoveryNoMethods,
+			map[string]string{totp: recoveryAck("1703", at)}, []string{totp}, false, "", []string{"user.human.mfa.u2f.token.verified"}},
+		{"lagging_projection_missed_an_added_key", `{"result":[` + recoveryKeyFactor("key-a", "AUTH_FACTOR_STATE_READY") + `]}`, recoveryNoMethods,
+			map[string]string{keyA: recoveryAck("1703", at)}, []string{keyA}, false, "", []string{"user.human.mfa.u2f.token.added"}},
+		{"entry_both_totp_and_key", `{"result":[{"state":"AUTH_FACTOR_STATE_READY","otp":{},"u2f":{"id":"key-a"}}]}`, recoveryNoMethods, nil, nil, false, "", nil},
+		{"duplicate_key", `{"result":[` + recoveryKeyFactor("key-a", "AUTH_FACTOR_STATE_READY") + `,` + recoveryKeyFactor("key-a", "AUTH_FACTOR_STATE_READY") + `]}`, recoveryNoMethods, nil, nil, false, "", nil},
+		{"unsafe_key_id", `{"result":[` + recoveryKeyFactor("../totp", "AUTH_FACTOR_STATE_READY") + `]}`, recoveryNoMethods, nil, nil, false, "", nil},
+		{"recased_list", `{"Result":[` + recoveryTOTPFactor + `]}`, recoveryNoMethods, nil, nil, false, "", nil},
 		{"foreign_owner_ack", `{"result":[` + recoveryTOTPFactor + `]}`, recoveryNoMethods,
-			map[string]string{totp: strings.Replace(recoveryAck("1703", at), `"org"`, `"other"`, 1)}, []string{totp}, false, ""},
+			map[string]string{totp: strings.Replace(recoveryAck("1703", at), `"org"`, `"other"`, 1)}, []string{totp}, false, "", nil},
 		{"future_ack", `{"result":[` + recoveryTOTPFactor + `]}`, recoveryNoMethods,
-			map[string]string{totp: recoveryAck("1703", time.Now().Add(time.Hour))}, []string{totp}, false, ""},
+			map[string]string{totp: recoveryAck("1703", time.Now().Add(time.Hour))}, []string{totp}, false, "", nil},
 		{"zero_sequence_ack", `{"result":[` + recoveryTOTPFactor + `]}`, recoveryNoMethods,
-			map[string]string{totp: recoveryAck("0", at)}, []string{totp}, false, ""},
+			map[string]string{totp: recoveryAck("0", at)}, []string{totp}, false, "", nil},
 		{"empty_ack", `{"result":[` + recoveryTOTPFactor + `]}`, recoveryNoMethods,
-			map[string]string{totp: `{}`}, []string{totp}, false, ""},
+			map[string]string{totp: `{}`}, []string{totp}, false, "", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			client, writes := recoveryFactorZitadel(t, tc.factors, tc.acks, tc.methods)
+			client, writes := recoveryFactorZitadel(t, tc.factors, tc.acks, tc.methods, tc.later...)
 			proof, err := client.RemoveRecoveryFactors(t.Context(), "org", "user")
 			require.Equal(t, tc.writes, *writes)
 			if !tc.accepted {
