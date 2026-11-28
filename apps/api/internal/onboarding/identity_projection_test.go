@@ -1,12 +1,15 @@
 package onboarding
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -192,5 +195,39 @@ func TestCustomerAssignmentCandidateRechecksEnrollmentAfterNativeRead(t *testing
 	view, err := svc.CustomerIdentityProjection(t.Context(), customercontract.IdentityProjectionInput{Purpose: "assignment_candidate", TenantID: tenant.String(), Subject: "fresh-staff", RequestID: uuid.NewString()})
 	if !errors.Is(err, ErrNotFound) || view.Candidate != nil || view.Profile != nil || view.State != "" {
 		t.Fatal("enrollment revoked during native read still disclosed identity", err)
+	}
+}
+
+func TestCustomerIdentityProjectionNamesTheFailedStepWithoutIdentity(t *testing.T) {
+	svc, idp, st := newService(t)
+	var output bytes.Buffer
+	svc.log = slog.New(slog.NewJSONHandler(&output, nil))
+	seedProduct(t, st, "helivanta")
+	svc.idp = securityIdentity{idp}
+	tenant := uuid.New()
+	org := "helivanta-" + tenant.String()
+	if _, err := st.CreateOrganization(t.Context(), store.Organization{ID: tenant, ZitadelOrgID: org, Name: "TEST", CreatedByProduct: "helivanta"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Grant(t.Context(), tenant, "helivanta", []string{"helivanta-admin"}); err != nil {
+		t.Fatal(err)
+	}
+	native := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "PRIVATE-UPSTREAM-DETAIL", http.StatusInternalServerError)
+	}))
+	defer native.Close()
+	svc.signupIdentity = zitadel.New(native.URL, zitadel.StaticToken("synthetic"), "platform", nil)
+	_, err := svc.CustomerIdentityProjection(t.Context(), customercontract.IdentityProjectionInput{Purpose: "status", TenantID: tenant.String(), Subject: "staff-private-subject", RequestID: uuid.NewString(), IncludeCredentialState: true, IncludeMFARecovery: true})
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatal("a native read failure must stay unavailable", err)
+	}
+	logged := output.String()
+	if !strings.Contains(logged, `"msg":"identity projection unavailable"`) || !strings.Contains(logged, `"phase":"native_identity"`) {
+		t.Fatalf("the failed step was not named: %s", logged)
+	}
+	for _, private := range []string{"staff-private-subject", tenant.String(), "PRIVATE-UPSTREAM-DETAIL"} {
+		if strings.Contains(logged, private) {
+			t.Fatal("identity projection diagnostics disclosed", private)
+		}
 	}
 }

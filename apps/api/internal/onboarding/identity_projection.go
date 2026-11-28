@@ -3,7 +3,9 @@ package onboarding
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"github.com/google/uuid"
+	"log/slog"
 	"time"
 
 	"github.com/tesserix/onboarding-service/api/customercontract"
@@ -20,6 +22,12 @@ func (s *Service) CustomerIdentityProjection(ctx context.Context, in customercon
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
+	started := time.Now()
+	// Recorded before the deferred cancel, so the context state is the caller's or the budget's.
+	unavailable := func(phase string) (customercontract.IdentityProjection, error) {
+		s.recordIdentityProjectionFailure(ctx, phase, started)
+		return empty, ErrUnavailable
+	}
 	org, err := s.customerIdentityScope(ctx, in.TenantID)
 	if err != nil {
 		return empty, err
@@ -30,23 +38,26 @@ func (s *Service) CustomerIdentityProjection(ctx context.Context, in customercon
 	} else {
 		result, err = s.signupIdentity.IdentityProjection(ctx, org, in.Subject, in.Purpose)
 	}
-	if err != nil || result.Validate() != nil || result.TenantID != in.TenantID || result.Subject != in.Subject || result.OrganizationID != org || result.Purpose != in.Purpose {
-		return empty, ErrUnavailable
+	if err != nil {
+		return unavailable("native_identity")
+	}
+	if result.Validate() != nil || result.TenantID != in.TenantID || result.Subject != in.Subject || result.OrganizationID != org || result.Purpose != in.Purpose {
+		return unavailable("native_projection")
 	}
 	if result.State == "active" && in.IncludeCredentialState != (result.Credentials != nil) {
-		return empty, ErrUnavailable
+		return unavailable("native_credentials")
 	}
 	if result.MFARecovery != nil {
-		return empty, ErrUnavailable
+		return unavailable("native_projection")
 	}
 	if in.IncludeMFARecovery && result.State == "active" {
 		requirement, err := s.store.StaffMFARecoveryRequirement(ctx, in.Subject)
 		if err != nil {
-			return empty, ErrUnavailable
+			return unavailable("mfa_recovery")
 		}
 		result.MFARecovery = &requirement
 		if result.Validate() != nil {
-			return empty, ErrUnavailable
+			return unavailable("mfa_recovery")
 		}
 	}
 	if in.Purpose == "assignment_candidate" || in.IncludeCredentialState {
@@ -55,21 +66,21 @@ func (s *Service) CustomerIdentityProjection(ctx context.Context, in customercon
 			return empty, err
 		}
 		if currentOrg != org {
-			return empty, ErrUnavailable
+			return unavailable("scope_recheck")
 		}
 	}
 	if result.TenantName != "" {
-		return empty, ErrUnavailable
+		return unavailable("native_projection")
 	}
 	if in.IncludeTenantName && result.Profile != nil {
 		tenant, _ := uuid.Parse(in.TenantID)
 		customer, err := s.store.Organization(ctx, tenant)
 		if err != nil || customer.State != "active" || customer.ZitadelOrgID != org || customer.CreatedByProduct != "helivanta" || customer.Name == "" {
-			return empty, ErrUnavailable
+			return unavailable("tenant_name")
 		}
 		result.TenantName = customer.Name
 		if result.Validate() != nil {
-			return empty, ErrUnavailable
+			return unavailable("tenant_name")
 		}
 	}
 	detail, err := json.Marshal(struct {
@@ -78,10 +89,20 @@ func (s *Service) CustomerIdentityProjection(ctx context.Context, in customercon
 		MFARecovery     bool   `json:"mfaRecovery,omitempty"`
 	}{Purpose: in.Purpose, CredentialState: in.IncludeCredentialState, MFARecovery: in.IncludeMFARecovery})
 	if err != nil {
-		return empty, ErrUnavailable
+		return unavailable("audit")
 	}
 	if err = s.store.AppendAudit(ctx, audit.Event{ActorType: audit.ActorSystem, ActorID: customerWorkload, ProductKey: "helivanta", OrgID: in.TenantID, Action: "customer.identity.read", Outcome: audit.OutcomeSuccess, RequestID: in.RequestID, Target: in.Subject, Detail: string(detail)}); err != nil {
-		return empty, ErrUnavailable
+		return unavailable("audit")
 	}
 	return result, nil
+}
+
+// recordIdentityProjectionFailure names the failed step with fixed fields only:
+// no subject, tenant, upstream body or error text reaches the log.
+func (s *Service) recordIdentityProjectionFailure(ctx context.Context, phase string, started time.Time) {
+	logger := s.log
+	if logger == nil {
+		logger = slog.Default()
+	}
+	logger.ErrorContext(ctx, "identity projection unavailable", "phase", phase, "elapsed_ms", time.Since(started).Milliseconds(), "parent_deadline", errors.Is(ctx.Err(), context.DeadlineExceeded), "parent_cancelled", errors.Is(ctx.Err(), context.Canceled))
 }
