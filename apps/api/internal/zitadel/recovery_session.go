@@ -15,7 +15,7 @@ type RecoverySessionProof struct {
 	Sequence           string
 	CreatedAt          time.Time
 	PasswordVerifiedAt time.Time
-	TOTPVerifiedAt     time.Time
+	FactorVerifiedAt   time.Time
 }
 
 type recoverySessionFactor struct {
@@ -36,12 +36,14 @@ type recoveryNativeSession struct {
 		} `json:"user"`
 		Password *recoverySessionFactor `json:"password"`
 		TOTP     *recoverySessionFactor `json:"totp"`
+		WebAuthN *recoverySessionFactor `json:"webAuthN"`
 	} `json:"factors"`
 }
 
 // VerifyRecoverySession accepts only an ID from an already verified ID-token sid.
-// Its cutoffs must come from the durable recovery generation and native enrollment.
-func (c *Client) VerifyRecoverySession(ctx context.Context, orgID, subject, sessionID string, resetAt, enrolledAt time.Time) (_ RecoverySessionProof, resultErr error) {
+// Its cutoffs must come from the durable recovery generation and native enrollment,
+// and kind is the enrolled factor ("totp" or "security_key") the session must prove.
+func (c *Client) VerifyRecoverySession(ctx context.Context, orgID, subject, sessionID, kind string, resetAt, enrolledAt time.Time) (_ RecoverySessionProof, resultErr error) {
 	stage := "configuration"
 	defer func() {
 		if c != nil && c.log != nil && errors.Is(resultErr, ErrIdentityUnavailable) {
@@ -78,7 +80,7 @@ func (c *Client) VerifyRecoverySession(ctx context.Context, orgID, subject, sess
 		return empty, err
 	}
 	stage = "proof"
-	return verifyRecoverySession(session, orgID, subject, sessionID, resetAt, enrolledAt, time.Now())
+	return verifyRecoverySession(session, orgID, subject, sessionID, kind, resetAt, enrolledAt, time.Now())
 }
 
 func decodeRecoverySession(raw []byte) (*recoveryNativeSession, error) {
@@ -90,14 +92,14 @@ func decodeRecoverySession(raw []byte) (*recoveryNativeSession, error) {
 	if err != nil {
 		return nil, ErrIdentityUnavailable
 	}
-	factors, err := identityObject(session["factors"], "user", "password", "totp")
+	factors, err := identityObject(session["factors"], "user", "password", "totp", "webAuthN")
 	if err != nil {
 		return nil, ErrIdentityUnavailable
 	}
 	if _, err = identityObject(factors["user"], "id", "organizationId", "verifiedAt"); err != nil {
 		return nil, ErrIdentityUnavailable
 	}
-	for _, name := range []string{"password", "totp"} {
+	for _, name := range []string{"password", "totp", "webAuthN"} {
 		value := factors[name]
 		if len(value) != 0 && !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
 			if _, err = identityObject(value, "verifiedAt"); err != nil {
@@ -112,7 +114,7 @@ func decodeRecoverySession(raw []byte) (*recoveryNativeSession, error) {
 	return &out, nil
 }
 
-func verifyRecoverySession(s *recoveryNativeSession, orgID, subject, sessionID string, resetAt, enrolledAt, now time.Time) (RecoverySessionProof, error) {
+func verifyRecoverySession(s *recoveryNativeSession, orgID, subject, sessionID, kind string, resetAt, enrolledAt, now time.Time) (RecoverySessionProof, error) {
 	var empty RecoverySessionProof
 	user := s.Factors.User
 	if !validIdentityRevision(s.Sequence) || !identitySourceID.MatchString(s.ID) || user == nil ||
@@ -133,10 +135,12 @@ func verifyRecoverySession(s *recoveryNativeSession, orgID, subject, sessionID s
 			return empty, ErrRecoverySessionRejected
 		}
 	}
-	if s.Factors.Password == nil || s.Factors.TOTP == nil {
+	// Only the factor just enrolled proves the person, never the other kind.
+	proved := map[string]*recoverySessionFactor{"totp": s.Factors.TOTP, "security_key": s.Factors.WebAuthN}[kind]
+	if s.Factors.Password == nil || proved == nil {
 		return empty, ErrRecoverySessionRejected
 	}
-	primary, factor := s.Factors.Password.VerifiedAt, s.Factors.TOTP.VerifiedAt
+	primary, factor := s.Factors.Password.VerifiedAt, proved.VerifiedAt
 	if !recoverySessionInstant(primary, now) || !recoverySessionInstant(factor, now) {
 		return empty, ErrIdentityUnavailable
 	}
@@ -145,7 +149,7 @@ func verifyRecoverySession(s *recoveryNativeSession, orgID, subject, sessionID s
 	}
 	return RecoverySessionProof{
 		Sequence: s.Sequence, CreatedAt: s.CreationDate,
-		PasswordVerifiedAt: primary, TOTPVerifiedAt: factor,
+		PasswordVerifiedAt: primary, FactorVerifiedAt: factor,
 	}, nil
 }
 

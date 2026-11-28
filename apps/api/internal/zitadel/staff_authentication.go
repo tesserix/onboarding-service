@@ -22,13 +22,14 @@ func (c *Client) passwordConfigured(ctx context.Context, org, user string) (bool
 	return methods["AUTHENTICATION_METHOD_TYPE_PASSWORD"], err
 }
 
-// StaffTOTPConfigured is a pre-dispatch presence check, never enrollment proof.
-func (c *Client) StaffTOTPConfigured(ctx context.Context, org, user string) (bool, error) {
+// StaffSecondFactorsConfigured reports whether a TOTP or a security key is
+// configured. It is a pre-dispatch presence check, never enrollment proof.
+func (c *Client) StaffSecondFactorsConfigured(ctx context.Context, org, user string) (bool, error) {
 	if c == nil || c.tokens == nil || c.http == nil || !identitySourceID.MatchString(org) || !identitySourceID.MatchString(user) {
 		return false, ErrIdentityUnavailable
 	}
 	methods, err := c.authenticationMethods(ctx, org, user)
-	return methods["AUTHENTICATION_METHOD_TYPE_TOTP"], err
+	return methods["AUTHENTICATION_METHOD_TYPE_TOTP"] || methods["AUTHENTICATION_METHOD_TYPE_U2F"], err
 }
 
 func (c *Client) authenticationMethods(ctx context.Context, org, user string) (map[string]bool, error) {

@@ -38,7 +38,7 @@ func (s *Service) DispatchStaffMFARecovery(ctx context.Context, p authz.Principa
 	if err = s.checkStaffMFATarget(ctx, p, scope, in.Target.Subject); err != nil {
 		return empty, err
 	}
-	configured, err := s.staffMFASource.StaffTOTPConfigured(ctx, scope.ProviderOrgID, in.Target.Subject)
+	configured, err := s.staffMFASource.StaffSecondFactorsConfigured(ctx, scope.ProviderOrgID, in.Target.Subject)
 	if err != nil {
 		return empty, ErrUnavailable
 	}
@@ -65,7 +65,7 @@ func (s *Service) DispatchStaffMFARecovery(ctx context.Context, p authz.Principa
 	}
 	if send {
 		started := time.Now().UTC()
-		proof, sourceErr := s.staffMFASource.RemoveRecoveryTOTP(ctx, scope.ProviderOrgID, in.Target.Subject)
+		proof, sourceErr := s.staffMFASource.RemoveRecoveryFactors(ctx, scope.ProviderOrgID, in.Target.Subject)
 		finished := time.Now().UTC()
 		state, sequence, changed, action := "unconfirmed", "", "", "unconfirmed"
 		if sourceErr == nil && positiveRevision(proof.Sequence) && !proof.ChangedAt.IsZero() &&
