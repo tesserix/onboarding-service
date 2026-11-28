@@ -17,7 +17,10 @@ and delivery ID; never the code, raw ticket, recipient email or password.
 Recipient workload-only POSTs live beneath
 `/internal/v1/customer-signups/staff-invitations/`: `status`, `email`, `password`
 and `resend`. Each closed body requires `invitation_id` and `ticket`. `email`
-also requires `code`; `password` requires `code` and `password`; `resend` requires
+also requires `code` and accepts an optional `password`, which is set first with a
+request-scoped native reset code before the email proof (helivanta#1777); a policy
+refusal is 422 `password_policy` and keeps the link usable. `password` requires
+`code` and `password`; `resend` requires
 a new UUIDv7 `delivery_id`. Reject unknown, duplicate, case-aliased, malformed,
 oversized or phase-inappropriate fields and query parameters. Recipient input has
 redacted diagnostics. HMS must expose these through same-origin public auth
@@ -26,7 +29,10 @@ routes; ordinary clients must not contact the identity owner directly.
 Receipt states: `email_action_required`, `already_verified`,
 `password_action_required`, `complete`, `consumed`, `expired`,
 `delivery_unresolved`, `proof_unresolved`, `superseded`. `complete` describes credential setup,
-not effective product access. Verified email links are redundant. Replaying a
+not effective product access. Only a `complete` recipient receipt also carries
+`subject` and `organization_id`, naming the native account so the product server
+can continue sign-in without a second password entry (helivanta#1778). Products
+must strip both before answering the browser. Verified email links are redundant. Replaying a
 completed password proof never resets credentials. New deliveries supersede old
 proof. Lost responses cannot redispatch the same uncertain proof. Status reconciles
 native state; a deliberate new delivery retains separate evidence. Successful native

@@ -124,6 +124,9 @@ func TestStaffInvitationEmailProofSetsThePasswordInOneStep(t *testing.T) {
 		body, _ := json.Marshal(map[string]string{"invitation_id": delivered.Get("invitation"), "ticket": delivered.Get("ticket"), "code": code, "password": password})
 		return h.do(t, "POST", "/internal/v1/customer-signups/staff-invitations/email", "workload", string(body))
 	}
+	if w := h.do(t, "POST", "/internal/v1/customer-signups/staff-invitations/status", "workload", `{"invitation_id":"`+delivered.Get("invitation")+`","ticket":"`+delivered.Get("ticket")+`"}`); strings.Contains(w.Body.String(), "subject") {
+		t.Fatalf("an incomplete receipt must not name the account: %s", w.Body)
+	}
 	w := email(emailed, weak)
 	if w.Code != 422 || verified.Load() || strings.Contains(w.Body.String(), weak) {
 		t.Fatalf("policy refusal: %d %s", w.Code, w.Body)
@@ -133,8 +136,13 @@ func TestStaffInvitationEmailProofSetsThePasswordInOneStep(t *testing.T) {
 	}
 	for range 2 {
 		w = email(emailed, strong)
-		if w.Code != 200 || decode(t, w)["state"] != "complete" || strings.Contains(w.Body.String(), strong) || strings.Contains(w.Body.String(), reset) {
+		got := decode(t, w)
+		if w.Code != 200 || got["state"] != "complete" || strings.Contains(w.Body.String(), strong) || strings.Contains(w.Body.String(), reset) {
 			t.Fatalf("one step / replay: %d %s", w.Code, w.Body)
+		}
+		// helivanta#1778: the product server learns the account it just set up.
+		if got["subject"] == "" || got["subject"] == nil || got["organization_id"] == nil || got["organization_id"] == "" {
+			t.Fatalf("complete recipient receipt must name the native account: %s", w.Body)
 		}
 	}
 	if !verified.Load() || !configured.Load() || mails.Load() != 1 {

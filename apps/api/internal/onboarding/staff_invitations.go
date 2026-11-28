@@ -217,7 +217,7 @@ func (s *Service) staffSetPassword(ctx context.Context, user, password string) e
 }
 
 // StaffRecipient handles status, proof and bounded resend without adopting caller IDs.
-func (s *Service) StaffRecipient(ctx context.Context, in StaffRecipientInput, action string) (StaffInvitationReceipt, error) {
+func (s *Service) StaffRecipient(ctx context.Context, in StaffRecipientInput, action string) (result StaffInvitationReceipt, resultErr error) {
 	var empty StaffInvitationReceipt
 	if in.Validate(action) != nil {
 		return empty, ErrInvalid
@@ -232,6 +232,13 @@ func (s *Service) StaffRecipient(ctx context.Context, in StaffRecipientInput, ac
 	if err != nil {
 		return empty, err
 	}
+	// A complete receipt names the native account for the product server
+	// only (helivanta#1778); the recipient capability already proved it.
+	defer func() {
+		if resultErr == nil && result.State == "complete" {
+			result.Subject, result.OrganizationID = op.Command.ProviderUserID, op.Command.ProviderOrgID
+		}
+	}()
 	event := staffIdentityEvent(ctx, p, v.Scope, "staff.recipient."+action, nil)
 	event.ActorType = audit.ActorSystem
 	event.ActorID = "staff-recipient-capability"
