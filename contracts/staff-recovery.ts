@@ -27,6 +27,8 @@ export type StaffInvitationReceipt = {
   invitation_id?: string;
   phase?: string;
   expires_at?: string;
+  subject?: string;
+  organization_id?: string;
 };
 
 export type StaffRecipientInput = {
