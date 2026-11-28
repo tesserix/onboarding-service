@@ -111,3 +111,23 @@ func TestStaffRecipientDecoderRejectsDuplicateUnknownAndWrongPhaseFields(t *test
 		t.Fatal("an email proof without its code accepted")
 	}
 }
+
+func TestStaffInvitationReceiptNamesTheAccountOnlyWhenComplete(t *testing.T) {
+	id := uuid.Must(uuid.NewV7())
+	expiry := time.Now().Add(time.Hour)
+	for _, tc := range []struct {
+		name string
+		v    StaffInvitationReceipt
+		ok   bool
+	}{
+		{"complete with account", StaffInvitationReceipt{State: "complete", Subject: "user-1", OrganizationID: "helivanta-org"}, true},
+		{"complete without account", StaffInvitationReceipt{State: "complete"}, true},
+		{"pending with account", StaffInvitationReceipt{State: "email_action_required", InvitationID: &id, Phase: "email", ExpiresAt: &expiry, Subject: "user-1", OrganizationID: "org"}, false},
+		{"subject only", StaffInvitationReceipt{State: "complete", Subject: "user-1"}, false},
+		{"unsafe subject", StaffInvitationReceipt{State: "complete", Subject: "../user", OrganizationID: "org"}, false},
+	} {
+		if got := tc.v.Validate() == nil; got != tc.ok {
+			t.Fatalf("%s: valid=%v", tc.name, got)
+		}
+	}
+}

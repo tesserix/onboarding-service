@@ -24,10 +24,19 @@ type StaffInvitationReceipt struct {
 	InvitationID *uuid.UUID `json:"invitation_id,omitempty"`
 	Phase        string     `json:"phase,omitempty"`
 	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
+	// Subject and OrganizationID name the native account on a complete
+	// recipient receipt only, so the product server can continue sign-in
+	// without a second password entry (helivanta#1778). Products must never
+	// forward them to the browser.
+	Subject        string `json:"subject,omitempty"`
+	OrganizationID string `json:"organization_id,omitempty"`
 }
 
 func (v StaffInvitationReceipt) Validate() error {
 	if !slices.Contains(ReceiptStates(), v.State) {
+		return ErrInvalid
+	}
+	if (v.Subject == "") != (v.OrganizationID == "") || v.Subject != "" && (v.State != "complete" || !nativeID(v.Subject) || !nativeID(v.OrganizationID)) {
 		return ErrInvalid
 	}
 	if v.InvitationID == nil {
@@ -80,4 +89,10 @@ func (v StaffRecipientInput) Validate(action string) error {
 		return ErrInvalid
 	}
 	return nil
+}
+
+func nativeID(v string) bool {
+	return len(v) <= 200 && v != "" && !strings.ContainsFunc(v, func(r rune) bool {
+		return !(r == '-' || r == '_' || r >= '0' && r <= '9' || r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z')
+	})
 }
