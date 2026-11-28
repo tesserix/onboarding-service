@@ -28,6 +28,13 @@ func TestStaffRecipientRejectsCredentialAuthorityAndMalformedCapabilities(t *tes
 		if in.Validate(action) != nil {
 			t.Fatalf("valid %s rejected", action)
 		}
+		if action == "email" {
+			oneStep := in
+			oneStep.Password = "private-password"
+			if oneStep.Validate(action) != nil {
+				t.Fatal("one-step email proof with a password rejected (helivanta#1777)")
+			}
+		}
 		for _, mutate := range []func(*StaffRecipientInput){
 			func(v *StaffRecipientInput) { v.InvitationID = uuid.New() },
 			func(v *StaffRecipientInput) { v.Ticket += "=" },

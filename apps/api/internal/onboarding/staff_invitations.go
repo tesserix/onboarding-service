@@ -200,6 +200,22 @@ func (s *Service) staffRecipient(ctx context.Context, in StaffRecipientInput) (s
 	return v, p, hash[:], nil
 }
 
+// staffSetPassword sets the password with a native reset code obtained and
+// spent inside this request; the code is never stored, logged or returned.
+func (s *Service) staffSetPassword(ctx context.Context, user, password string) error {
+	reset, err := s.signupIdentity.SignupCode(ctx, user, true)
+	if err != nil {
+		return ErrUnavailable
+	}
+	if err = s.signupIdentity.SetSignupPassword(ctx, user, reset, password); err != nil {
+		if errors.Is(err, zitadel.ErrSignupPasswordPolicy) {
+			return ErrPasswordPolicy
+		}
+		return ErrUnavailable
+	}
+	return nil
+}
+
 // StaffRecipient handles status, proof and bounded resend without adopting caller IDs.
 func (s *Service) StaffRecipient(ctx context.Context, in StaffRecipientInput, action string) (StaffInvitationReceipt, error) {
 	var empty StaffInvitationReceipt
@@ -232,16 +248,33 @@ func (s *Service) StaffRecipient(ctx context.Context, in StaffRecipientInput, ac
 	if action != v.Phase || action != "email" && action != "password" || r.State == "expired" || v.ConsumedAt != nil || !v.Current {
 		return empty, ErrConflict
 	}
-	if in.Code == "" || len(in.Code) > 20 || action == "email" && in.Password != "" || action == "password" && (in.Password == "" || !source.EmailVerified) {
+	if in.Code == "" || len(in.Code) > 20 || action == "password" && (in.Password == "" || !source.EmailVerified) {
 		return empty, ErrInvalid
 	}
 	proof, err := s.store.ClaimStaffInvitationProof(ctx, v.ID, hash, event)
 	if err != nil {
 		return empty, staffInvitationError(err)
 	}
-	if action == "password" {
+	switch {
+	case action == "password":
 		err = s.signupIdentity.SetSignupPassword(ctx, op.Command.ProviderUserID, in.Code, in.Password)
-	} else {
+	case in.Password != "":
+		// One step (helivanta#1777, as #52 for owners): password first, with a
+		// reset code that never leaves this request, then the email proof. A
+		// policy refusal spends one attempt of the existing budget and leaves
+		// the link usable; the emailed code is untouched.
+		if err = s.staffSetPassword(ctx, op.Command.ProviderUserID, in.Password); errors.Is(err, ErrPasswordPolicy) {
+			event.Action = "staff.recipient.email.password_policy"
+			if finishErr := s.store.FinishStaffInvitationProof(ctx, proof, false, event); finishErr != nil {
+				return empty, staffInvitationError(finishErr)
+			}
+			return empty, ErrPasswordPolicy
+		}
+		if err == nil {
+			proof.PasswordSet = true
+			err = s.signupIdentity.VerifySignupEmail(ctx, op.Command.ProviderUserID, in.Code)
+		}
+	default:
 		err = s.signupIdentity.VerifySignupEmail(ctx, op.Command.ProviderUserID, in.Code)
 	}
 	sourceErr := err
@@ -258,7 +291,7 @@ func (s *Service) StaffRecipient(ctx context.Context, in StaffRecipientInput, ac
 	}
 	// A lost response is reconciled against native facts before any proof is repeated.
 	_, after, hasPassword, observeErr := s.staffSetupSource(ctx, p, v.Scope)
-	success := observeErr == nil && after.EmailVerified && (action == "email" || hasPassword)
+	success := observeErr == nil && after.EmailVerified && (action == "email" && in.Password == "" || hasPassword)
 	if observeErr != nil || !success && !errors.Is(sourceErr, zitadel.ErrSignupProof) {
 		return empty, ErrUnavailable
 	}
